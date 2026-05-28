@@ -1,121 +1,185 @@
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import useSWR from 'swr'
 import { useState } from 'react'
+import { DifficultyBadge } from '../../components/DifficultyBadge'
+import { StatusIcon } from '../../components/StatusIcon'
+import { MarkdownRenderer } from '../../components/MarkdownRenderer'
+import type { Exercise } from '../../types'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
-interface Exercise {
-  id: number
-  topic_id: number
-  type: string
-  title: string
-  description: string
-  difficulty: string
-  tags: string
-  hints: string
-  status: string
-  mastery_level: number
+const DIFFICULTY_OPTIONS = [
+  { label: '简单', value: 'easy' },
+  { label: '中等', value: 'medium' },
+  { label: '困难', value: 'hard' },
+]
+
+function getExerciseStatus(status?: string): "not_started" | "in_progress" | "mastered" {
+  if (status === 'completed') return 'mastered'
+  if (status === 'in_progress') return 'in_progress'
+  return 'not_started'
 }
 
 export default function PracticePage() {
   const { id } = useParams()
-  const [selectedDifficulty, setSelectedDifficulty] = useState('全部')
-  const { data } = useSWR<{ exercises: Exercise[] }>(
-    id ? null : '/api/exercises',
+  const navigate = useNavigate()
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null)
+
+  const { data: listData } = useSWR<{ exercises: Exercise[] }>(
+    !id ? '/api/exercises' : null,
     fetcher
   )
-  const { data: exerciseData } = useSWR(
+  const { data: detailData } = useSWR<Exercise>(
     id ? `/api/exercises/${id}` : null,
     fetcher
   )
 
-  const exercises = data?.exercises || []
-  const exercise = id ? exerciseData : null
+  const exercises = listData?.exercises || []
+  const exercise = detailData ?? null
 
-  const difficultyColors: Record<string, string> = {
-    easy: 'bg-green-100 text-green-700',
-    medium: 'bg-yellow-100 text-yellow-700',
-    hard: 'bg-red-100 text-red-700',
-  }
-
-  const statusLabels: Record<string, string> = {
-    not_started: '未开始',
-    in_progress: '进行中',
-    completed: '已完成',
-  }
-
+  // Detail view
   if (id && exercise) {
-    const e = exercise as unknown as Exercise
+    const hints: string[] = exercise.hints
+      ? (typeof exercise.hints === 'string' ? JSON.parse(exercise.hints) : exercise.hints)
+      : []
+    const commonErrors: string[] = exercise.common_errors
+      ? (typeof exercise.common_errors === 'string' ? JSON.parse(exercise.common_errors) : exercise.common_errors)
+      : []
+
     return (
       <div className="p-8">
         <div className="max-w-3xl mx-auto">
-          <h1 className="text-2xl font-bold mb-4">{e.title}</h1>
-          <div className="flex gap-2 mb-4">
-            <span className={`text-sm px-2 py-1 rounded ${difficultyColors[e.difficulty] || ''}`}>
-              {e.difficulty}
-            </span>
-            <span className="text-sm px-2 py-1 rounded bg-blue-100 text-blue-700">{e.type}</span>
-            <span className={`text-sm px-2 py-1 rounded ${e.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-              {statusLabels[e.status] || e.status}
-            </span>
+          <button onClick={() => navigate('/practice')} className="text-sm text-gray-500 hover:text-gray-700 mb-4">← 返回练习列表</button>
+
+          <div className="flex items-center gap-3 mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">{exercise.title}</h1>
+            <DifficultyBadge difficulty={exercise.difficulty as any} />
+            <span className="text-sm px-2 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">{exercise.type}</span>
           </div>
-          <div className="prose max-w-none">
-            <p className="text-gray-700 whitespace-pre-wrap">{e.description}</p>
-            {e.hints && (
-              <div className="mt-6 bg-yellow-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-800 mb-2">提示</h3>
-                <p className="text-gray-600">{e.hints}</p>
-              </div>
-            )}
+
+          <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-gray-800 mb-3">
+              <span>📝</span>题目描述
+            </h3>
+            <MarkdownRenderer content={exercise.description} />
           </div>
+
+          {hints.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 mb-4 shadow-sm">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-800 mb-3">
+                <span>💡</span>提示
+              </h3>
+              <ul className="space-y-2">
+                {hints.map((h, i) => (
+                  <li key={i} className="flex items-start gap-2 text-gray-700">
+                    <span className="text-yellow-500 font-bold">{i + 1}</span>
+                    {h}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {exercise.solution_outline && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-4 shadow-sm">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-800 mb-3">
+                <span>🧠</span>解题思路
+              </h3>
+              <p className="text-gray-600">{exercise.solution_outline}</p>
+            </div>
+          )}
+
+          {exercise.solution_detail && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-4 shadow-sm">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-800 mb-3">
+                <span>📖</span>详细解答
+              </h3>
+              <MarkdownRenderer content={exercise.solution_detail} />
+            </div>
+          )}
+
+          {commonErrors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-4 shadow-sm">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-800 mb-3">
+                <span>⚠️</span>常见错误
+              </h3>
+              <ul className="space-y-2">
+                {commonErrors.map((e, i) => (
+                  <li key={i} className="flex items-start gap-2 text-red-700">
+                    <span className="text-red-400">✕</span>
+                    {e}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
     )
   }
 
-  const filtered = selectedDifficulty === '全部'
-    ? exercises
-    : exercises.filter((e) => e.difficulty === selectedDifficulty)
+  // List view
+  const filtered = selectedDifficulty
+    ? exercises.filter((e) => e.difficulty === selectedDifficulty)
+    : exercises
+
+  // Parse tags for display
+  const getTags = (exercise: Exercise): string[] => {
+    try {
+      const tags = typeof exercise.tags === 'string' ? JSON.parse(exercise.tags) : exercise.tags
+      return Array.isArray(tags) ? tags : []
+    } catch { return [] }
+  }
 
   return (
     <div className="p-8">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">练习题库</h1>
-          <select
-            value={selectedDifficulty}
-            onChange={(e) => setSelectedDifficulty(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
-          >
-            <option value="全部">全部难度</option>
-            <option value="easy">简单</option>
-            <option value="medium">中等</option>
-            <option value="hard">困难</option>
-          </select>
+          <h1 className="text-2xl font-bold text-gray-900">练习题库</h1>
+          <div className="flex gap-2">
+            {DIFFICULTY_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSelectedDifficulty(selectedDifficulty === opt.value ? null : opt.value)}
+                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                  selectedDifficulty === opt.value
+                    ? 'bg-blue-100 text-blue-700 border-blue-300'
+                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            {selectedDifficulty && (
+              <button onClick={() => setSelectedDifficulty(null)} className="text-xs text-gray-400 hover:text-gray-600 ml-2">
+                清除筛选
+              </button>
+            )}
+          </div>
         </div>
+
         {filtered.length === 0 ? (
-          <p className="text-gray-400">暂无练习题</p>
+          <div className="text-center text-gray-400 py-16">暂无练习题</div>
         ) : (
           <div className="grid gap-4">
             {filtered.map((e) => (
-              <div key={e.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-gray-900">{e.title}</h3>
-                    <div className="flex gap-2 mt-2">
-                      <span className={`text-xs px-2 py-1 rounded ${difficultyColors[e.difficulty] || ''}`}>
-                        {e.difficulty}
-                      </span>
-                      <span className="text-xs text-gray-500">{e.type}</span>
-                    </div>
+              <div
+                key={e.id}
+                className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => navigate(`/practice/${e.id}`)}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <StatusIcon status={getExerciseStatus(e.status)} size="md" />
+                    <h3 className="font-medium text-gray-800">{e.title}</h3>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded ${
-                    e.status === 'completed' ? 'bg-green-100 text-green-700' :
-                    e.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-gray-100 text-gray-500'
-                  }`}>
-                    {statusLabels[e.status] || e.status}
-                  </span>
+                  <DifficultyBadge difficulty={e.difficulty as any} />
+                </div>
+                <p className="text-sm text-gray-600 line-clamp-2 mb-2">{e.description}</p>
+                <div className="flex gap-1 flex-wrap">
+                  {getTags(e).map((tag: string) => (
+                    <span key={tag} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">{tag}</span>
+                  ))}
                 </div>
               </div>
             ))}
