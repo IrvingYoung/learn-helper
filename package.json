@@ -1,0 +1,19 @@
+{
+  "name": "learn-helper",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "build": "pnpm --parallel -r build",
+    "db:generate": "cd backend && sqlc generate",
+    "db:seed": "cd backend && sqlite3 learn-helper.db < db/seed/seed.sql"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
