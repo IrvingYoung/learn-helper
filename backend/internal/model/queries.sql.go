@@ -10,6 +10,27 @@ import (
 	"database/sql"
 )
 
+const batchUpdateTopicContent = `-- name: BatchUpdateTopicContent :exec
+UPDATE topics SET content = ?, code_examples = ?, common_mistakes = ?, updated_at = CURRENT_TIMESTAMP WHERE slug = ?
+`
+
+type BatchUpdateTopicContentParams struct {
+	Content        sql.NullString
+	CodeExamples   sql.NullString
+	CommonMistakes sql.NullString
+	Slug           string
+}
+
+func (q *Queries) BatchUpdateTopicContent(ctx context.Context, arg BatchUpdateTopicContentParams) error {
+	_, err := q.db.ExecContext(ctx, batchUpdateTopicContent,
+		arg.Content,
+		arg.CodeExamples,
+		arg.CommonMistakes,
+		arg.Slug,
+	)
+	return err
+}
+
 const createConversation = `-- name: CreateConversation :one
 INSERT INTO conversations (topic_id, exercise_id, context_type, title) VALUES (?, ?, ?, ?) RETURNING id, topic_id, exercise_id, context_type, title, created_at, updated_at
 `
@@ -130,7 +151,7 @@ func (q *Queries) GetAllConversations(ctx context.Context) ([]Conversation, erro
 }
 
 const getAllExercises = `-- name: GetAllExercises :many
-SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises
+SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, solution_detail, common_errors, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises
 `
 
 func (q *Queries) GetAllExercises(ctx context.Context) ([]Exercise, error) {
@@ -152,6 +173,8 @@ func (q *Queries) GetAllExercises(ctx context.Context) ([]Exercise, error) {
 			&i.Tags,
 			&i.Hints,
 			&i.SolutionOutline,
+			&i.SolutionDetail,
+			&i.CommonErrors,
 			&i.TimeComplexityExpected,
 			&i.SpaceComplexityExpected,
 			&i.SampleCode,
@@ -172,18 +195,34 @@ func (q *Queries) GetAllExercises(ctx context.Context) ([]Exercise, error) {
 }
 
 const getAllTopics = `-- name: GetAllTopics :many
-SELECT id, parent_id, name, slug, description, key_points, difficulty, sort_order, created_at, updated_at FROM topics ORDER BY sort_order, id
+SELECT id, parent_id, name, slug, description, key_points, difficulty, sort_order, content, code_examples, common_mistakes, created_at, updated_at FROM topics ORDER BY sort_order, id
 `
 
-func (q *Queries) GetAllTopics(ctx context.Context) ([]Topic, error) {
+type GetAllTopicsRow struct {
+	ID             int64
+	ParentID       sql.NullInt64
+	Name           string
+	Slug           string
+	Description    sql.NullString
+	KeyPoints      sql.NullString
+	Difficulty     sql.NullString
+	SortOrder      sql.NullInt64
+	Content        sql.NullString
+	CodeExamples   sql.NullString
+	CommonMistakes sql.NullString
+	CreatedAt      sql.NullTime
+	UpdatedAt      sql.NullTime
+}
+
+func (q *Queries) GetAllTopics(ctx context.Context) ([]GetAllTopicsRow, error) {
 	rows, err := q.db.QueryContext(ctx, getAllTopics)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Topic
+	var items []GetAllTopicsRow
 	for rows.Next() {
-		var i Topic
+		var i GetAllTopicsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ParentID,
@@ -193,6 +232,9 @@ func (q *Queries) GetAllTopics(ctx context.Context) ([]Topic, error) {
 			&i.KeyPoints,
 			&i.Difficulty,
 			&i.SortOrder,
+			&i.Content,
+			&i.CodeExamples,
+			&i.CommonMistakes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -229,7 +271,7 @@ func (q *Queries) GetConversationByID(ctx context.Context, id int64) (Conversati
 }
 
 const getExerciseByID = `-- name: GetExerciseByID :one
-SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises WHERE id = ?
+SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, solution_detail, common_errors, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises WHERE id = ?
 `
 
 func (q *Queries) GetExerciseByID(ctx context.Context, id int64) (Exercise, error) {
@@ -245,6 +287,8 @@ func (q *Queries) GetExerciseByID(ctx context.Context, id int64) (Exercise, erro
 		&i.Tags,
 		&i.Hints,
 		&i.SolutionOutline,
+		&i.SolutionDetail,
+		&i.CommonErrors,
 		&i.TimeComplexityExpected,
 		&i.SpaceComplexityExpected,
 		&i.SampleCode,
@@ -254,8 +298,41 @@ func (q *Queries) GetExerciseByID(ctx context.Context, id int64) (Exercise, erro
 	return i, err
 }
 
+const getExerciseCountByTopic = `-- name: GetExerciseCountByTopic :many
+SELECT topic_id, COUNT(*) as exercise_count FROM exercises
+GROUP BY topic_id
+`
+
+type GetExerciseCountByTopicRow struct {
+	TopicID       int64
+	ExerciseCount int64
+}
+
+func (q *Queries) GetExerciseCountByTopic(ctx context.Context) ([]GetExerciseCountByTopicRow, error) {
+	rows, err := q.db.QueryContext(ctx, getExerciseCountByTopic)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetExerciseCountByTopicRow
+	for rows.Next() {
+		var i GetExerciseCountByTopicRow
+		if err := rows.Scan(&i.TopicID, &i.ExerciseCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getExercisesByTopicID = `-- name: GetExercisesByTopicID :many
-SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises WHERE topic_id = ?
+SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, solution_detail, common_errors, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises WHERE topic_id = ?
 `
 
 func (q *Queries) GetExercisesByTopicID(ctx context.Context, topicID int64) ([]Exercise, error) {
@@ -277,6 +354,8 @@ func (q *Queries) GetExercisesByTopicID(ctx context.Context, topicID int64) ([]E
 			&i.Tags,
 			&i.Hints,
 			&i.SolutionOutline,
+			&i.SolutionDetail,
+			&i.CommonErrors,
 			&i.TimeComplexityExpected,
 			&i.SpaceComplexityExpected,
 			&i.SampleCode,
@@ -413,13 +492,132 @@ func (q *Queries) GetMessagesByConversation(ctx context.Context, conversationID 
 	return items, nil
 }
 
-const getTopicByID = `-- name: GetTopicByID :one
-SELECT id, parent_id, name, slug, description, key_points, difficulty, sort_order, created_at, updated_at FROM topics WHERE id = ?
+const getNextTopic = `-- name: GetNextTopic :one
+SELECT t1.id, t1.slug, t1.name, t1.difficulty FROM topics t1
+WHERE t1.parent_id = (SELECT t2.parent_id FROM topics t2 WHERE t2.slug = ?)
+  AND t1.sort_order > (SELECT t3.sort_order FROM topics t3 WHERE t3.slug = ?)
+ORDER BY t1.sort_order ASC
+LIMIT 1
 `
 
-func (q *Queries) GetTopicByID(ctx context.Context, id int64) (Topic, error) {
+type GetNextTopicParams struct {
+	Slug   string
+	Slug_2 string
+}
+
+type GetNextTopicRow struct {
+	ID         int64
+	Slug       string
+	Name       string
+	Difficulty sql.NullString
+}
+
+func (q *Queries) GetNextTopic(ctx context.Context, arg GetNextTopicParams) (GetNextTopicRow, error) {
+	row := q.db.QueryRowContext(ctx, getNextTopic, arg.Slug, arg.Slug_2)
+	var i GetNextTopicRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Difficulty,
+	)
+	return i, err
+}
+
+const getPrevTopic = `-- name: GetPrevTopic :one
+SELECT t1.id, t1.slug, t1.name, t1.difficulty FROM topics t1
+WHERE t1.parent_id = (SELECT t2.parent_id FROM topics t2 WHERE t2.slug = ?)
+  AND t1.sort_order < (SELECT t3.sort_order FROM topics t3 WHERE t3.slug = ?)
+ORDER BY t1.sort_order DESC
+LIMIT 1
+`
+
+type GetPrevTopicParams struct {
+	Slug   string
+	Slug_2 string
+}
+
+type GetPrevTopicRow struct {
+	ID         int64
+	Slug       string
+	Name       string
+	Difficulty sql.NullString
+}
+
+func (q *Queries) GetPrevTopic(ctx context.Context, arg GetPrevTopicParams) (GetPrevTopicRow, error) {
+	row := q.db.QueryRowContext(ctx, getPrevTopic, arg.Slug, arg.Slug_2)
+	var i GetPrevTopicRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Difficulty,
+	)
+	return i, err
+}
+
+const getTopicAncestors = `-- name: GetTopicAncestors :many
+WITH RECURSIVE ancestors AS (
+    SELECT t.id, t.slug, t.name, t.parent_id, 0 as depth FROM topics t WHERE t.slug = ?
+    UNION ALL
+    SELECT p.id, p.slug, p.name, p.parent_id, a.depth + 1
+    FROM topics p JOIN ancestors a ON p.id = a.parent_id
+)
+SELECT id, slug, name FROM ancestors WHERE depth > 0 ORDER BY depth DESC
+`
+
+type GetTopicAncestorsRow struct {
+	ID   int64
+	Slug string
+	Name string
+}
+
+func (q *Queries) GetTopicAncestors(ctx context.Context, slug string) ([]GetTopicAncestorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getTopicAncestors, slug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTopicAncestorsRow
+	for rows.Next() {
+		var i GetTopicAncestorsRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTopicByID = `-- name: GetTopicByID :one
+SELECT id, parent_id, name, slug, description, key_points, difficulty, sort_order, content, code_examples, common_mistakes, created_at, updated_at FROM topics WHERE id = ?
+`
+
+type GetTopicByIDRow struct {
+	ID             int64
+	ParentID       sql.NullInt64
+	Name           string
+	Slug           string
+	Description    sql.NullString
+	KeyPoints      sql.NullString
+	Difficulty     sql.NullString
+	SortOrder      sql.NullInt64
+	Content        sql.NullString
+	CodeExamples   sql.NullString
+	CommonMistakes sql.NullString
+	CreatedAt      sql.NullTime
+	UpdatedAt      sql.NullTime
+}
+
+func (q *Queries) GetTopicByID(ctx context.Context, id int64) (GetTopicByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getTopicByID, id)
-	var i Topic
+	var i GetTopicByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ParentID,
@@ -429,6 +627,9 @@ func (q *Queries) GetTopicByID(ctx context.Context, id int64) (Topic, error) {
 		&i.KeyPoints,
 		&i.Difficulty,
 		&i.SortOrder,
+		&i.Content,
+		&i.CodeExamples,
+		&i.CommonMistakes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -436,12 +637,28 @@ func (q *Queries) GetTopicByID(ctx context.Context, id int64) (Topic, error) {
 }
 
 const getTopicBySlug = `-- name: GetTopicBySlug :one
-SELECT id, parent_id, name, slug, description, key_points, difficulty, sort_order, created_at, updated_at FROM topics WHERE slug = ?
+SELECT id, parent_id, name, slug, description, key_points, difficulty, sort_order, content, code_examples, common_mistakes, created_at, updated_at FROM topics WHERE slug = ?
 `
 
-func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (Topic, error) {
+type GetTopicBySlugRow struct {
+	ID             int64
+	ParentID       sql.NullInt64
+	Name           string
+	Slug           string
+	Description    sql.NullString
+	KeyPoints      sql.NullString
+	Difficulty     sql.NullString
+	SortOrder      sql.NullInt64
+	Content        sql.NullString
+	CodeExamples   sql.NullString
+	CommonMistakes sql.NullString
+	CreatedAt      sql.NullTime
+	UpdatedAt      sql.NullTime
+}
+
+func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (GetTopicBySlugRow, error) {
 	row := q.db.QueryRowContext(ctx, getTopicBySlug, slug)
-	var i Topic
+	var i GetTopicBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.ParentID,
@@ -451,10 +668,62 @@ func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (Topic, error
 		&i.KeyPoints,
 		&i.Difficulty,
 		&i.SortOrder,
+		&i.Content,
+		&i.CodeExamples,
+		&i.CommonMistakes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateExerciseErrors = `-- name: UpdateExerciseErrors :exec
+UPDATE exercises SET common_errors = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type UpdateExerciseErrorsParams struct {
+	CommonErrors sql.NullString
+	ID           int64
+}
+
+func (q *Queries) UpdateExerciseErrors(ctx context.Context, arg UpdateExerciseErrorsParams) error {
+	_, err := q.db.ExecContext(ctx, updateExerciseErrors, arg.CommonErrors, arg.ID)
+	return err
+}
+
+const updateExerciseSolution = `-- name: UpdateExerciseSolution :exec
+UPDATE exercises SET solution_detail = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type UpdateExerciseSolutionParams struct {
+	SolutionDetail sql.NullString
+	ID             int64
+}
+
+func (q *Queries) UpdateExerciseSolution(ctx context.Context, arg UpdateExerciseSolutionParams) error {
+	_, err := q.db.ExecContext(ctx, updateExerciseSolution, arg.SolutionDetail, arg.ID)
+	return err
+}
+
+const updateTopicContent = `-- name: UpdateTopicContent :exec
+UPDATE topics SET content = ?, code_examples = ?, common_mistakes = ?, updated_at = CURRENT_TIMESTAMP WHERE slug = ?
+`
+
+type UpdateTopicContentParams struct {
+	Content        sql.NullString
+	CodeExamples   sql.NullString
+	CommonMistakes sql.NullString
+	Slug           string
+}
+
+func (q *Queries) UpdateTopicContent(ctx context.Context, arg UpdateTopicContentParams) error {
+	_, err := q.db.ExecContext(ctx, updateTopicContent,
+		arg.Content,
+		arg.CodeExamples,
+		arg.CommonMistakes,
+		arg.Slug,
+	)
+	return err
 }
 
 const upsertAIConfig = `-- name: UpsertAIConfig :exec

@@ -39,6 +39,8 @@ type Exercise struct {
 	Tags                    sql.NullString
 	Hints                   sql.NullString
 	SolutionOutline         sql.NullString
+	SolutionDetail          sql.NullString
+	CommonErrors            sql.NullString
 	TimeComplexityExpected  sql.NullString
 	SpaceComplexityExpected sql.NullString
 	SampleCode              sql.NullString
@@ -70,14 +72,17 @@ type Message struct {
 }
 
 type Topic struct {
-	ID          int64
-	ParentID    sql.NullInt64
-	Name        string
-	Slug        string
-	Description sql.NullString
-	KeyPoints   sql.NullString
-	Difficulty  sql.NullString
-	SortOrder   sql.NullInt64
-	CreatedAt   sql.NullTime
-	UpdatedAt   sql.NullTime
+	ID             int64
+	ParentID       sql.NullInt64
+	Name           string
+	Slug           string
+	Description    sql.NullString
+	KeyPoints      sql.NullString
+	Content        sql.NullString
+	CodeExamples   sql.NullString
+	CommonMistakes sql.NullString
+	Difficulty     sql.NullString
+	SortOrder      sql.NullInt64
+	CreatedAt      sql.NullTime
+	UpdatedAt      sql.NullTime
 }
