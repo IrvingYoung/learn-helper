@@ -45,7 +45,7 @@ function TopicTree({ topics, onSelect, selectedSlug, statusMap, exerciseCounts }
     if (!selectedSlug) return false
     const selected = topics.find(t => t.slug === selectedSlug)
     if (!selected) return false
-    let current = selected
+    let current: Topic | null | undefined = selected
     while (current) {
       if (current.id === topic.id) return true
       const parent = topics.find(t => t.id === current.parent_id)
