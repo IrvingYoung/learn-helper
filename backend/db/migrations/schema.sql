@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS topics (
     slug TEXT UNIQUE NOT NULL,
     description TEXT,
     key_points TEXT,
+    content TEXT,
+    code_examples TEXT,
+    common_mistakes TEXT,
     difficulty TEXT DEFAULT 'beginner' CHECK(difficulty IN ('beginner', 'intermediate', 'advanced')),
     sort_order INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -23,9 +26,12 @@ CREATE TABLE IF NOT EXISTS exercises (
     title TEXT NOT NULL,
     description TEXT,
     difficulty TEXT DEFAULT 'medium' CHECK(difficulty IN ('easy', 'medium', 'hard')),
+    sort_order INTEGER DEFAULT 0,
     tags TEXT,
     hints TEXT,
     solution_outline TEXT,
+    solution_detail TEXT,
+    common_errors TEXT,
     time_complexity_expected TEXT,
     space_complexity_expected TEXT,
     sample_code TEXT,
@@ -82,4 +88,20 @@ CREATE INDEX IF NOT EXISTS idx_topics_slug ON topics(slug);
 CREATE INDEX IF NOT EXISTS idx_exercises_topic ON exercises(topic_id);
 CREATE INDEX IF NOT EXISTS idx_learning_records_topic ON learning_records(topic_id);
 CREATE INDEX IF NOT EXISTS idx_learning_records_exercise ON learning_records(exercise_id);
+CREATE TABLE IF NOT EXISTS wiki_pages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    title           TEXT NOT NULL,
+    slug            TEXT UNIQUE NOT NULL,
+    page_type       TEXT NOT NULL DEFAULT 'entity',
+    content         TEXT NOT NULL DEFAULT '',
+    tags            TEXT DEFAULT '[]',
+    parent_id       INTEGER REFERENCES wiki_pages(id),
+    content_status  TEXT NOT NULL DEFAULT 'empty',
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);

@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"database/sql"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Schema SQL - inline to avoid external file dependency for initialization
@@ -97,35 +97,51 @@ CREATE INDEX IF NOT EXISTS idx_topics_slug ON topics(slug);
 CREATE INDEX IF NOT EXISTS idx_exercises_topic ON exercises(topic_id);
 CREATE INDEX IF NOT EXISTS idx_learning_records_topic ON learning_records(topic_id);
 CREATE INDEX IF NOT EXISTS idx_learning_records_exercise ON learning_records(exercise_id);
+CREATE TABLE IF NOT EXISTS wiki_pages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    title           TEXT NOT NULL,
+    slug            TEXT UNIQUE NOT NULL,
+    page_type       TEXT NOT NULL DEFAULT 'entity',
+    content         TEXT NOT NULL DEFAULT '',
+    tags            TEXT DEFAULT '[]',
+    parent_id       INTEGER REFERENCES wiki_pages(id),
+    content_status  TEXT NOT NULL DEFAULT 'empty',
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
 `
 
 // Seed data
 const seedSQL = `
 -- Topics
 INSERT OR IGNORE INTO topics (id, parent_id, name, slug, description, key_points, difficulty, sort_order) VALUES
-(1, NULL, '数据结构与算法', 'dsa', '软件工程师面试的核心考核内容', '["数组", "链表", "栈和队列", "树", "图", "排序算法", "搜索算法", "动态规划"]', 'beginner', 0),
-(2, 1, '基础数据结构', 'data-structures', '最常用的线性数据结构', '["数组", "链表", "栈", "队列"]', 'beginner', 1),
-(3, 2, '数组', 'array', '最基本的数据结构，内存连续分布，支持 O(1) 随机访问', '["数组索引", "二维数组", "前缀和", "双指针"]', 'beginner', 10),
-(4, 2, '链表', 'linked-list', '节点通过指针连接，适合插入删除', '["单链表", "双链表", "反转链表", "环形链表检测"]', 'beginner', 11),
-(5, 2, '栈', 'stack', 'LIFO，后进先出', '["单调栈", "括号匹配", "表达式求值"]', 'beginner', 12),
-(6, 2, '队列', 'queue', 'FIFO，先进先出', '["普通队列", "双端队列", "BFS 广度优先"]', 'beginner', 13),
-(7, 3, '二分查找', 'binary-search', '有序数组的高效搜索', '["左闭右闭", "左闭右开", "搜索边界"]', 'intermediate', 20),
-(8, 1, '树结构', 'trees', '层级数据组织结构', '["二叉树", "BST", "平衡树", "线段树"]', 'intermediate', 2),
-(9, 8, '二叉树', 'binary-tree', '每个节点最多两个子节点的树结构', '["前中后序遍历", "层序遍历", "深度计算", "递归与迭代"]', 'intermediate', 30),
-(10, 8, 'BST', 'bst', '二叉搜索树，左小右大', '["插入", "删除", "搜索", "验证 BST"]', 'intermediate', 31),
-(11, 1, '算法思想', 'algorithms', '解决问题的核心范式', '["排序算法", "搜索算法", "动态规划", "贪心算法"]', 'intermediate', 3),
-(12, 11, '排序算法', 'sorting', '将数据按特定顺序排列', '["快速排序", "归并排序", "堆排序", "计数排序"]', 'intermediate', 40),
-(13, 11, '动态规划', 'dynamic-programming', '最优子结构 + 状态转移', '["一维 DP", "二维 DP", "背包问题", "LIS"]', 'advanced', 41);
+(1, 0, '鏁版嵁缁撴瀯涓庣畻娉?, 'dsa', '杞欢宸ョ▼甯堥潰璇曠殑鏍稿績鑰冩牳鍐呭', '["鏁扮粍", "閾捐〃", "鏍堝拰闃熷垪", "鏍?, "鍥?, "鎺掑簭绠楁硶", "鎼滅储绠楁硶", "鍔ㄦ€佽鍒?]', 'beginner', 0),
+(2, 1, '鍩虹鏁版嵁缁撴瀯', 'data-structures', '鏈€甯哥敤鐨勭嚎鎬ф暟鎹粨鏋?, '["鏁扮粍", "閾捐〃", "鏍?, "闃熷垪"]', 'beginner', 1),
+(3, 2, '鏁扮粍', 'array', '鏈€鍩烘湰鐨勬暟鎹粨鏋勶紝鍐呭瓨杩炵画鍒嗗竷锛屾敮鎸?O(1) 闅忔満璁块棶', '["鏁扮粍绱㈠紩", "浜岀淮鏁扮粍", "鍓嶇紑鍜?, "鍙屾寚閽?]', 'beginner', 10),
+(4, 2, '閾捐〃', 'linked-list', '鑺傜偣閫氳繃鎸囬拡杩炴帴锛岄€傚悎鎻掑叆鍒犻櫎', '["鍗曢摼琛?, "鍙岄摼琛?, "鍙嶈浆閾捐〃", "鐜舰閾捐〃妫€娴?]', 'beginner', 11),
+(5, 2, '鏍?, 'stack', 'LIFO锛屽悗杩涘厛鍑?, '["鍗曡皟鏍?, "鎷彿鍖归厤", "琛ㄨ揪寮忔眰鍊?]', 'beginner', 12),
+(6, 2, '闃熷垪', 'queue', 'FIFO锛屽厛杩涘厛鍑?, '["鏅€氶槦鍒?, "鍙岀闃熷垪", "BFS 骞垮害浼樺厛"]', 'beginner', 13),
+(7, 3, '浜屽垎鏌ユ壘', 'binary-search', '鏈夊簭鏁扮粍鐨勯珮鏁堟悳绱?, '["宸﹂棴鍙抽棴", "宸﹂棴鍙冲紑", "鎼滅储杈圭晫"]', 'intermediate', 20),
+(8, 1, '鏍戠粨鏋?, 'trees', '灞傜骇鏁版嵁缁勭粐缁撴瀯', '["浜屽弶鏍?, "BST", "骞宠　鏍?, "绾挎鏍?]', 'intermediate', 2),
+(9, 8, '浜屽弶鏍?, 'binary-tree', '姣忎釜鑺傜偣鏈€澶氫袱涓瓙鑺傜偣鐨勬爲缁撴瀯', '["鍓嶄腑鍚庡簭閬嶅巻", "灞傚簭閬嶅巻", "娣卞害璁＄畻", "閫掑綊涓庤凯浠?]', 'intermediate', 30),
+(10, 8, 'BST', 'bst', '浜屽弶鎼滅储鏍戯紝宸﹀皬鍙冲ぇ', '["鎻掑叆", "鍒犻櫎", "鎼滅储", "楠岃瘉 BST"]', 'intermediate', 31),
+(11, 1, '绠楁硶鎬濇兂', 'algorithms', '瑙ｅ喅闂鐨勬牳蹇冭寖寮?, '["鎺掑簭绠楁硶", "鎼滅储绠楁硶", "鍔ㄦ€佽鍒?, "璐績绠楁硶"]', 'intermediate', 3),
+(12, 11, '鎺掑簭绠楁硶', 'sorting', '灏嗘暟鎹寜鐗瑰畾椤哄簭鎺掑垪', '["蹇€熸帓搴?, "褰掑苟鎺掑簭", "鍫嗘帓搴?, "璁℃暟鎺掑簭"]', 'intermediate', 40),
+(13, 11, '鍔ㄦ€佽鍒?, 'dynamic-programming', '鏈€浼樺瓙缁撴瀯 + 鐘舵€佽浆绉?, '["涓€缁?DP", "浜岀淮 DP", "鑳屽寘闂", "LIS"]', 'advanced', 41);
 
 -- Exercises
 INSERT OR IGNORE INTO exercises (id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, time_complexity_expected, space_complexity_expected) VALUES
-(1, 3, 'algorithm', '两数之和', '给定一个整数数组 nums 和一个目标值 target，找出数组中和为目标值的两个数的下标。\n\n示例：\n输入: nums = [2, 7, 11, 15], target = 9\n输出: [0, 1]\n解释: nums[0] + nums[1] = 2 + 7 = 9', 'easy', '["数组", "哈希表"]', '["尝试暴力解法 O(n²)", "考虑用哈希表优化到 O(n)", "在遍历时检查 target - nums[i] 是否已在哈希表中"]', '使用哈希表存储已遍历的元素，遍历时检查差值是否存在', 'O(n)', 'O(n)'),
-(2, 3, 'algorithm', '三数之和', '给定一个数组 nums，判断是否能从中选出三个数使它们的和为零。\n\n示例：\n输入: nums = [-1, 0, 1, 2, -1, -4]\n输出: [[-1, -1, 2], [-1, 0, 1]]', 'medium', '["数组", "双指针"]', '["排序后处理", "固定一个数，双指针找另外两个", "去重技巧"]', '先排序，固定一个数后用双指针找两数之和为 target-nums[i]', 'O(n²)', 'O(1)'),
-(3, 4, 'algorithm', '反转链表', '给定一个单链表，反转链表并返回反转后的链表头节点。', 'easy', '["链表", "递归"]', '["递归版本", "迭代版本（双指针）"]', '遍历时反转 next 指针方向', 'O(n)', 'O(1)'),
-(4, 9, 'algorithm', '二叉树的中序遍历', '给定一个二叉树根节点，返回其中序遍历结果。', 'easy', '["二叉树", "遍历", "栈"]', '["递归版本（简洁）", "迭代版本（用栈模拟递归）"]', '左子树 -> 根节点 -> 右子树的顺序遍历', 'O(n)', 'O(h)'),
-(5, 10, 'algorithm', '验证 BST', '给定一个二叉树的根节点，验证它是否为有效的二叉搜索树。', 'medium', '["BST", "递归"]', '["BST 的定义是左子树所有节点小于根，右子树所有节点大于根", "需要传递上下界约束"]', '递归时传递当前节点允许的最小值和最大值', 'O(n)', 'O(h)'),
-(6, 13, 'algorithm', '爬楼梯', '假设你正在爬楼梯。需要 n 阶你才能到达楼顶。每次你可以爬 1 或 2 个台阶。有多少种不同的方法可以爬到楼顶？', 'easy', '["动态规划", "斐波那契"]', '["找规律：n=1:1, n=2:2, n=3:3, n=4:5...", "第 i 阶的方法数 = f(i-1) + f(i-2)", "这就是斐波那契数列"]', 'dp[i] = dp[i-1] + dp[i-2，可用滚动数组优化', 'O(n)', 'O(1)');
+(1, 3, 'algorithm', '涓ゆ暟涔嬪拰', '缁欏畾涓€涓暣鏁版暟缁?nums 鍜屼竴涓洰鏍囧€?target锛屾壘鍑烘暟缁勪腑鍜屼负鐩爣鍊肩殑涓や釜鏁扮殑涓嬫爣銆俓n\n绀轰緥锛歕n杈撳叆: nums = [2, 7, 11, 15], target = 9\n杈撳嚭: [0, 1]\n瑙ｉ噴: nums[0] + nums[1] = 2 + 7 = 9', 'easy', '["鏁扮粍", "鍝堝笇琛?]', '["灏濊瘯鏆村姏瑙ｆ硶 O(n虏)", "鑰冭檻鐢ㄥ搱甯岃〃浼樺寲鍒?O(n)", "鍦ㄩ亶鍘嗘椂妫€鏌?target - nums[i] 鏄惁宸插湪鍝堝笇琛ㄤ腑"]', '浣跨敤鍝堝笇琛ㄥ瓨鍌ㄥ凡閬嶅巻鐨勫厓绱狅紝閬嶅巻鏃舵鏌ュ樊鍊兼槸鍚﹀瓨鍦?, 'O(n)', 'O(n)'),
+(2, 3, 'algorithm', '涓夋暟涔嬪拰', '缁欏畾涓€涓暟缁?nums锛屽垽鏂槸鍚﹁兘浠庝腑閫夊嚭涓変釜鏁颁娇瀹冧滑鐨勫拰涓洪浂銆俓n\n绀轰緥锛歕n杈撳叆: nums = [-1, 0, 1, 2, -1, -4]\n杈撳嚭: [[-1, -1, 2], [-1, 0, 1]]', 'medium', '["鏁扮粍", "鍙屾寚閽?]', '["鎺掑簭鍚庡鐞?, "鍥哄畾涓€涓暟锛屽弻鎸囬拡鎵惧彟澶栦袱涓?, "鍘婚噸鎶€宸?]', '鍏堟帓搴忥紝鍥哄畾涓€涓暟鍚庣敤鍙屾寚閽堟壘涓ゆ暟涔嬪拰涓?target-nums[i]', 'O(n虏)', 'O(1)'),
+(3, 4, 'algorithm', '鍙嶈浆閾捐〃', '缁欏畾涓€涓崟閾捐〃锛屽弽杞摼琛ㄥ苟杩斿洖鍙嶈浆鍚庣殑閾捐〃澶磋妭鐐广€?, 'easy', '["閾捐〃", "閫掑綊"]', '["閫掑綊鐗堟湰", "杩唬鐗堟湰锛堝弻鎸囬拡锛?]', '閬嶅巻鏃跺弽杞?next 鎸囬拡鏂瑰悜', 'O(n)', 'O(1)'),
+(4, 9, 'algorithm', '浜屽弶鏍戠殑涓簭閬嶅巻', '缁欏畾涓€涓簩鍙夋爲鏍硅妭鐐癸紝杩斿洖鍏朵腑搴忛亶鍘嗙粨鏋溿€?, 'easy', '["浜屽弶鏍?, "閬嶅巻", "鏍?]', '["閫掑綊鐗堟湰锛堢畝娲侊級", "杩唬鐗堟湰锛堢敤鏍堟ā鎷熼€掑綊锛?]', '宸﹀瓙鏍?-> 鏍硅妭鐐?-> 鍙冲瓙鏍戠殑椤哄簭閬嶅巻', 'O(n)', 'O(h)'),
+(5, 10, 'algorithm', '楠岃瘉 BST', '缁欏畾涓€涓簩鍙夋爲鐨勬牴鑺傜偣锛岄獙璇佸畠鏄惁涓烘湁鏁堢殑浜屽弶鎼滅储鏍戙€?, 'medium', '["BST", "閫掑綊"]', '["BST 鐨勫畾涔夋槸宸﹀瓙鏍戞墍鏈夎妭鐐瑰皬浜庢牴锛屽彸瀛愭爲鎵€鏈夎妭鐐瑰ぇ浜庢牴", "闇€瑕佷紶閫掍笂涓嬬晫绾︽潫"]', '閫掑綊鏃朵紶閫掑綋鍓嶈妭鐐瑰厑璁哥殑鏈€灏忓€煎拰鏈€澶у€?, 'O(n)', 'O(h)'),
+(6, 13, 'algorithm', '鐖ゼ姊?, '鍋囪浣犳鍦ㄧ埇妤兼銆傞渶瑕?n 闃朵綘鎵嶈兘鍒拌揪妤奸《銆傛瘡娆′綘鍙互鐖?1 鎴?2 涓彴闃躲€傛湁澶氬皯绉嶄笉鍚岀殑鏂规硶鍙互鐖埌妤奸《锛?, 'easy', '["鍔ㄦ€佽鍒?, "鏂愭尝閭ｅ"]', '["鎵捐寰嬶細n=1:1, n=2:2, n=3:3, n=4:5...", "绗?i 闃剁殑鏂规硶鏁?= f(i-1) + f(i-2)", "杩欏氨鏄枑娉㈤偅濂戞暟鍒?]', 'dp[i] = dp[i-1] + dp[i-2锛屽彲鐢ㄦ粴鍔ㄦ暟缁勪紭鍖?, 'O(n)', 'O(1)');
 `
 
 func initDB(dbPath string) error {
@@ -135,7 +151,7 @@ func initDB(dbPath string) error {
 		return err
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return err
 	}
@@ -159,14 +175,15 @@ func initDB(dbPath string) error {
 }
 
 func main() {
-	// Determine db path
-	exeDir, err := os.Executable()
+	// Use current working directory as backend root
+	exeDir, err := os.Getwd()
 	if err != nil {
-		log.Fatalf("failed to get executable path: %v", err)
+		log.Fatalf("failed to get working directory: %v", err)
 	}
-	backendDir := filepath.Dir(exeDir)
+	backendDir := exeDir
 	if _, err := os.Stat(filepath.Join(backendDir, "go.mod")); os.IsNotExist(err) {
-		backendDir = "."
+		// Not in backend dir; try looking for it
+		log.Fatalf("must be run from or with backend directory as cwd: %v", err)
 	}
 
 	dbPath := filepath.Join(backendDir, "learn-helper.db")
@@ -178,7 +195,7 @@ func main() {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
@@ -200,26 +217,34 @@ func main() {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/topics", h.GetTopics)
 		r.Get("/topics/{slug}", h.GetTopicBySlug)
+		r.Put("/topics/{slug}/content", h.UpdateTopicContent)
+		r.Post("/topics/batch-content", h.BatchUpdateTopicContent)
 		r.Get("/topics/{slug}/exercises", h.GetExercisesByTopic)
 
 		r.Get("/exercises", h.GetExercises)
 		r.Get("/exercises/{id}", h.GetExerciseByID)
+		r.Put("/exercises/{id}/solution", h.UpdateExerciseSolution)
+		r.Put("/exercises/{id}/errors", h.UpdateExerciseErrors)
 
 		r.Get("/learning-records", h.GetLearningRecords)
 		r.Post("/learning-records", h.UpsertLearningRecord)
 
 		r.Route("/ai", func(r chi.Router) {
 			r.Post("/chat", aiHandler.AIChat)
-			r.Get("/conversations", aiHandler.GetConversations)
-			r.Get("/conversations/{id}", aiHandler.GetConversation)
-			r.Get("/conversations/{id}/messages", aiHandler.GetMessages)
+			r.Get("/conversations", aiHandler.ListConversations)
+			r.Get("/conversations/{id}", aiHandler.UpdateConversationTitle)
+			r.Get("/conversations/{id}/messages", aiHandler.GetConversationMessages)
 			r.Get("/configs", aiHandler.GetAIConfigs)
 			r.Post("/configs", aiHandler.UpsertAIConfig)
 		})
 	})
 
-	log.Println("Server starting on :8080")
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("Server starting on :%s", port)
+	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
 }
