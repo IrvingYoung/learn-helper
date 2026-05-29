@@ -87,7 +87,7 @@ POST/PUT/DELETE 不对外暴露，只有 AI Agent 在用户确认后调用。
 
 1. **wiki-maintainer 角色：** System Prompt 定义为"你是用户知识库的管理员，负责理解用户意图、读/写 Wiki、维护概览页"
 2. **工具调用能力：** AI 可调用 `get_wiki_tree`、`get_wiki_page`、`create_wiki_page`、`update_wiki_page`、`delete_wiki_page`
-3. **确认流程：** AI 生成变更预览后，等待用户输入"确认"才执行写入
+3. **确认流程：** AI 生成变更预览后，等待用户输入"确认"才执行写入。AI 通过 System Prompt 约束来识别用户确认意图——用户回复"确认"/"可以"/"好的"/"执行"等肯定表述时，AI 调用工具执行写入；回复"取消"/"不要"/"调整"时，AI 取消或修改预览。后端不做自然语言解析，完全由 AI 自行判断。
 
 ## 前端架构
 
