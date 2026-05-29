@@ -23,28 +23,35 @@ func NewWikiHandler(db *sql.DB) *WikiHandler {
 }
 
 type WikiTreeNode struct {
-	ID            int64                    `json:"id"`
-	Title         string                   `json:"title"`
-	Slug          string                   `json:"slug"`
-	PageType      string                   `json:"page_type"`
-	ContentStatus string                   `json:"content_status"`
-	ParentID      sql.NullInt64            `json:"parent_id"`
-	SortOrder     int64                    `json:"sort_order"`
-	Children      []WikiTreeNode           `json:"children,omitempty"`
+	ID            int64          `json:"id"`
+	Title         string         `json:"title"`
+	Slug          string         `json:"slug"`
+	PageType      string         `json:"page_type"`
+	ContentStatus string         `json:"content_status"`
+	ParentID      *int64         `json:"parent_id"`
+	SortOrder     int64          `json:"sort_order"`
+	Children      []WikiTreeNode `json:"children,omitempty"`
 }
 
 type WikiPageResponse struct {
-	ID            int64         `json:"id"`
-	Title         string        `json:"title"`
-	Slug          string        `json:"slug"`
-	PageType      string        `json:"page_type"`
-	Content       string        `json:"content"`
-	Tags          string        `json:"tags"`
-	ParentID      sql.NullInt64 `json:"parent_id"`
-	ContentStatus string        `json:"content_status"`
-	SortOrder     int64         `json:"sort_order"`
-	CreatedAt     string        `json:"created_at"`
-	UpdatedAt     string        `json:"updated_at"`
+	ID            int64  `json:"id"`
+	Title         string `json:"title"`
+	Slug          string `json:"slug"`
+	PageType      string `json:"page_type"`
+	Content       string `json:"content"`
+	Tags          string `json:"tags"`
+	ParentID      *int64 `json:"parent_id"`
+	ContentStatus string `json:"content_status"`
+	SortOrder     int64  `json:"sort_order"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+func nullInt64ToPtr(n sql.NullInt64) *int64 {
+	if n.Valid {
+		return &n.Int64
+	}
+	return nil
 }
 
 func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +73,7 @@ func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
 			Slug:          p.Slug,
 			PageType:      p.PageType,
 			ContentStatus: p.ContentStatus,
-			ParentID:      p.ParentID,
+			ParentID:      nullInt64ToPtr(p.ParentID),
 			SortOrder:     p.SortOrder,
 			Children:      []WikiTreeNode{},
 		}
@@ -112,7 +119,7 @@ func (h *WikiHandler) GetWikiPageBySlug(w http.ResponseWriter, r *http.Request) 
 		PageType:      page.PageType,
 		Content:       page.Content,
 		Tags:          page.Tags.String,
-		ParentID:      page.ParentID,
+		ParentID:      nullInt64ToPtr(page.ParentID),
 		ContentStatus: page.ContentStatus,
 		SortOrder:     page.SortOrder,
 		CreatedAt:     page.CreatedAt.Format("2006-01-02T15:04:05Z"),
