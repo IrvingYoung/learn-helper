@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Learn Helper - 原型图总览</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    iframe { border: none; width: 100%; height: 100%; }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans">
+
+  <div class="flex h-screen">
+    <!-- Sidebar -->
+    <div class="w-64 bg-white border-r border-gray-200 flex-shrink-0">
+      <div class="p-4 border-b border-gray-200">
+        <h1 class="text-lg font-bold text-gray-900">Learn Helper</h1>
+        <p class="text-xs text-gray-500 mt-1">原型设计预览</p>
+      </div>
+      <nav class="p-2 space-y-1">
+        <a href="learn.html" target="preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors">
+          <span class="text-lg">📚</span>
+          <div>
+            <div class="text-gray-900">知识图谱</div>
+            <div class="text-xs text-gray-500">知识树 + 详情</div>
+          </div>
+        </a>
+        <a href="practice.html" target="preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors">
+          <span class="text-lg">💻</span>
+          <div>
+            <div class="text-gray-900">练习题库</div>
+            <div class="text-xs text-gray-500">筛选 + 题目列表</div>
+          </div>
+        </a>
+        <a href="dashboard.html" target="preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors">
+          <span class="text-lg">📊</span>
+          <div>
+            <div class="text-gray-900">学习仪表盘</div>
+            <div class="text-xs text-gray-500">统计 + 进度</div>
+          </div>
+        </a>
+        <a href="settings.html" target="preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors">
+          <span class="text-lg">⚙️</span>
+          <div>
+            <div class="text-gray-900">设置</div>
+            <div class="text-xs text-gray-500">AI 配置 + 外观</div>
+          </div>
+        </a>
+        <a href="ai-chat.html" target="preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors">
+          <span class="text-lg">🤖</span>
+          <div>
+            <div class="text-gray-900">AI 对话</div>
+            <div class="text-xs text-gray-500">侧边栏聊天面板</div>
+          </div>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Preview Area -->
+    <div class="flex-1 p-4">
+      <iframe name="preview" src="learn.html" class="rounded-lg shadow-lg bg-white"></iframe>
+    </div>
+  </div>
+
+</body>
+</html>

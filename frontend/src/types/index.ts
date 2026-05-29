@@ -1,51 +1,61 @@
-export interface Topic {
+export interface WikiPage {
   id: number;
-  parent_id: number;
-  name: string;
-  slug: string;
-  description: string;
-  key_points: string;
-  content?: string;
-  code_examples?: string;
-  common_mistakes?: string;
-  difficulty: string;
-  sort_order: number;
-  exercise_count?: number;
-}
-
-export interface SiblingTopic {
-  slug: string;
-  name: string;
-  difficulty: string;
-}
-
-export interface BreadcrumbItem {
-  slug: string;
-  name: string;
-}
-
-export interface TopicDetail extends Topic {
-  breadcrumb: BreadcrumbItem[];
-  prev_topic: SiblingTopic | null;
-  next_topic: SiblingTopic | null;
-  exercise_count: number;
-}
-
-export interface Exercise {
-  id: number;
-  topic_id: number;
-  type: string;
   title: string;
-  description: string;
-  difficulty: string;
+  slug: string;
+  page_type: 'entity' | 'concept' | 'overview';
+  content: string;
   tags: string;
-  hints: string;
-  solution_outline: string;
-  solution_detail?: string;
-  common_errors?: string;
-  time_complexity_expected: string;
-  space_complexity_expected: string;
-  sample_code?: string;
-  status?: string;
-  mastery_level?: number;
+  parent_id: number | null;
+  content_status: 'empty' | 'draft' | 'published';
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WikiTreeNode {
+  id: number;
+  title: string;
+  slug: string;
+  page_type: string;
+  content_status: string;
+  parent_id: number | null;
+  sort_order: number;
+  children?: WikiTreeNode[];
+}
+
+export interface PendingAction {
+  type: 'create' | 'update' | 'delete';
+  page_id?: number;
+  title?: string;
+  slug?: string;
+  content?: string;
+  parent_id?: number;
+  preview: string;
+}
+
+export type AIRole = 'wiki_maintainer'
+export type AIContextType = 'wiki'
+
+export interface Conversation {
+  id: number;
+  topic_id: number | null;
+  exercise_id: number | null;
+  context_type: AIContextType | null;
+  role: AIRole | null;
+  title: string | null;
+  message_count: number;
+  last_message_preview: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  model_provider: string | null;
+  token_count: number | null;
+  created_at: string;
+  pending_actions?: PendingAction[];
+  confirmed?: boolean;
 }

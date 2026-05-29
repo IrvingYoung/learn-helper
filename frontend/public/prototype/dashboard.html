@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Learn Helper - 学习仪表盘</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    @keyframes progressGrow {
+      from { width: 0%; }
+    }
+    .progress-animate { animation: progressGrow 1.5s ease-out forwards; }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-6">
+          <h1 class="text-lg font-semibold text-gray-900">Learn Helper</h1>
+          <nav class="flex gap-1">
+            <a href="learn.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">📚</span>知识图谱
+            </a>
+            <a href="practice.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">💻</span>练习题库
+            </a>
+            <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium bg-blue-50 text-blue-700 transition-colors">
+              <span class="mr-1">📊</span>学习仪表盘
+            </a>
+            <a href="settings.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">⚙️</span>设置
+            </a>
+          </nav>
+        </div>
+        <button class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">
+          打开 AI
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="max-w-4xl mx-auto px-6 py-8">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">学习仪表盘</h1>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-3 gap-4 mb-8">
+      <div class="bg-white rounded-xl border border-gray-200 p-6">
+        <p class="text-gray-500 text-sm mb-1">已完成</p>
+        <p class="text-3xl font-bold text-green-600">3</p>
+        <div class="mt-2 text-xs text-gray-400">个知识点</div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-6">
+        <p class="text-gray-500 text-sm mb-1">进行中</p>
+        <p class="text-3xl font-bold text-yellow-600">2</p>
+        <div class="mt-2 text-xs text-gray-400">个知识点</div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-6">
+        <p class="text-gray-500 text-sm mb-1">平均掌握程度</p>
+        <p class="text-3xl font-bold text-blue-600">3.5</p>
+        <div class="mt-2 text-xs text-gray-400">满分 5.0</div>
+      </div>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">学习进度</h2>
+      <div class="space-y-4">
+        <!-- Topic Progress -->
+        <div>
+          <div class="flex justify-between text-sm mb-1">
+            <span class="text-gray-700">数据结构</span>
+            <span class="text-gray-500">3/8</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-blue-600 h-2 rounded-full progress-animate" style="width: 37.5%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-sm mb-1">
+            <span class="text-gray-700">算法</span>
+            <span class="text-gray-500">0/4</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-blue-600 h-2 rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Learning Records -->
+    <div class="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">学习记录</h2>
+      <div class="space-y-3">
+        <div class="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
+          <div class="flex items-center gap-3">
+            <span class="text-green-500">●</span>
+            <span class="text-sm text-gray-700">数组</span>
+          </div>
+          <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">已完成</span>
+        </div>
+        <div class="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
+          <div class="flex items-center gap-3">
+            <span class="text-yellow-500">○</span>
+            <span class="text-sm text-gray-700">链表</span>
+          </div>
+          <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full">进行中</span>
+        </div>
+        <div class="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-300">○</span>
+            <span class="text-sm text-gray-700">二叉树</span>
+          </div>
+          <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">未开始</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

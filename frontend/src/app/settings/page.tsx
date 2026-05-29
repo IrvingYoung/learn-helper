@@ -34,10 +34,18 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
               <select
                 value={provider}
-                onChange={(e) => setProvider(e.target.value)}
+                onChange={(e) => {
+                  setProvider(e.target.value)
+                  if (e.target.value === 'deepseek') {
+                    setModel('deepseek-v4-flash')
+                  } else {
+                    setModel('claude-sonnet-4-7-20250514')
+                  }
+                }}
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
               >
                 <option value="claude">Claude</option>
+                <option value="deepseek">DeepSeek</option>
               </select>
             </div>
             <div>
@@ -47,9 +55,18 @@ export default function SettingsPage() {
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
               >
-                <option value="claude-sonnet-4-7-20250514">Claude Sonnet 4.7</option>
-                <option value="claude-opus-4-7-20250514">Claude Opus 4.7</option>
-                <option value="claude-haiku-4-5-20250501">Claude Haiku 4.5</option>
+                {provider === 'claude' ? (
+                  <>
+                    <option value="claude-sonnet-4-7-20250514">Claude Sonnet 4.7</option>
+                    <option value="claude-opus-4-7-20250514">Claude Opus 4.7</option>
+                    <option value="claude-haiku-4-5-20250501">Claude Haiku 4.5</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+                    <option value="deepseek-chat">DeepSeek Chat</option>
+                  </>
+                )}
               </select>
             </div>
             <div>
@@ -58,7 +75,7 @@ export default function SettingsPage() {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
+                placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-ant-...'}
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
               />
             </div>

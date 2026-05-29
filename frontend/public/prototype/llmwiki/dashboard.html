@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Wiki - 仪表盘</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style type="text/tailwindcss">
+    @theme {
+      --font-display: 'Playfair Display', serif;
+      --font-body: 'Source Sans 3', sans-serif;
+      --color-warm-50: #faf9f7;
+      --color-warm-100: #f5f3ef;
+      --color-warm-200: #eae7e0;
+      --color-warm-300: #d9d5cc;
+      --color-warm-400: #b5b0a6;
+      --color-warm-500: #8a857a;
+      --color-warm-600: #6b665c;
+      --color-warm-700: #4a4640;
+      --color-warm-800: #2d2a26;
+      --color-warm-900: #1a1815;
+      --color-ink: #1a1815;
+      --color-ink-light: #4a4640;
+      --color-ink-muted: #8a857a;
+      --color-accent: #c45c26;
+      --color-accent-light: #e87d3a;
+      --color-accent-bg: #fdf6f0;
+      --color-node-filled: #2d7a3e;
+      --color-node-partial: #c78a2a;
+      --color-node-empty: #b5b0a6;
+    }
+  </style>
+  <style>
+    body { font-family: 'Source Sans 3', sans-serif; }
+    .font-display { font-family: 'Playfair Display', serif; }
+    .custom-scroll::-webkit-scrollbar { width: 5px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #d9d5cc; border-radius: 3px; }
+    @keyframes countUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .stat-appear { animation: countUp 0.6s ease-out; }
+    @keyframes progressGrow {
+      from { width: 0%; }
+    }
+    .progress-animate { animation: progressGrow 1.2s ease-out forwards; }
+  </style>
+</head>
+<body class="bg-warm-50 text-ink min-h-screen">
+
+  <!-- Top Navigation -->
+  <header class="h-12 bg-white border-b border-warm-200 flex items-center justify-between px-5">
+    <div class="flex items-center gap-8">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 bg-accent rounded-md flex items-center justify-center">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 19.477 5.754 20 7.5 20s3.332-.477 4.5-1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 19.477 18.247 20 16.5 20a3.5 3.5 0 01-3.5-3.5" />
+          </svg>
+        </div>
+        <span class="font-display font-bold text-lg text-ink">LLM Wiki</span>
+      </div>
+      <nav class="flex gap-1">
+        <a href="index.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-ink-muted hover:text-ink hover:bg-warm-100 transition-colors">
+          知识库
+        </a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium text-ink-muted hover:text-ink hover:bg-warm-100 transition-colors">
+          浏览
+        </a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium bg-accent-bg text-accent transition-colors">
+          仪表盘
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="max-w-5xl mx-auto px-6 py-8">
+    <h1 class="font-display font-bold text-2xl text-ink mb-8">学习仪表盘</h1>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-4 gap-4 mb-8">
+      <div class="stat-appear bg-white rounded-xl border border-warm-200 p-5">
+        <p class="text-xs text-ink-muted uppercase tracking-wide font-medium">总页面数</p>
+        <p class="font-display font-bold text-3xl text-ink mt-2">12</p>
+        <p class="text-xs text-ink-muted mt-1">个知识页面</p>
+      </div>
+      <div class="stat-appear bg-white rounded-xl border border-warm-200 p-5" style="animation-delay: 0.1s">
+        <p class="text-xs text-ink-muted uppercase tracking-wide font-medium">内容覆盖</p>
+        <p class="font-display font-bold text-3xl text-accent mt-2">67%</p>
+        <p class="text-xs text-ink-muted mt-1">8/12 已填充</p>
+      </div>
+      <div class="stat-appear bg-white rounded-xl border border-warm-200 p-5" style="animation-delay: 0.2s">
+        <p class="text-xs text-ink-muted uppercase tracking-wide font-medium">待填充</p>
+        <p class="font-display font-bold text-3xl text-ink mt-2">4</p>
+        <p class="text-xs text-ink-muted mt-1">个空页面</p>
+      </div>
+      <div class="stat-appear bg-white rounded-xl border border-warm-200 p-5" style="animation-delay: 0.3s">
+        <p class="text-xs text-ink-muted uppercase tracking-wide font-medium">活跃领域</p>
+        <p class="font-display font-bold text-3xl text-ink mt-2">2</p>
+        <p class="text-xs text-ink-muted mt-1">Go, Redis</p>
+      </div>
+    </div>
+
+    <!-- Domain Coverage -->
+    <div class="bg-white rounded-xl border border-warm-200 p-6 mb-6">
+      <h2 class="font-display font-semibold text-lg text-ink mb-5">领域覆盖</h2>
+      <div class="space-y-4">
+        <div>
+          <div class="flex justify-between text-sm mb-1.5">
+            <span class="text-ink font-medium">Go</span>
+            <span class="text-ink-muted text-xs">5/5 页面</span>
+          </div>
+          <div class="w-full bg-warm-100 rounded-full h-2.5">
+            <div class="bg-accent h-2.5 rounded-full progress-animate" style="width: 100%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-sm mb-1.5">
+            <span class="text-ink font-medium">Redis</span>
+            <span class="text-ink-muted text-xs">3/4 页面</span>
+          </div>
+          <div class="w-full bg-warm-100 rounded-full h-2.5">
+            <div class="bg-accent h-2.5 rounded-full progress-animate" style="width: 75%; animation-delay: 0.2s"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-sm mb-1.5">
+            <span class="text-ink font-medium">Docker</span>
+            <span class="text-ink-muted text-xs">0/3 页面</span>
+          </div>
+          <div class="w-full bg-warm-100 rounded-full h-2.5">
+            <div class="bg-warm-300 h-2.5 rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="bg-white rounded-xl border border-warm-200 p-6">
+      <h2 class="font-display font-semibold text-lg text-ink mb-5">最近活动</h2>
+      <div class="space-y-0">
+        <div class="flex items-start gap-3 py-3 border-b border-warm-100 last:border-0">
+          <div class="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span class="text-green-600 text-xs font-bold">+</span>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm text-ink">
+              <span class="font-medium">创建页面</span>
+              <span class="text-ink-muted"> Go / goroutine / Channel</span>
+            </p>
+            <p class="text-xs text-ink-muted mt-0.5">2 小时前</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 py-3 border-b border-warm-100 last:border-0">
+          <div class="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span class="text-amber-600 text-xs font-bold">✎</span>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm text-ink">
+              <span class="font-medium">更新页面</span>
+              <span class="text-ink-muted"> Go / goroutine (添加调度原理章节)</span>
+            </p>
+            <p class="text-xs text-ink-muted mt-0.5">5 小时前</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 py-3 border-b border-warm-100 last:border-0">
+          <div class="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span class="text-green-600 text-xs font-bold">+</span>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm text-ink">
+              <span class="font-medium">创建页面</span>
+              <span class="text-ink-muted"> Go / goroutine / GMP 模型</span>
+            </p>
+            <p class="text-xs text-ink-muted mt-0.5">1 天前</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 py-3 border-b border-warm-100 last:border-0">
+          <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span class="text-blue-600 text-xs font-bold">📄</span>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm text-ink">
+              <span class="font-medium">吸收资料</span>
+              <span class="text-ink-muted"> 《Go 并发编程实战》第 3 章</span>
+            </p>
+            <p class="text-xs text-ink-muted mt-0.5">2 天前</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Learn Helper - 设置</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-6">
+          <h1 class="text-lg font-semibold text-gray-900">Learn Helper</h1>
+          <nav class="flex gap-1">
+            <a href="learn.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">📚</span>知识图谱
+            </a>
+            <a href="practice.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">💻</span>练习题库
+            </a>
+            <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">📊</span>学习仪表盘
+            </a>
+            <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium bg-blue-50 text-blue-700 transition-colors">
+              <span class="mr-1">⚙️</span>设置
+            </a>
+          </nav>
+        </div>
+        <button class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">
+          打开 AI
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="max-w-xl mx-auto px-6 py-8">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">设置</h1>
+
+    <!-- AI Config Card -->
+    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">AI 模型配置</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+          <select class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option>Claude</option>
+            <option>DeepSeek</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+          <select class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option>Claude Sonnet 4.7</option>
+            <option>Claude Opus 4.7</option>
+            <option>Claude Haiku 4.5</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <input
+            type="password"
+            placeholder="sk-ant-..."
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors">
+          保存配置
+        </button>
+      </div>
+    </div>
+
+    <!-- Appearance Card -->
+    <div class="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">外观</h2>
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-700">深色模式</p>
+            <p class="text-xs text-gray-500">切换应用的明暗主题</p>
+          </div>
+          <button class="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

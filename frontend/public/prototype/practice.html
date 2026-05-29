@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Learn Helper - 练习题库</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-6">
+          <h1 class="text-lg font-semibold text-gray-900">Learn Helper</h1>
+          <nav class="flex gap-1">
+            <a href="learn.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">📚</span>知识图谱
+            </a>
+            <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium bg-blue-50 text-blue-700 transition-colors">
+              <span class="mr-1">💻</span>练习题库
+            </a>
+            <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">📊</span>学习仪表盘
+            </a>
+            <a href="settings.html" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+              <span class="mr-1">⚙️</span>设置
+            </a>
+          </nav>
+        </div>
+        <button class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">
+          打开 AI
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="max-w-4xl mx-auto px-6 py-6">
+
+    <!-- Title + Count -->
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-gray-900">练习题库</h1>
+      <span class="text-sm text-gray-500">6 道题目</span>
+    </div>
+
+    <!-- Filter Chips -->
+    <div class="flex gap-2 mb-6">
+      <button class="px-3 py-1 rounded-full text-sm border bg-blue-600 text-white border-blue-600 transition-colors">
+        全部
+      </button>
+      <button class="px-3 py-1 rounded-full text-sm border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-colors">
+        简单
+      </button>
+      <button class="px-3 py-1 rounded-full text-sm border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-colors">
+        中等
+      </button>
+      <button class="px-3 py-1 rounded-full text-sm border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-colors">
+        困难
+      </button>
+    </div>
+
+    <!-- Exercise List -->
+    <div class="space-y-3">
+
+      <!-- Exercise Card 1 -->
+      <div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-green-500 text-lg">●</span>
+            <h3 class="font-medium text-gray-800">两数之和</h3>
+          </div>
+          <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">简单</span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">数组</span>
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">哈希表</span>
+        </div>
+      </div>
+
+      <!-- Exercise Card 2 -->
+      <div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-yellow-500 text-lg">○</span>
+            <h3 class="font-medium text-gray-800">合并两个有序数组</h3>
+          </div>
+          <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">中等</span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">数组</span>
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">双指针</span>
+        </div>
+      </div>
+
+      <!-- Exercise Card 3 -->
+      <div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-300 text-lg">○</span>
+            <h3 class="font-medium text-gray-800">最长递增子序列</h3>
+          </div>
+          <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">困难</span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">数组</span>
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">动态规划</span>
+        </div>
+      </div>
+
+      <!-- Exercise Card 4 -->
+      <div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-green-500 text-lg">●</span>
+            <h3 class="font-medium text-gray-800">反转链表</h3>
+          </div>
+          <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">简单</span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">链表</span>
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">递归</span>
+        </div>
+      </div>
+
+      <!-- Exercise Card 5 -->
+      <div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-yellow-500 text-lg">○</span>
+            <h3 class="font-medium text-gray-800">二叉树的层序遍历</h3>
+          </div>
+          <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">中等</span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">树</span>
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">BFS</span>
+        </div>
+      </div>
+
+      <!-- Exercise Card 6 -->
+      <div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-300 text-lg">○</span>
+            <h3 class="font-medium text-gray-800">图的深度优先搜索</h3>
+          </div>
+          <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">中等</span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">图</span>
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">DFS</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>
