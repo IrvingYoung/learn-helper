@@ -31,6 +31,28 @@ func (q *Queries) BatchUpdateTopicContent(ctx context.Context, arg BatchUpdateTo
 	return err
 }
 
+const countWikiPages = `-- name: CountWikiPages :one
+SELECT COUNT(*) FROM wiki_pages
+`
+
+func (q *Queries) CountWikiPages(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countWikiPages)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countWikiPagesByStatus = `-- name: CountWikiPagesByStatus :one
+SELECT COUNT(*) FROM wiki_pages WHERE content_status = ?
+`
+
+func (q *Queries) CountWikiPagesByStatus(ctx context.Context, contentStatus string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countWikiPagesByStatus, contentStatus)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createConversation = `-- name: CreateConversation :one
 INSERT INTO conversations (topic_id, exercise_id, context_type, title) VALUES (?, ?, ?, ?) RETURNING id, topic_id, exercise_id, context_type, title, created_at, updated_at
 `
@@ -95,6 +117,44 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 	return i, err
 }
 
+const createWikiPage = `-- name: CreateWikiPage :execresult
+INSERT INTO wiki_pages (title, slug, page_type, content, tags, parent_id, content_status, sort_order)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type CreateWikiPageParams struct {
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+}
+
+func (q *Queries) CreateWikiPage(ctx context.Context, arg CreateWikiPageParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createWikiPage,
+		arg.Title,
+		arg.Slug,
+		arg.PageType,
+		arg.Content,
+		arg.Tags,
+		arg.ParentID,
+		arg.ContentStatus,
+		arg.SortOrder,
+	)
+}
+
+const deleteWikiPage = `-- name: DeleteWikiPage :exec
+DELETE FROM wiki_pages WHERE id = ?
+`
+
+func (q *Queries) DeleteWikiPage(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteWikiPage, id)
+	return err
+}
+
 const getActiveAIConfig = `-- name: GetActiveAIConfig :one
 SELECT id, provider, model_name, api_key, is_active, config, created_at, updated_at FROM ai_configs WHERE is_active = 1
 `
@@ -154,15 +214,34 @@ const getAllExercises = `-- name: GetAllExercises :many
 SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, solution_detail, common_errors, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises
 `
 
-func (q *Queries) GetAllExercises(ctx context.Context) ([]Exercise, error) {
+type GetAllExercisesRow struct {
+	ID                      int64
+	TopicID                 int64
+	Type                    sql.NullString
+	Title                   string
+	Description             sql.NullString
+	Difficulty              sql.NullString
+	Tags                    sql.NullString
+	Hints                   sql.NullString
+	SolutionOutline         sql.NullString
+	SolutionDetail          sql.NullString
+	CommonErrors            sql.NullString
+	TimeComplexityExpected  sql.NullString
+	SpaceComplexityExpected sql.NullString
+	SampleCode              sql.NullString
+	CreatedAt               sql.NullTime
+	UpdatedAt               sql.NullTime
+}
+
+func (q *Queries) GetAllExercises(ctx context.Context) ([]GetAllExercisesRow, error) {
 	rows, err := q.db.QueryContext(ctx, getAllExercises)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Exercise
+	var items []GetAllExercisesRow
 	for rows.Next() {
-		var i Exercise
+		var i GetAllExercisesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TopicID,
@@ -251,6 +330,49 @@ func (q *Queries) GetAllTopics(ctx context.Context) ([]GetAllTopicsRow, error) {
 	return items, nil
 }
 
+const getAllWikiPages = `-- name: GetAllWikiPages :many
+
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+ORDER BY sort_order, id
+`
+
+// Wiki queries
+func (q *Queries) GetAllWikiPages(ctx context.Context) ([]WikiPage, error) {
+	rows, err := q.db.QueryContext(ctx, getAllWikiPages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WikiPage
+	for rows.Next() {
+		var i WikiPage
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.PageType,
+			&i.Content,
+			&i.Tags,
+			&i.ParentID,
+			&i.ContentStatus,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConversationByID = `-- name: GetConversationByID :one
 SELECT id, topic_id, exercise_id, context_type, title, created_at, updated_at FROM conversations WHERE id = ?
 `
@@ -270,13 +392,74 @@ func (q *Queries) GetConversationByID(ctx context.Context, id int64) (Conversati
 	return i, err
 }
 
+const getEmptyWikiPages = `-- name: GetEmptyWikiPages :many
+SELECT id, title, slug, parent_id
+FROM wiki_pages
+WHERE content_status = 'empty'
+ORDER BY sort_order, id
+`
+
+type GetEmptyWikiPagesRow struct {
+	ID       int64
+	Title    string
+	Slug     string
+	ParentID sql.NullInt64
+}
+
+func (q *Queries) GetEmptyWikiPages(ctx context.Context) ([]GetEmptyWikiPagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getEmptyWikiPages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetEmptyWikiPagesRow
+	for rows.Next() {
+		var i GetEmptyWikiPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.ParentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getExerciseByID = `-- name: GetExerciseByID :one
 SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, solution_detail, common_errors, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises WHERE id = ?
 `
 
-func (q *Queries) GetExerciseByID(ctx context.Context, id int64) (Exercise, error) {
+type GetExerciseByIDRow struct {
+	ID                      int64
+	TopicID                 int64
+	Type                    sql.NullString
+	Title                   string
+	Description             sql.NullString
+	Difficulty              sql.NullString
+	Tags                    sql.NullString
+	Hints                   sql.NullString
+	SolutionOutline         sql.NullString
+	SolutionDetail          sql.NullString
+	CommonErrors            sql.NullString
+	TimeComplexityExpected  sql.NullString
+	SpaceComplexityExpected sql.NullString
+	SampleCode              sql.NullString
+	CreatedAt               sql.NullTime
+	UpdatedAt               sql.NullTime
+}
+
+func (q *Queries) GetExerciseByID(ctx context.Context, id int64) (GetExerciseByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getExerciseByID, id)
-	var i Exercise
+	var i GetExerciseByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TopicID,
@@ -335,15 +518,34 @@ const getExercisesByTopicID = `-- name: GetExercisesByTopicID :many
 SELECT id, topic_id, type, title, description, difficulty, tags, hints, solution_outline, solution_detail, common_errors, time_complexity_expected, space_complexity_expected, sample_code, created_at, updated_at FROM exercises WHERE topic_id = ?
 `
 
-func (q *Queries) GetExercisesByTopicID(ctx context.Context, topicID int64) ([]Exercise, error) {
+type GetExercisesByTopicIDRow struct {
+	ID                      int64
+	TopicID                 int64
+	Type                    sql.NullString
+	Title                   string
+	Description             sql.NullString
+	Difficulty              sql.NullString
+	Tags                    sql.NullString
+	Hints                   sql.NullString
+	SolutionOutline         sql.NullString
+	SolutionDetail          sql.NullString
+	CommonErrors            sql.NullString
+	TimeComplexityExpected  sql.NullString
+	SpaceComplexityExpected sql.NullString
+	SampleCode              sql.NullString
+	CreatedAt               sql.NullTime
+	UpdatedAt               sql.NullTime
+}
+
+func (q *Queries) GetExercisesByTopicID(ctx context.Context, topicID int64) ([]GetExercisesByTopicIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, getExercisesByTopicID, topicID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Exercise
+	var items []GetExercisesByTopicIDRow
 	for rows.Next() {
-		var i Exercise
+		var i GetExercisesByTopicIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TopicID,
@@ -524,6 +726,31 @@ func (q *Queries) GetNextTopic(ctx context.Context, arg GetNextTopicParams) (Get
 	return i, err
 }
 
+const getOverviewPage = `-- name: GetOverviewPage :one
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE page_type = 'overview' LIMIT 1
+`
+
+func (q *Queries) GetOverviewPage(ctx context.Context) (WikiPage, error) {
+	row := q.db.QueryRowContext(ctx, getOverviewPage)
+	var i WikiPage
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.PageType,
+		&i.Content,
+		&i.Tags,
+		&i.ParentID,
+		&i.ContentStatus,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPrevTopic = `-- name: GetPrevTopic :one
 SELECT t1.id, t1.slug, t1.name, t1.difficulty FROM topics t1
 WHERE t1.parent_id = (SELECT t2.parent_id FROM topics t2 WHERE t2.slug = ?)
@@ -677,6 +904,149 @@ func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (GetTopicBySl
 	return i, err
 }
 
+const getWikiPageByID = `-- name: GetWikiPageByID :one
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE id = ?
+`
+
+func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, error) {
+	row := q.db.QueryRowContext(ctx, getWikiPageByID, id)
+	var i WikiPage
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.PageType,
+		&i.Content,
+		&i.Tags,
+		&i.ParentID,
+		&i.ContentStatus,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWikiPageBySlug = `-- name: GetWikiPageBySlug :one
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE slug = ?
+`
+
+func (q *Queries) GetWikiPageBySlug(ctx context.Context, slug string) (WikiPage, error) {
+	row := q.db.QueryRowContext(ctx, getWikiPageBySlug, slug)
+	var i WikiPage
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.PageType,
+		&i.Content,
+		&i.Tags,
+		&i.ParentID,
+		&i.ContentStatus,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWikiPageChildren = `-- name: GetWikiPageChildren :many
+SELECT id, title, slug, page_type, content_status, sort_order
+FROM wiki_pages
+WHERE parent_id = ?
+ORDER BY sort_order, id
+`
+
+type GetWikiPageChildrenRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	ContentStatus string
+	SortOrder     int64
+}
+
+func (q *Queries) GetWikiPageChildren(ctx context.Context, parentID sql.NullInt64) ([]GetWikiPageChildrenRow, error) {
+	rows, err := q.db.QueryContext(ctx, getWikiPageChildren, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetWikiPageChildrenRow
+	for rows.Next() {
+		var i GetWikiPageChildrenRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.PageType,
+			&i.ContentStatus,
+			&i.SortOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getWikiPageTree = `-- name: GetWikiPageTree :many
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order
+FROM wiki_pages
+ORDER BY sort_order, id
+`
+
+type GetWikiPageTreeRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	ContentStatus string
+	ParentID      sql.NullInt64
+	SortOrder     int64
+}
+
+func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, error) {
+	rows, err := q.db.QueryContext(ctx, getWikiPageTree)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetWikiPageTreeRow
+	for rows.Next() {
+		var i GetWikiPageTreeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.PageType,
+			&i.ContentStatus,
+			&i.ParentID,
+			&i.SortOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateExerciseErrors = `-- name: UpdateExerciseErrors :exec
 UPDATE exercises SET common_errors = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `
@@ -723,6 +1093,56 @@ func (q *Queries) UpdateTopicContent(ctx context.Context, arg UpdateTopicContent
 		arg.CommonMistakes,
 		arg.Slug,
 	)
+	return err
+}
+
+const updateWikiPage = `-- name: UpdateWikiPage :exec
+UPDATE wiki_pages
+SET title = ?, slug = ?, page_type = ?, content = ?, tags = ?, parent_id = ?, content_status = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type UpdateWikiPageParams struct {
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+	ID            int64
+}
+
+func (q *Queries) UpdateWikiPage(ctx context.Context, arg UpdateWikiPageParams) error {
+	_, err := q.db.ExecContext(ctx, updateWikiPage,
+		arg.Title,
+		arg.Slug,
+		arg.PageType,
+		arg.Content,
+		arg.Tags,
+		arg.ParentID,
+		arg.ContentStatus,
+		arg.SortOrder,
+		arg.ID,
+	)
+	return err
+}
+
+const updateWikiPageContent = `-- name: UpdateWikiPageContent :exec
+UPDATE wiki_pages
+SET content = ?, content_status = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type UpdateWikiPageContentParams struct {
+	Content       string
+	ContentStatus string
+	ID            int64
+}
+
+func (q *Queries) UpdateWikiPageContent(ctx context.Context, arg UpdateWikiPageContentParams) error {
+	_, err := q.db.ExecContext(ctx, updateWikiPageContent, arg.Content, arg.ContentStatus, arg.ID)
 	return err
 }
 

@@ -6,6 +6,7 @@ package model
 
 import (
 	"database/sql"
+	"time"
 )
 
 type AiConfig struct {
@@ -36,6 +37,7 @@ type Exercise struct {
 	Title                   string
 	Description             sql.NullString
 	Difficulty              sql.NullString
+	SortOrder               sql.NullInt64
 	Tags                    sql.NullString
 	Hints                   sql.NullString
 	SolutionOutline         sql.NullString
@@ -85,4 +87,18 @@ type Topic struct {
 	SortOrder      sql.NullInt64
 	CreatedAt      sql.NullTime
 	UpdatedAt      sql.NullTime
+}
+
+type WikiPage struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }

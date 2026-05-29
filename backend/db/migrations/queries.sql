@@ -105,3 +105,65 @@ WITH RECURSIVE ancestors AS (
     FROM topics p JOIN ancestors a ON p.id = a.parent_id
 )
 SELECT id, slug, name FROM ancestors WHERE depth > 0 ORDER BY depth DESC;
+
+-- Wiki queries
+
+-- name: GetAllWikiPages :many
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+ORDER BY sort_order, id;
+
+-- name: GetWikiPageTree :many
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order
+FROM wiki_pages
+ORDER BY sort_order, id;
+
+-- name: GetWikiPageBySlug :one
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE slug = ?;
+
+-- name: GetWikiPageByID :one
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE id = ?;
+
+-- name: GetOverviewPage :one
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE page_type = 'overview' LIMIT 1;
+
+-- name: CreateWikiPage :execresult
+INSERT INTO wiki_pages (title, slug, page_type, content, tags, parent_id, content_status, sort_order)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: UpdateWikiPage :exec
+UPDATE wiki_pages
+SET title = ?, slug = ?, page_type = ?, content = ?, tags = ?, parent_id = ?, content_status = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: UpdateWikiPageContent :exec
+UPDATE wiki_pages
+SET content = ?, content_status = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: DeleteWikiPage :exec
+DELETE FROM wiki_pages WHERE id = ?;
+
+-- name: GetWikiPageChildren :many
+SELECT id, title, slug, page_type, content_status, sort_order
+FROM wiki_pages
+WHERE parent_id = ?
+ORDER BY sort_order, id;
+
+-- name: CountWikiPages :one
+SELECT COUNT(*) FROM wiki_pages;
+
+-- name: CountWikiPagesByStatus :one
+SELECT COUNT(*) FROM wiki_pages WHERE content_status = ?;
+
+-- name: GetEmptyWikiPages :many
+SELECT id, title, slug, parent_id
+FROM wiki_pages
+WHERE content_status = 'empty'
+ORDER BY sort_order, id;
