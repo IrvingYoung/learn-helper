@@ -274,7 +274,7 @@ func (h *WikiHandler) GetOverviewPage(w http.ResponseWriter, r *http.Request) {
 		PageType:      page.PageType,
 		Content:       page.Content,
 		Tags:          page.Tags.String,
-		ParentID:      page.ParentID,
+		ParentID:      nullInt64ToPtr(page.ParentID),
 		ContentStatus: page.ContentStatus,
 		SortOrder:     page.SortOrder,
 		CreatedAt:     page.CreatedAt.Format("2006-01-02T15:04:05Z"),
