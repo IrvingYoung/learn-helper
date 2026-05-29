@@ -144,7 +144,6 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
 
     try {
       let fullContent = "";
-      let pendingActions: PendingAction[] = [];
       let newConvId: number | undefined;
 
       await streamChat(
@@ -171,7 +170,6 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             newConvId = meta.conversation_id;
           }
           if (meta.pending_actions) {
-            pendingActions = meta.pending_actions;
             setMessages((prev) => {
               const updated = [...prev];
               const last = updated[updated.length - 1];
@@ -212,11 +210,11 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-th-bg-secondary">
       {/* Header */}
-      <div className="flex items-center gap-2 p-3 border-b border-gray-200 bg-gray-50 shrink-0">
+      <div className="flex items-center gap-2 p-3 border-b border-th-border bg-th-bg-tertiary shrink-0">
         <select
-          className="flex-1 text-sm border border-gray-300 rounded px-2 py-1.5 bg-white"
+          className="flex-1 text-sm border border-th-input-border rounded px-2 py-1.5 bg-th-input-bg text-th-text-primary"
           value={activeConv?.id ?? ""}
           onChange={(e) => {
             const conv = conversations.find((c) => c.id === Number(e.target.value));
@@ -234,7 +232,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
         </select>
         <button
           onClick={() => setShowNewDialog(true)}
-          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+          className="p-1.5 text-th-text-muted hover:text-th-accent hover:bg-th-accent-bg rounded"
           title="新建会话"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -248,7 +246,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
                 setTitleDraft(activeConv.title || "");
                 setEditingTitle(true);
               }}
-              className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded"
+              className="p-1.5 text-th-text-muted hover:text-th-success hover:bg-th-accent-bg rounded"
               title="重命名"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,7 +255,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             </button>
             <button
               onClick={handleDeleteConversation}
-              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+              className="p-1.5 text-th-text-muted hover:text-th-error hover:bg-th-accent-bg rounded"
               title="删除会话"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,9 +268,9 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
 
       {/* Title edit */}
       {editingTitle && activeConv && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-yellow-50 shrink-0">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-th-border bg-th-accent-bg shrink-0">
           <input
-            className="flex-1 text-sm border border-gray-300 rounded px-2 py-1"
+            className="flex-1 text-sm border border-th-input-border bg-th-input-bg text-th-text-primary rounded px-2 py-1"
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -281,10 +279,10 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             }}
             autoFocus
           />
-          <button onClick={handleRenameTitle} className="text-xs bg-blue-500 text-white px-2 py-1 rounded">
+          <button onClick={handleRenameTitle} className="text-xs bg-th-accent text-white px-2 py-1 rounded">
             保存
           </button>
-          <button onClick={() => setEditingTitle(false)} className="text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded">
+          <button onClick={() => setEditingTitle(false)} className="text-xs bg-th-bg-tertiary text-th-text-secondary px-2 py-1 rounded">
             取消
           </button>
         </div>
@@ -292,10 +290,10 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
 
       {/* New conversation dialog */}
       {showNewDialog && (
-        <div className="p-4 border-b border-gray-200 bg-blue-50 space-y-3 shrink-0">
-          <div className="text-sm font-medium text-gray-700">新建会话</div>
+        <div className="p-4 border-b border-th-border bg-th-accent-bg space-y-3 shrink-0">
+          <div className="text-sm font-medium text-th-text-secondary">新建会话</div>
           <input
-            className="w-full text-sm border border-gray-300 rounded px-2 py-1.5"
+            className="w-full text-sm border border-th-input-border bg-th-input-bg text-th-text-primary rounded px-2 py-1.5"
             placeholder="给会话起个名字（可选）"
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
@@ -308,13 +306,13 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
           <div className="flex justify-end gap-2">
             <button
               onClick={() => { setShowNewDialog(false); setTitleDraft(""); }}
-              className="text-sm px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+              className="text-sm px-3 py-1.5 bg-th-bg-tertiary text-th-text-secondary rounded hover:bg-th-bg-primary"
             >
               取消
             </button>
             <button
               onClick={() => handleCreateConversation(titleDraft || undefined)}
-              className="text-sm px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="text-sm px-3 py-1.5 bg-th-accent text-white rounded hover:opacity-90"
             >
               创建
             </button>
@@ -323,9 +321,9 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scroll">
         {!activeConv && (
-          <div className="text-center text-gray-400 mt-10">
+          <div className="text-center text-th-text-muted mt-10">
             <p className="text-lg mb-2">没有活动会话</p>
             <p className="text-sm">点击 + 新建一个 AI 对话</p>
           </div>
@@ -335,8 +333,8 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             <div
               className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                 msg.role === "user"
-                  ? "bg-blue-500 text-white"
-                  : "bg-gray-100 text-gray-800"
+                  ? "bg-th-user-bubble text-th-user-bubble-text"
+                  : "bg-th-assistant-bubble text-th-assistant-bubble-text"
               }`}
             >
               {msg.role === "assistant" ? (
@@ -345,16 +343,16 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
                 <span className="whitespace-pre-wrap">{msg.content}</span>
               )}
               {msg.pending_actions && msg.pending_actions.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
-                  <div className="text-xs text-gray-500 font-medium">待确认操作：</div>
+                <div className="mt-2 pt-2 border-t border-th-border space-y-1">
+                  <div className="text-xs text-th-text-muted font-medium">待确认操作：</div>
                   {msg.pending_actions.map((action, j) => (
-                    <div key={j} className="text-xs bg-yellow-50 border border-yellow-200 p-2 rounded">
+                    <div key={j} className="text-xs bg-th-accent-bg border border-th-accent p-2 rounded">
                       {action.preview}
                     </div>
                   ))}
                   <button
                     onClick={() => handleConfirm(msg.pending_actions!)}
-                    className="mt-1 text-xs bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+                    className="mt-1 text-xs bg-th-success text-white px-3 py-1 rounded hover:opacity-90"
                   >
                     确认执行
                   </button>
@@ -367,11 +365,11 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
       </div>
 
       {/* Input */}
-      <div className="p-3 border-t border-gray-200 shrink-0">
+      <div className="p-3 border-t border-th-border shrink-0">
         <div className="flex gap-2">
           <input
             type="text"
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
             placeholder={activeConv ? "输入消息..." : "请先选择或新建会话"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -386,7 +384,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
           <button
             onClick={() => handleSend()}
             disabled={!activeConv || loading || !input.trim()}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-th-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             发送
           </button>

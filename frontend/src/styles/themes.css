@@ -1,0 +1,101 @@
+/* Warm theme (default) */
+:root,
+[data-theme="warm"] {
+  --bg-primary: #faf9f7;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f5f3ef;
+  --border: #eae7e0;
+  --border-hover: #d9d5cc;
+  --text-primary: #1a1815;
+  --text-secondary: #4a4640;
+  --text-muted: #8a857a;
+  --accent: #c45c26;
+  --accent-light: #e87d3a;
+  --accent-bg: #fdf6f0;
+  --success: #2d7a3e;
+  --warning: #c78a2a;
+  --error: #dc2626;
+  --node-filled: #2d7a3e;
+  --node-partial: #c78a2a;
+  --node-empty: #b5b0a6;
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'Source Sans 3', sans-serif;
+  --font-mono: 'Source Sans 3', sans-serif;
+  --scrollbar-thumb: #d9d5cc;
+  --scrollbar-thumb-hover: #b5b0a6;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --input-bg: #ffffff;
+  --input-border: #d9d5cc;
+  --user-bubble-bg: #c45c26;
+  --user-bubble-text: #ffffff;
+  --assistant-bubble-bg: #f5f3ef;
+  --assistant-bubble-text: #1a1815;
+  --badge-published-bg: #f0fdf4;
+  --badge-published-text: #166534;
+  --badge-published-border: #bbf7d0;
+  --badge-published-dot: #22c55e;
+  --badge-draft-bg: #fffbeb;
+  --badge-draft-text: #92400e;
+  --badge-draft-border: #fde68a;
+  --badge-draft-dot: #f59e0b;
+  --badge-empty-bg: #f5f3ef;
+  --badge-empty-text: #8a857a;
+  --badge-empty-border: #eae7e0;
+  --badge-empty-dot: #b5b0a6;
+}
+
+/* Dark tech theme */
+[data-theme="dark"] {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #111118;
+  --bg-tertiary: #16161e;
+  --border: #2a2a35;
+  --border-hover: #3a3a4a;
+  --text-primary: #e2e2e8;
+  --text-secondary: #a0a0b0;
+  --text-muted: #6a6a7a;
+  --accent: #7c3aed;
+  --accent-light: #a78bfa;
+  --accent-bg: rgba(124, 58, 237, 0.1);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --node-filled: #22c55e;
+  --node-partial: #f59e0b;
+  --node-empty: #6a6a7a;
+  --font-display: 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --scrollbar-thumb: #2a2a35;
+  --scrollbar-thumb-hover: #3a3a4a;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --input-bg: #16161e;
+  --input-border: #2a2a35;
+  --user-bubble-bg: #7c3aed;
+  --user-bubble-text: #ffffff;
+  --assistant-bubble-bg: #16161e;
+  --assistant-bubble-text: #e2e2e8;
+  --badge-published-bg: rgba(34, 197, 94, 0.1);
+  --badge-published-text: #4ade80;
+  --badge-published-border: rgba(34, 197, 94, 0.2);
+  --badge-published-dot: #22c55e;
+  --badge-draft-bg: rgba(245, 158, 11, 0.1);
+  --badge-draft-text: #fbbf24;
+  --badge-draft-border: rgba(245, 158, 11, 0.2);
+  --badge-draft-dot: #f59e0b;
+  --badge-empty-bg: rgba(106, 106, 122, 0.1);
+  --badge-empty-text: #a0a0b0;
+  --badge-empty-border: rgba(106, 106, 122, 0.2);
+  --badge-empty-dot: #6a6a7a;
+}
+
+/* Custom scrollbar */
+.custom-scroll::-webkit-scrollbar { width: 5px; }
+.custom-scroll::-webkit-scrollbar-track { background: transparent; }
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}

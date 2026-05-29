@@ -12,8 +12,8 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed }: Knowl
   if (collapsed) return null;
 
   return (
-    <div className="h-full overflow-y-auto p-4 bg-gray-50">
-      <div className="text-sm font-medium text-gray-500 mb-3">知识库</div>
+    <div className="h-full overflow-y-auto p-4 bg-th-bg-tertiary custom-scroll">
+      <div className="text-sm font-medium text-th-text-muted mb-3">知识库</div>
       <div className="space-y-0.5">
         {tree.map((node) => (
           <TreeNode
@@ -26,7 +26,7 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed }: Knowl
         ))}
       </div>
       {tree.length === 0 && (
-        <div className="text-center text-gray-400 mt-8 text-sm">
+        <div className="text-center text-th-text-muted mt-8 text-sm">
           知识库为空，开始和 AI 对话吧
         </div>
       )}
@@ -47,10 +47,10 @@ function TreeNode({ node, selectedSlug, onSelect, depth }: TreeNodeProps) {
   const isSelected = node.slug === selectedSlug;
 
   const statusColor = {
-    published: 'text-green-600',
-    draft: 'text-yellow-600',
-    empty: 'text-gray-400',
-  }[node.content_status] || 'text-gray-400';
+    published: 'bg-th-node-filled',
+    draft: 'bg-th-node-partial',
+    empty: 'bg-th-node-empty',
+  }[node.content_status] || 'bg-th-node-empty';
 
   const handleClick = () => {
     onSelect(node.slug);
@@ -64,8 +64,8 @@ function TreeNode({ node, selectedSlug, onSelect, depth }: TreeNodeProps) {
   return (
     <div>
       <div
-        className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-100 transition-colors ${
-          isSelected ? 'bg-blue-100 text-blue-700' : ''
+        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-th-bg-tertiary transition-colors ${
+          isSelected ? 'bg-th-accent-bg text-th-accent' : ''
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
@@ -73,18 +73,21 @@ function TreeNode({ node, selectedSlug, onSelect, depth }: TreeNodeProps) {
         {hasChildren ? (
           <button
             onClick={handleToggle}
-            className="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 shrink-0"
+            className="w-4 h-4 flex items-center justify-center text-th-text-muted hover:text-th-text-secondary shrink-0"
           >
-            {expanded ? '−' : '+'}
+            <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
         ) : (
           <span className="w-4 shrink-0" />
         )}
-        <span className={`flex-1 text-sm truncate ${isSelected ? '' : statusColor}`}>
+        <span className={`w-2 h-2 rounded-full ${statusColor} shrink-0`} />
+        <span className={`flex-1 text-sm truncate ${isSelected ? 'font-medium' : 'text-th-text-primary'}`}>
           {node.title}
         </span>
         {node.page_type === 'overview' && (
-          <span className="text-xs text-gray-400 shrink-0">概览</span>
+          <span className="text-xs text-th-text-muted shrink-0">概览</span>
         )}
       </div>
       {expanded && hasChildren && (
