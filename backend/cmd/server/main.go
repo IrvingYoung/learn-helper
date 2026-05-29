@@ -206,6 +206,7 @@ func main() {
 	}
 
 	h := handler.NewHandler(db)
+	wikiHandler := handler.NewWikiHandler(db)
 	aiHandler := handler.NewAIHandler(db)
 
 	r := chi.NewRouter()
@@ -215,20 +216,15 @@ func main() {
 	r.Get("/health", h.HealthCheck)
 
 	r.Route("/api", func(r chi.Router) {
-		r.Get("/topics", h.GetTopics)
-		r.Get("/topics/{slug}", h.GetTopicBySlug)
-		r.Put("/topics/{slug}/content", h.UpdateTopicContent)
-		r.Post("/topics/batch-content", h.BatchUpdateTopicContent)
-		r.Get("/topics/{slug}/exercises", h.GetExercisesByTopic)
+		// Wiki routes
+		r.Get("/wiki", wikiHandler.GetWikiTree)
+		r.Get("/wiki/overview", wikiHandler.GetOverviewPage)
+		r.Get("/wiki/{slug}", wikiHandler.GetWikiPageBySlug)
+		r.Post("/wiki", wikiHandler.CreateWikiPage)
+		r.Put("/wiki/{id}", wikiHandler.UpdateWikiPage)
+		r.Delete("/wiki/{id}", wikiHandler.DeleteWikiPage)
 
-		r.Get("/exercises", h.GetExercises)
-		r.Get("/exercises/{id}", h.GetExerciseByID)
-		r.Put("/exercises/{id}/solution", h.UpdateExerciseSolution)
-		r.Put("/exercises/{id}/errors", h.UpdateExerciseErrors)
-
-		r.Get("/learning-records", h.GetLearningRecords)
-		r.Post("/learning-records", h.UpsertLearningRecord)
-
+		// AI routes
 		r.Route("/ai", func(r chi.Router) {
 			r.Post("/chat", aiHandler.AIChat)
 			r.Get("/conversations", aiHandler.ListConversations)
