@@ -1,6 +1,9 @@
 package ai
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // AIProvider 定义 AI 模型提供商的统一接口
 type AIProvider interface {
@@ -13,6 +16,7 @@ const (
 	RoleKnowledgeExplain = "knowledge_explain"
 	RoleProblemSolving   = "problem_solving"
 	RoleDashboard        = "dashboard"
+	RoleWikiMaintainer   = "wiki_maintainer"
 )
 
 // SystemPromptTemplates 提供各角色的 system prompt 模板
@@ -63,6 +67,27 @@ var SystemPromptTemplates = map[string]string{
 // RoleDisplayNames 角色展示名称
 var RoleDisplayNames = map[string]string{
 	RoleKnowledgeExplain: "知识讲解",
-	RoleProblemSolving:    "解题辅导",
-	RoleDashboard:         "学习规划",
+	RoleProblemSolving:   "解题辅导",
+	RoleDashboard:        "学习规划",
+	RoleWikiMaintainer:   "Wiki 管理员",
+}
+
+// ProviderType 定义支持的 AI Provider 类型
+type ProviderType string
+
+const (
+	ProviderClaude  ProviderType = "claude"
+	ProviderDeepSeek ProviderType = "deepseek"
+)
+
+// NewProvider creates an AI provider based on the provider type
+func NewProvider(providerType ProviderType, apiKey, model string) (AIProvider, error) {
+	switch providerType {
+	case ProviderClaude:
+		return NewClaudeProvider(apiKey, model), nil
+	case ProviderDeepSeek:
+		return NewDeepSeekProvider(apiKey, model), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider type: %s (supported: claude, deepseek)", providerType)
+	}
 }
