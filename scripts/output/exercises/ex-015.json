@@ -1,0 +1,23 @@
+{
+  "description": "# 字母异位词分组\n\n给定一个字符串数组 `strs`，将**字母异位词**组合在一起。可以按任意顺序返回结果列表。\n\n**字母异位词** 是由重新排列源单词的字母得到的一个新单词，所有源单词中的字母通常恰好只用一次。\n\n## 示例 1\n\n```\n输入: strs = [\"eat\", \"tea\", \"tan\", \"ate\", \"nat\", \"bat\"]\n输出: [[\"bat\"],[\"nat\",\"tan\"],[\"ate\",\"eat\",\"tea\"]]\n```\n\n## 示例 2\n\n```\n输入: strs = [\"\"]\n输出: [[\"\"]]\n```\n\n## 示例 3\n\n```\n输入: strs = [\"a\"]\n输出: [[\"a\"]]\n```\n\n## 约束条件\n- `1 <= strs.length <= 10^4`\n- `0 <= strs[i].length <= 100`\n- `strs[i]` 仅包含小写字母",
+  "hints": [
+    "提示1：思路方向 - 字母异位词的关键特征是什么？如何快速判断两个词是字母异位词？",
+    "提示2：具体方法 - 将每个字符串的字符排序后，所有字母异位词会得到相同的字符串，可作为哈希表的键。",
+    "提示3：实现要点 - 使用哈希表存储 <排序后的字符串, 原字符串列表> 的映射，最后返回所有分组即可。"
+  ],
+  "solution_outline": "核心思路是：字母异位词排序后得到的字符串相同。遍历每个字符串，将其排序后的结果作为哈希键，将原字符串加入对应分组，最后返回所有分组。",
+  "solution_detail": "## 解题思路\n\n### 方法一：排序作为键（推荐）\n\n字母异位词的字母组成完全相同，只是顺序不同。因此，**将字符串的字符排序后，所有字母异位词会得到相同的字符串**。我们可以用这个排序后的字符串作为哈希表的键。\n\n**步骤：**\n1. 创建哈希表 `dict`，键为排序后的字符串，值为列表\n2. 遍历每个字符串：\n   - 对字符串排序得到 `key`\n   - 将原字符串加入 `dict[key]`\n3. 返回哈希表的所有值\n\n### 方法二：字符计数作为键\n\n也可以用字符出现次数作为键，例如 `\"aab\"` 编码为 `\"a2b1\"` 或固定长度的计数数组。这种方法在字符串很长时更优（避免排序的 `O(k log k)`），但实现稍复杂。\n\n---\n\n## 代码实现\n\n```python\nfrom collections import defaultdict\n\ndef groupAnagrams(strs: list[str]) -> list[list[str]]:\n    groups = defaultdict(list)\n    \n    for s in strs:\n        # 排序得到键：时间复杂度 O(k log k)，k 为字符串长度\n        key = ''.join(sorted(s))\n        groups[key].append(s)\n    \n    return list(groups.values())\n```\n\n### 复杂度分析\n\n| 复杂度 | 分析 |\n|--------|------|\n| **时间** | `O(n × k log k)`，其中 `n` 是字符串数量，`k` 是最大字符串长度。每个字符串需要排序。 |\n| **空间** | `O(n × k)`，哈希表存储所有字符串。 |\n\n### 优化：字符计数编码\n\n当字符串很长时，可用 `O(k)` 的计数编码代替排序：\n\n```python\nfrom collections import defaultdict\n\ndef groupAnagrams(strs: list[str]) -> list[list[str]]:\n    groups = defaultdict(list)\n    \n    for s in strs:\n        # 用26长度的计数数组作为键，避免排序\n        count = [0] * 26\n        for c in s:\n            count[ord(c) - ord('a')] += 1\n        key = tuple(count)  # 列表不可哈希，转为元组\n        groups[key].append(s)\n    \n    return list(groups.values())\n```\n\n此方法时间复杂度优化为 `O(n × k)`。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from collections import defaultdict\n\ndef groupAnagrams(strs: list[str]) -> list[list[str]]:\n    \"\"\"\n    字母异位词分组\n    \n    思路：排序后的字符串作为哈希键\n    \"\"\"\n    groups = defaultdict(list)\n    \n    for s in strs:\n        # 对字符串排序得到唯一标识\n        key = ''.join(sorted(s))\n        groups[key].append(s)\n    \n    return list(groups.values())\n\n\n# 测试\nif __name__ == \"__main__\":\n    # 示例 1\n    strs1 = [\"eat\", \"tea\", \"tan\", \"ate\", \"nat\", \"bat\"]\n    result1 = groupAnagrams(strs1)\n    print(f\"输入: {strs1}\")\n    print(f\"输出: {result1}\")\n    # 可能输出: [['eat', 'tea', 'ate'], ['tan', 'nat'], ['bat']]\n    \n    # 示例 2\n    strs2 = [\"\"]\n    print(f\"\\n输入: {strs2}\")\n    print(f\"输出: {groupAnagrams(strs2)}\")\n    \n    # 示例 3\n    strs3 = [\"a\"]\n    print(f\"\\n输入: {strs3}\")\n    print(f\"输出: {groupAnagrams(strs3)}\")"
+    }
+  ],
+  "common_errors": [
+    "错误1：直接用原始字符串作为键，未意识到 'eat' 和 'tea' 是不同字符串但属于同一组，必须排序或计数后才能作为有效键。",
+    "错误2：使用列表作为哈希表的键导致 TypeError，因为列表是不可哈希的。应使用排序后的字符串或元组。",
+    "错误3：忽略空字符串的处理。空字符串排序后仍为空字符串，应能正确分组，需确保代码逻辑兼容此边界情况。"
+  ],
+  "time_complexity_expected": "O(n × k log k)，其中 n 是字符串数量，k 是最大字符串长度（若用计数编码可优化至 O(n × k)）",
+  "space_complexity_expected": "O(n × k)，哈希表存储所有字符串"
+}

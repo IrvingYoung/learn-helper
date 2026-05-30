@@ -99,3 +99,25 @@
 .custom-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
 }
+
+/* Resizable panel separator */
+[data-separator] {
+  width: 1px;
+  background: var(--border);
+  transition: background 0.15s, width 0.15s;
+  position: relative;
+}
+[data-separator]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+  z-index: 1;
+}
+[data-separator]:hover,
+[data-separator][data-resize-active] {
+  background: var(--accent);
+  width: 2px;
+}

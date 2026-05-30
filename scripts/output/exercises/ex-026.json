@@ -1,0 +1,23 @@
+{
+  "description": "## 岛屿数量\n\n给你一个由 `'1'`（陆地）和 `'0'`（水）组成的二维网格，请你计算网格中岛屿的数量。\n\n岛屿总是被水包围，并且每座岛屿只能由水平方向或竖直方向上相邻的陆地 `'1'` 相互连接形成。此外，你可以假设该网格的四条边均被水（`'0'`）包围。\n\n### 示例 1\n```\n输入：grid = [\n  [\"1\",\"1\",\"1\",\"1\",\"0\"],\n  [\"1\",\"1\",\"0\",\"1\",\"0\"],\n  [\"1\",\"1\",\"0\",\"0\",\"0\"],\n  [\"0\",\"0\",\"0\",\"0\",\"0\"]\n]\n输出：1\n```\n\n### 示例 2\n```\n输入：grid = [\n  [\"1\",\"1\",\"0\",\"0\",\"0\"],\n  [\"1\",\"1\",\"0\",\"0\",\"0\"],\n  [\"0\",\"0\",\"1\",\"0\",\"0\"],\n  [\"0\",\"0\",\"0\",\"1\",\"1\"]\n]\n输出：3\n```\n\n### 约束条件\n- `m == grid.length`\n- `n == grid[i].length`\n- `1 <= m, n <= 300`\n- `grid[i][j]` 为 `'0'` 或 `'1'`",
+  "hints": [
+    "提示1：思路方向 —— 遍历整个网格，每当遇到一块未被访问过的陆地时，发现了一个新的岛屿",
+    "提示2：具体方法 —— 可以使用深度优先搜索（DFS）或广度优先搜索（BFS），从当前陆地出发，将所有与之相连的陆地标记为已访问",
+    "提示3：实现要点 —— 为避免重复访问，可以将访问过的陆地改为 `'0'`（沉岛），或使用单独的 visited 数组记录访问状态"
+  ],
+  "solution_outline": "遍历网格，遇到 '1' 时启动 DFS/BFS 将连通块全部标记，岛屿计数加一。最终计数即为岛屿总数。",
+  "solution_detail": "## 解题思路\n\n本题是经典的**连通分量计数**问题，核心在于识别出所有由 `'1'` 构成的连通区域。\n\n### 方法一：DFS 沉岛法（推荐）\n\n遍历网格时遇到 `'1'`，就从这个位置开始 DFS，将所有连通的 `'1'` 都变成 `'0'`（沉岛）。这样每次启动 DFS 就对应发现了一个新的岛屿。\n\n### 方法二：BFS\n\n类似地，使用队列进行广度优先搜索，同样可以达到标记连通块的效果。\n\n### 代码实现（DFS 沉岛法）\n\n```python\nclass Solution:\n    def numIslands(self, grid: List[List[str]]) -> int:\n        if not grid or not grid[0]:\n            return 0\n        \n        m, n = len(grid), len(grid[0])\n        count = 0\n        \n        def dfs(i: int, j: int) -> None:\n            # 越界检查或遇到水，直接返回\n            if i < 0 or i >= m or j < 0 or j >= n or grid[i][j] == '0':\n                return\n            # 沉岛：标记为已访问\n            grid[i][j] = '0'\n            # 四个方向递归\n            dfs(i + 1, j)\n            dfs(i - 1, j)\n            dfs(i, j + 1)\n            dfs(i, j - 1)\n        \n        for i in range(m):\n            for j in range(n):\n                if grid[i][j] == '1':\n                    count += 1      # 发现新岛屿\n                    dfs(i, j)       # 沉没整个岛屿\n        \n        return count\n```\n\n### 复杂度分析\n\n- **时间复杂度**：$O(m \\times n)$，每个格子最多被访问一次\n- **空间复杂度**：$O(m \\times n)$，递归栈的最坏情况（整个网格全是陆地时）\n\n### 扩展：使用并查集（Union-Find）\n\n也可以将所有陆地格子放入并查集，合并相邻的陆地，最终统计不同的根节点数量即为岛屿数。时间复杂度接近 $O(m \\times n \\times \\alpha(mn))$，其中 $\\alpha$ 是阿克曼函数的反函数。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def numIslands(self, grid: List[List[str]]) -> int:\n        if not grid or not grid[0]:\n            return 0\n        \n        m, n = len(grid), len(grid[0])\n        count = 0\n        \n        def dfs(i: int, j: int) -> None:\n            # 越界或遇到水，停止\n            if i < 0 or i >= m or j < 0 or j >= n or grid[i][j] == '0':\n                return\n            # 沉岛：标记为已访问\n            grid[i][j] = '0'\n            # 四个方向探索\n            dfs(i + 1, j)\n            dfs(i - 1, j)\n            dfs(i, j + 1)\n            dfs(i, j - 1)\n        \n        for i in range(m):\n            for j in range(n):\n                if grid[i][j] == '1':\n                    count += 1      # 发现新岛屿\n                    dfs(i, j)       # 沉没整个岛屿\n        \n        return count\n\n\n# BFS 版本\nfrom collections import deque\n\nclass SolutionBFS:\n    def numIslands(self, grid: List[List[str]]) -> int:\n        if not grid or not grid[0]:\n            return 0\n        \n        m, n = len(grid), len(grid[0])\n        count = 0\n        \n        for i in range(m):\n            for j in range(n):\n                if grid[i][j] == '1':\n                    count += 1\n                    # BFS\n                    queue = deque([(i, j)])\n                    grid[i][j] = '0'\n                    while queue:\n                        x, y = queue.popleft()\n                        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:\n                            nx, ny = x + dx, y + dy\n                            if 0 <= nx < m and 0 <= ny < n and grid[nx][ny] == '1':\n                                grid[nx][ny] = '0'\n                                queue.append((nx, ny))\n        \n        return count"
+    }
+  ],
+  "common_errors": [
+    "常见错误1：忘记处理边界条件，导致数组越界（如未检查 i < 0 或 i >= m 等）",
+    "常见错误2：使用沉岛法时，忘记修改原 grid 的值，导致同一个岛屿被重复计数",
+    "常见错误3：误将斜向相邻也算作连通，题目明确要求只能水平或竖直方向相连"
+  ],
+  "time_complexity_expected": "O(m × n)",
+  "space_complexity_expected": "O(m × n)"
+}

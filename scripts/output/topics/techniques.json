@@ -1,0 +1,22 @@
+{
+  "content": "## 概念定义\n\n高频技巧（High-Frequency Patterns）是指在技术面试中反复出现的算法解题套路与模板化方法。这类技巧并非单一数据结构或算法，而是**经过大量题目验证的通用解题框架**，帮助面试者在有限时间内快速识别问题类型并给出正确解法。\n\n## 核心原理\n\n高频技巧的核心在于**\"模式识别 → 套用模板 → 微调适配\"**的三步法：\n\n1. **双指针技巧**：包括快慢指针（链表判环、找中点）、对撞指针（两数之和、盛水容器）、滑动窗口（子串问题）。其核心是通过指针移动减少不必要的重复计算，将暴力 O(n²) 优化至 O(n)。\n\n2. **二分查找变体**：不仅限于有序数组查找，更广泛应用于「查找边界」「旋转数组」「答案二分」等场景。关键在于确定「收缩方向」与「循环不变量」。\n\n3. **DFS/BFS 模板化**：树/图的遍历可抽象为「递归 + 回溯」或「队列 + 标记」。子集、排列、组合等问题均可转化为决策树遍历。\n\n4. **动态规划四步法**：定义状态 → 转移方程 → 初始化 → 遍历顺序。面试中 70% 的 DP 题可归类为「线性 DP」「区间 DP」「背包问题」「树形 DP」四种模板。\n\n## 应用场景\n\n- **时间受限的编码面试**：快速定位最优解思路，避免从零推导\n- **复杂问题的拆解**：如「接雨水」用单调栈，「LRU」用哈希 + 双向链表\n- **代码鲁棒性提升**：模板经过大量验证，边界处理更完善\n\n## 与其他知识点的对比\n\n| 维度 | 高频技巧 | 基础数据结构 | 高级算法 |\n|------|---------|-----------|---------|\n| 侧重点 | 解题套路与代码模板 | 存储与组织方式 | 复杂数学证明 |\n| 学习曲线 | 中等，需刷题积累 | 平缓，概念明确 | 陡峭，理论性强 |\n| 面试价值 | 极高，直接决定解题速度 | 基础必考 | 特定岗位考察 |\n\n> **注意**：模板是起点而非终点。面试官常通过「变形题」考察对模板原理的理解深度，故需理解每行代码的设计意图。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\n# 滑动窗口模板：解决「最小覆盖子串」「最长无重复子串」等问题\ndef sliding_window_template(s: str, t: str) -> str:\n    need = {}  # 记录目标字符及其所需次数\n    window = {}  # 记录当前窗口中各字符出现次数\n    \n    for c in t:\n        need[c] = need.get(c, 0) + 1\n    \n    left, right = 0, 0\n    valid = 0  # 窗口中满足 need 条件的字符个数\n    \n    while right < len(s):\n        c = s[right]\n        right += 1\n        # 扩大窗口：更新窗口数据\n        if c in need:\n            window[c] = window.get(c, 0) + 1\n            if window[c] == need[c]:\n                valid += 1\n        \n        # 收缩窗口：判断左侧是否需要收缩\n        while 需要收缩的条件:  # 如窗口已覆盖所有 need 字符\n            # 更新最优结果\n            if valid == len(need):\n                # 记录答案\n                pass\n            \n            d = s[left]\n            left += 1\n            # 缩小窗口：更新窗口数据\n            if d in need:\n                if window[d] == need[d]:\n                    valid -= 1\n                window[d] -= 1\n    \n    return 最优结果\n\n# 二分查找模板：查找左边界（第一个等于 target 的位置）\ndef binary_search_left(nums: List[int], target: int) -> int:\n    left, right = 0, len(nums) - 1\n    \n    while left <= right:\n        mid = left + (right - left) // 2\n        if nums[mid] < target:\n            left = mid + 1\n        elif nums[mid] > target:\n            right = mid - 1\n        else:\n            right = mid - 1  # 锁定左侧边界\n    \n    # 检查越界及是否找到\n    if left >= len(nums) or nums[left] != target:\n        return -1\n    return left",
+      "explanation": "滑动窗口模板展示了「扩大-收缩」的双指针协作模式，valid 变量用于 O(1) 判断窗口有效性；二分查找模板通过统一处理 `nums[mid] >= target` 时收缩右边界，避免了常见死循环问题。两个模板均强调「循环不变量」的维护，这是面试中代码正确性的关键。"
+    },
+    {
+      "lang": "Python",
+      "code": "# DFS 回溯模板：解决子集、排列、组合问题\nclass BacktrackTemplate:\n    def __init__(self):\n        self.res = []\n        self.track = []\n    \n    def backtrack(self, nums: List[int], start: int):\n        # 前序位置：每个节点都是子集/排列的一个解\n        self.res.append(self.track.copy())\n        \n        for i in range(start, len(nums)):\n            # 剪枝：可在此添加去重或约束条件\n            # if i > start and nums[i] == nums[i-1]: continue  # 去重示例\n            \n            self.track.append(nums[i])  # 做选择\n            self.backtrack(nums, i + 1)   # 进入下一层决策树（子集用 i+1，排列用 0）\n            self.track.pop()              # 撤销选择\n    \n    def subsets(self, nums: List[int]) -> List[List[int]]:\n        self.backtrack(nums, 0)\n        return self.res\n\n# 动态规划模板：以「爬楼梯」为例展示状态转移\ndef climb_stairs(n: int) -> int:\n    # dp[i] 表示爬到第 i 阶的方法数\n    # 状态转移：dp[i] = dp[i-1] + dp[i-2]\n    \n    if n <= 2:\n        return n\n    \n    # 空间优化：只保留前两个状态\n    prev2, prev1 = 1, 2  # dp[i-2], dp[i-1]\n    \n    for i in range(3, n + 1):\n        curr = prev1 + prev2\n        prev2 = prev1\n        prev1 = curr\n    \n    return prev1",
+      "explanation": "回溯模板的核心是「路径 + 选择列表 + 结束条件」的三要素，track 记录当前路径，通过 pop() 实现回溯；DP 模板展示了「状态定义 → 转移方程 → 空间优化」的完整流程，prev2/prev1 的滚动变量是面试中降低空间复杂度的常用技巧。"
+    }
+  ],
+  "common_mistakes": [
+    "滑动窗口中忘记更新 valid 计数或条件判断错误，导致窗口合法性失效",
+    "二分查找边界处理混乱，如 `mid = (left + right) // 2` 在 Python 中不会溢出但仍建议写 `left + (right - left) // 2` 以保证代码通用性",
+    "回溯算法中直接使用 `self.res.append(self.track)` 而非拷贝，导致结果全为空列表",
+    "动态规划初始化时未正确处理 base case，如将 `dp[0]` 设为 0 而非 1 导致后续计算错误",
+    "机械套用模板而不理解原理，遇到变形题（如旋转数组找最小值）时无法调整判断条件"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "## 零钱兑换\n\n给定不同面额的硬币 `coins` 和一个总金额 `amount`。编写一个函数来计算可以凑成总金额所需的最少的硬币个数。如果没有任何一种硬币组合能组成总金额，返回 `-1`。\n\n你可以认为每种硬币的数量是无限的。\n\n### 示例 1\n\n```\n输入：coins = [1, 2, 5], amount = 11\n输出：3\n解释：11 = 5 + 5 + 1\n```\n\n### 示例 2\n\n```\n输入：coins = [2], amount = 3\n输出：-1\n```\n\n### 示例 3\n\n```\n输入：coins = [1], amount = 0\n输出：0\n```\n\n### 约束条件\n- `1 <= coins.length <= 12`\n- `1 <= coins[i] <= 2^31 - 1`\n- `0 <= amount <= 10^4`",
+  "hints": [
+    "提示1：思路方向 - 这是一个典型的求最值问题，考虑使用动态规划，定义 dp[i] 表示凑出金额 i 所需的最少硬币数",
+    "提示2：具体方法 - 对于每个金额 i，遍历所有硬币面额，若硬币面额不超过 i，则 dp[i] = min(dp[i], dp[i - coin] + 1)",
+    "提示3：实现要点 - 初始化时 dp[0] = 0，其余设为 amount + 1（或无穷大）作为无效标记；最后判断 dp[amount] 是否被更新过"
+  ],
+  "solution_outline": "使用动态规划，定义一维数组 dp，其中 dp[i] 表示凑出金额 i 所需的最少硬币数。对于每个金额，尝试用每种硬币去更新最小值。最终 dp[amount] 若未被更新则返回 -1。",
+  "solution_detail": "## 解题思路\n\n这是一个经典的**完全背包问题**的变形。我们需要找到凑出某个金额的最少硬币数。\n\n### 状态定义\n- `dp[i]`：凑出金额 `i` 所需的最少硬币个数\n\n### 状态转移方程\n对于每个金额 `i`，遍历所有硬币面额 `coin`：\n- 如果 `coin <= i`，则 `dp[i] = min(dp[i], dp[i - coin] + 1)`\n\n含义：凑出金额 `i` 的最少硬币数 = min(当前值, 凑出金额 `i-coin` 的最少硬币数 + 1个当前硬币)\n\n### 边界条件\n- `dp[0] = 0`：凑出金额 0 需要 0 个硬币\n- 其余 `dp[i]` 初始化为 `amount + 1`（或一个较大值），表示暂时无法达到\n\n### 代码实现\n\n```python\ndef coinChange(coins: list[int], amount: int) -> int:\n    # dp[i] 表示凑出金额 i 所需的最少硬币数\n    dp = [amount + 1] * (amount + 1)\n    dp[0] = 0  # 凑出金额0需要0个硬币\n    \n    for i in range(1, amount + 1):\n        for coin in coins:\n            if coin <= i:\n                dp[i] = min(dp[i], dp[i - coin] + 1)\n    \n    return dp[amount] if dp[amount] <= amount else -1\n```\n\n### 复杂度分析\n\n- **时间复杂度**：O(amount × n)，其中 n 是硬币种类数。需要对每个金额遍历所有硬币面额。\n- **空间复杂度**：O(amount)，需要一维 dp 数组。\n\n### 优化思考\n\n也可以先遍历硬币再遍历金额（完全背包的标准写法），效果相同：\n\n```python\ndef coinChange(coins: list[int], amount: int) -> int:\n    dp = [amount + 1] * (amount + 1)\n    dp[0] = 0\n    \n    for coin in coins:\n        for i in range(coin, amount + 1):\n            dp[i] = min(dp[i], dp[i - coin] + 1)\n    \n    return dp[amount] if dp[amount] <= amount else -1\n```",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def coinChange(self, coins: List[int], amount: int) -> int:\n        # dp[i] 表示凑出金额 i 所需的最少硬币数\n        # 初始化为 amount + 1，相当于无穷大（因为最多用 amount 个 1 元硬币）\n        dp = [amount + 1] * (amount + 1)\n        dp[0] = 0  # 凑出金额0需要0个硬币\n        \n        # 遍历每个金额\n        for i in range(1, amount + 1):\n            for coin in coins:\n                if coin <= i:\n                    # 尝试用当前硬币更新最小值\n                    dp[i] = min(dp[i], dp[i - coin] + 1)\n        \n        # 如果 dp[amount] 未被更新，说明无法凑出\n        return dp[amount] if dp[amount] <= amount else -1\n\n\n# 测试\nif __name__ == \"__main__\":\n    sol = Solution()\n    \n    # 示例1\n    print(sol.coinChange([1, 2, 5], 11))  # 输出: 3\n    \n    # 示例2\n    print(sol.coinChange([2], 3))  # 输出: -1\n    \n    # 示例3\n    print(sol.coinChange([1], 0))  # 输出: 0"
+    }
+  ],
+  "common_errors": [
+    "初始化 dp 数组时使用 0 或 -1 而不是一个足够大的数，导致 min 比较时出错，无法正确判断某个金额是否可达",
+    "忘记处理 amount = 0 的特殊情况，或者将 dp[0] 初始化为错误的值（如无穷大而非 0）",
+    "返回结果时忘记判断 dp[amount] 是否被更新过，直接返回可能导致错误输出（如本应返回 -1 时返回了初始化的大数）"
+  ],
+  "time_complexity_expected": "O(amount × n)，其中 n 为 coins 的长度",
+  "space_complexity_expected": "O(amount)"
+}

@@ -29,7 +29,7 @@ export async function listConversations(): Promise<Conversation[]> {
   const res = await fetch(`${BASE}/ai/conversations`);
   if (!res.ok) throw new Error("Failed to fetch conversations");
   const data = await res.json();
-  return data ?? [];
+  return data.conversations ?? [];
 }
 
 export async function createConversation(title?: string): Promise<Conversation> {
@@ -60,7 +60,7 @@ export async function getConversationMessages(id: number): Promise<ConversationM
   const res = await fetch(`${BASE}/ai/conversations/${id}/messages`);
   if (!res.ok) throw new Error("Failed to fetch conversation messages");
   const data = await res.json();
-  return data ?? [];
+  return data.messages ?? [];
 }
 
 export async function deleteConversation(id: number): Promise<void> {

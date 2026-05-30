@@ -1,0 +1,23 @@
+{
+  "description": "## 题目描述\n\n小明有一个容量为 `W` 的背包，以及 `n` 件物品。第 `i` 件物品的重量为 `weight[i]`，价值为 `value[i]`。每件物品**只能选择放入背包一次或不放**（即 0-1 背包）。请问在背包容量限制下，能装入物品的最大总价值是多少？\n\n### 输入\n- 第一行：两个整数 `n` 和 `W`，分别表示物品数量和背包容量（`1 ≤ n ≤ 1000`, `1 ≤ W ≤ 10000`）\n- 第二行：`n` 个整数，表示每件物品的重量\n- 第三行：`n` 个整数，表示每件物品的价值\n\n### 输出\n- 一个整数，表示能获得的**最大总价值**\n\n### 示例\n\n**输入**\n```\n4 7\n3 2 4 5\n4 3 5 6\n```\n\n**输出**\n```\n9\n```\n\n**解释**：选择重量为 2 和 5 的物品，总重量为 7，总价值为 3 + 6 = 9。\n\n### 示例 2\n**输入**\n```\n3 50\n10 20 30\n60 100 120\n```\n\n**输出**\n```\n220\n```\n\n**解释**：选择重量为 20 和 30 的物品，总重量为 50，总价值为 100 + 120 = 220。",
+  "hints": [
+    "提示1：思路方向 —— 这是一个经典的动态规划问题，考虑定义 `dp[i][w]` 表示前 `i` 个物品、在背包容量为 `w` 时的最大价值",
+    "提示2：具体方法 —— 对于每个物品，有「选」或「不选」两种选择，状态转移方程为：`dp[i][w] = max(dp[i-1][w], dp[i-1][w-weight[i]] + value[i])`（当 `w >= weight[i]` 时）",
+    "提示3：实现要点 —— 可以使用滚动数组将二维优化为一维，注意一维情况下需要**倒序遍历背包容量**，避免重复选择同一件物品"
+  ],
+  "solution_outline": "使用动态规划，定义 `dp[w]` 表示容量为 `w` 的背包能装下的最大价值。遍历每个物品时，从后往前更新 `dp` 数组，确保每件物品只被选一次。最终 `dp[W]` 即为答案。",
+  "solution_detail": "## 详细解答\n\n### 思路分析\n\n0-1 背包问题的核心在于：**每件物品只有选或不选两种状态**，且不能重复选择。\n\n#### 状态定义\n- `dp[w]`：容量为 `w` 的背包能装下的最大价值\n\n#### 状态转移\n对于第 `i` 件物品（重量 `wi`，价值 `vi`）：\n- **不选**：`dp[w]` 保持不变\n- **选**：需要从容量 `w - wi` 转移过来，即 `dp[w - wi] + vi`\n\n因此：`dp[w] = max(dp[w], dp[w - wi] + vi)`\n\n#### 为什么倒序遍历？\n若正序遍历，当处理 `dp[w]` 时，`dp[w - wi]` 可能已经被当前物品更新过，导致同一件物品被重复选取（变成完全背包）。倒序遍历保证每个状态只被使用一次。\n\n### 代码实现\n\n```python\ndef knapsack_01(n, W, weight, value):\n    # dp[w] 表示容量为 w 的背包能装的最大价值\n    dp = [0] * (W + 1)\n    \n    for i in range(n):\n        # 必须倒序遍历，确保每件物品只选一次\n        for w in range(W, weight[i] - 1, -1):\n            dp[w] = max(dp[w], dp[w - weight[i]] + value[i])\n    \n    return dp[W]\n\n# 读取输入\nn, W = map(int, input().split())\nweight = list(map(int, input().split()))\nvalue = list(map(int, input().split()))\n\nprint(knapsack_01(n, W, weight, value))\n```\n\n### 复杂度分析\n\n| 复杂度 | 说明 |\n|--------|------|\n| **时间复杂度** | `O(n × W)` — 需要遍历 `n` 件物品，每件物品遍历 `W` 个容量 |\n| **空间复杂度** | `O(W)` — 使用一维滚动数组，只需 `W+1` 的空间 |\n\n### 扩展：二维 DP 写法（更易理解）\n\n```python\ndef knapsack_01_2d(n, W, weight, value):\n    # dp[i][w] 表示前 i 个物品，容量为 w 时的最大价值\n    dp = [[0] * (W + 1) for _ in range(n + 1)]\n    \n    for i in range(1, n + 1):\n        for w in range(W + 1):\n            # 不选第 i-1 个物品\n            dp[i][w] = dp[i - 1][w]\n            # 选第 i-1 个物品\n            if w >= weight[i - 1]:\n                dp[i][w] = max(dp[i][w], \n                               dp[i - 1][w - weight[i - 1]] + value[i - 1])\n    \n    return dp[n][W]\n```\n\n二维写法逻辑更清晰，但空间复杂度为 `O(n × W)`。理解后可优化为一维写法。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "def knapsack_01(n, W, weight, value):\n    \"\"\"\n    0-1背包问题 - 一维动态规划\n    \n    参数:\n        n: 物品数量\n        W: 背包容量\n        weight: 每件物品的重量列表\n        value: 每件物品的价值列表\n    返回:\n        最大总价值\n    \"\"\"\n    dp = [0] * (W + 1)\n    \n    for i in range(n):\n        # 倒序遍历：确保每件物品只被选择一次\n        for w in range(W, weight[i] - 1, -1):\n            dp[w] = max(dp[w], dp[w - weight[i]] + value[i])\n    \n    return dp[W]\n\n\n# ========== 测试 ==========\nif __name__ == \"__main__\":\n    # 示例1\n    n, W = 4, 7\n    weight = [3, 2, 4, 5]\n    value = [4, 3, 5, 6]\n    print(knapsack_01(n, W, weight, value))  # 输出: 9\n    \n    # 示例2\n    n, W = 3, 50\n    weight = [10, 20, 30]\n    value = [60, 100, 120]\n    print(knapsack_01(n, W, weight, value))  # 输出: 220"
+    }
+  ],
+  "common_errors": [
+    "正序遍历背包容量：一维 DP 时若正序遍历 `for w in range(weight[i], W + 1)`，会导致同一件物品被重复选取，变成完全背包问题，得到错误答案。",
+    "边界条件处理不当：未正确初始化 `dp` 数组，或背包容量小于物品重量时未做判断，导致数组越界或逻辑错误。",
+    "混淆物品索引：二维实现时 `dp[i]` 对应第 `i` 个物品（从1开始），而 `weight/value` 数组索引从0开始，容易写错为 `dp[i][w] = max(dp[i][w], dp[i-1][w-weight[i]] + value[i])` 导致越界。"
+  ],
+  "time_complexity_expected": "O(n × W)",
+  "space_complexity_expected": "O(W)"
+}

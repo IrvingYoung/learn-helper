@@ -1,0 +1,27 @@
+{
+  "content": "## 贪心算法（Greedy Algorithm）\n\n### 概念定义\n\n贪心算法是一种在每一步选择中都采取**当前状态下最优（即最有利）的选择**，从而希望导致全局最优解的算法思想。其核心特征在于\"贪心\"二字——只关注眼前的局部最优，不回溯、不反悔。\n\n### 核心原理\n\n贪心算法的有效性建立在两个关键性质之上：\n\n1. **贪心选择性质（Greedy Choice Property）**：全局最优解可以通过一系列局部最优选择来达到。即每一步的贪心选择不会导致后续无法得到最优解。\n2. **最优子结构（Optimal Substructure）**：一个问题的最优解包含其子问题的最优解。\n\n**经典区间问题框架**：\n- **区间调度**：选择最多不重叠区间（按结束时间排序）\n- **区间覆盖**：用最少数目区间覆盖目标范围\n- **区间选点**：选择最少数目点使得每个区间都有点被选中\n\n### 证明策略\n\n由于贪心算法容易\"想当然\"，证明其正确性至关重要：\n- **反证法**：假设贪心解不是最优，导出矛盾\n- **替换法**：证明任意最优解都能逐步替换为贪心解而不变差\n- **归纳法**：证明前k步贪心选择都能扩展为最优解\n\n### 应用场景\n\n| 场景 | 代表问题 |\n|------|---------|\n| 资源分配 | 活动选择、任务调度 |\n| 图论 | Dijkstra最短路径、Prim/ Kruskal最小生成树 |\n| 编码优化 | 霍夫曼编码 |\n| 组合优化 | 分数背包、找零问题 |\n\n### 与其他算法的对比\n\n- **vs 动态规划**：贪心只保留当前最优解，DP保留所有子问题解；贪心更快但适用范围窄\n- **vs 回溯/DFS**：贪心不回溯，后者会探索所有可能\n- **vs 分治**：贪心是特殊的分治，子问题间有依赖且只取一个分支",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "def activity_selection(start, finish):\n    \"\"\"\n    经典区间调度：选择最多不重叠的活动\n    贪心策略：每次选择结束时间最早且与已选活动不冲突的活动\n    \"\"\"\n    n = len(start)\n    # 按结束时间排序，同时记录原始索引\n    activities = sorted(zip(start, finish), key=lambda x: x[1])\n    \n    selected = []\n    last_finish = -1  # 上一个选中活动的结束时间\n    \n    for s, f in activities:\n        if s >= last_finish:  # 当前活动开始时间 >= 上一个结束时间\n            selected.append((s, f))\n            last_finish = f\n    \n    return selected\n\n# 示例\nstart = [1, 3, 0, 5, 8, 5]\nfinish = [2, 4, 6, 7, 9, 9]\nprint(activity_selection(start, finish))  # [(1, 2), (3, 4), (5, 7), (8, 9)]",
+      "explanation": "经典活动选择问题。按结束时间排序后，每次选择最早结束且兼容的活动，可证明该策略能得到最大活动数量。时间复杂度O(nlogn)主要来自排序。"
+    },
+    {
+      "lang": "Python",
+      "code": "def interval_cover(points, L):\n    \"\"\"\n    线段覆盖问题：用最少长度为L的区间覆盖所有点\n    贪心策略：每次将区间右端点放在最远的未覆盖点上\n    \"\"\"\n    points.sort()  # 先排序\n    n = len(points)\n    count = 0\n    i = 0\n    \n    while i < n:\n        # 当前区间的右端点\n        cover_end = points[i] + L\n        count += 1\n        # 跳过所有被该区间覆盖的点\n        while i < n and points[i] <= cover_end:\n            i += 1\n    \n    return count\n\n# 示例：用长度5的区间覆盖点\ndef min_intervals(points, L):\n    \"\"\"变体：给定区间长度，求最少区间数\"\"\"\n    points.sort()\n    count = 0\n    i = 0\n    n = len(points)\n    while i < n:\n        # 选择points[i]作为当前区间的左端点\n        # 区间覆盖范围为 [points[i], points[i]+L]\n        right = points[i] + L\n        count += 1\n        # 找到第一个不被覆盖的点\n        while i < n and points[i] <= right:\n            i += 1\n    return count\n\nprint(min_intervals([1, 2, 3, 7, 8, 9], 5))  # 2: [1,6]覆盖1,2,3; [7,12]覆盖7,8,9",
+      "explanation": "区间覆盖问题。排序后，每次贪心地将区间右端点尽可能向右延伸，以覆盖更多点。关键在于证明：将区间右端点对齐到最远的未覆盖点不会比任何其他策略差。"
+    },
+    {
+      "lang": "Python",
+      "code": "def fractional_knapsack(weights, values, capacity):\n    \"\"\"\n    分数背包问题：可以取物品的一部分\n    贪心策略：优先取单位重量价值最高的物品\n    \"\"\"\n    n = len(weights)\n    # 计算单位重量价值，按降序排序\n    items = sorted(enumerate(n), key=lambda i: values[i]/weights[i], reverse=True)\n    # 修正：正确写法\n    items = sorted(range(n), key=lambda i: values[i]/weights[i], reverse=True)\n    \n    total_value = 0.0\n    choices = []  # 记录每个物品的选取比例\n    \n    for i in items:\n        if capacity >= weights[i]:\n            # 全部拿走\n            choices.append((i, 1.0))\n            total_value += values[i]\n            capacity -= weights[i]\n        else:\n            # 只能拿走一部分\n            fraction = capacity / weights[i]\n            choices.append((i, fraction))\n            total_value += values[i] * fraction\n            break  # 背包已满\n    \n    return total_value, choices\n\n# 正确版本\nweights = [10, 20, 30]\nvalues = [60, 100, 120]\ncapacity = 50\n\n# 单位价值: [6, 5, 4]\ndef solve(weights, values, capacity):\n    items = list(range(len(weights)))\n    items.sort(key=lambda i: values[i]/weights[i], reverse=True)\n    \n    total = 0.0\n    for i in items:\n        if capacity <= 0:\n            break\n        take = min(weights[i], capacity)\n        total += values[i] * (take / weights[i])\n        capacity -= take\n    return total\n\nprint(solve(weights, values, capacity))  # 240.0: 全取+全取+取2/3",
+      "explanation": "分数背包是贪心算法的经典成功案例。与0-1背包不同，分数背包具有贪心选择性质，因为物品可分割，不存在\"拿了A就拿不了B\"的冲突。注意0-1背包不能用贪心，必须用动态规划。"
+    }
+  ],
+  "common_mistakes": [
+    "将贪心算法用于不满足贪心选择性质的问题（如0-1背包问题），导致无法得到最优解",
+    "忘记对输入数据进行排序预处理，区间问题中排序顺序错误（如按开始时间而非结束时间排序）",
+    "混淆\"局部最优\"与\"全局最优\"，未严格证明就假设贪心策略正确",
+    "在需要比较浮点数时未处理精度问题，导致排序或比较出现错误",
+    "区间问题中边界条件处理错误，如使用 > 而非 >= 判断区间是否重叠"
+  ]
+}

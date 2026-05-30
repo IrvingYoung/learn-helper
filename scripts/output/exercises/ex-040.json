@@ -1,0 +1,23 @@
+{
+  "description": "# 全排列\n\n给定一个不含重复数字的数组 `nums`，返回其所有可能的全排列。你可以按任意顺序返回答案。\n\n## 示例 1\n\n**输入：** nums = [1, 2, 3]\n**输出：** [[1,2,3], [1,3,2], [2,1,3], [2,3,1], [3,1,2], [3,2,1]]\n\n## 示例 2\n\n**输入：** nums = [0, 1]\n**输出：** [[0,1], [1,0]]\n\n## 示例 3\n\n**输入：** nums = [1]\n**输出：** [[1]]\n\n## 约束条件\n- `1 <= nums.length <= 6`\n- `-10 <= nums[i] <= 10`\n- `nums` 中的所有元素互不相同",
+  "hints": [
+    "提示1：思路方向 - 这是一个典型的枚举所有可能性的问题，考虑使用回溯算法，通过递归构建所有排列",
+    "提示2：具体方法 - 维护一个路径数组记录当前排列，使用一个 visited 数组或交换法来标记哪些数字已经被使用，避免重复选取",
+    "提示3：实现要点 - 当路径长度等于 nums 长度时得到一个完整排列；回溯时需要撤销选择（恢复状态），以便尝试其他分支"
+  ],
+  "solution_outline": "使用回溯算法，通过递归在每个位置尝试所有未使用的数字。维护当前路径和访问标记，当路径填满时加入结果集，回溯时撤销选择继续探索其他可能。",
+  "solution_detail": "## 解题思路\n\n全排列问题是经典的回溯算法应用场景。核心思想是：对于排列的每个位置，依次尝试放入未被使用过的数字，直到填满所有位置即得到一个完整排列。\n\n### 具体步骤\n\n1. **定义状态**：`path` 记录当前已选的数字路径，`visited` 标记每个数字是否已被使用\n2. **递归终止**：当 `path` 长度等于 `nums` 长度时，将当前排列加入结果\n3. **遍历选择**：遍历所有数字，若未访问则标记为已访问，递归下一层，然后回溯（取消标记）\n\n### 代码实现（Python）\n\n```python\nclass Solution:\n    def permute(self, nums: List[int]) -> List[List[int]]:\n        n = len(nums)\n        res = []\n        path = []\n        visited = [False] * n\n        \n        def backtrack():\n            # 终止条件：得到一个完整排列\n            if len(path) == n:\n                res.append(path.copy())\n                return\n            \n            for i in range(n):\n                if not visited[i]:\n                    # 做选择\n                    visited[i] = True\n                    path.append(nums[i])\n                    \n                    # 递归到下一层\n                    backtrack()\n                    \n                    # 撤销选择（回溯）\n                    path.pop()\n                    visited[i] = False\n        \n        backtrack()\n        return res\n```\n\n### 复杂度分析\n\n- **时间复杂度**：`O(n × n!)`。共有 `n!` 个排列，每个排列需要 `O(n)` 时间复制到结果中。\n- **空间复杂度**：`O(n)`。递归栈深度和 `path`、`visited` 的空间，不包括结果存储空间。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def permute(self, nums: List[int]) -> List[List[int]]:\n        n = len(nums)\n        res = []\n        path = []\n        visited = [False] * n\n        \n        def backtrack():\n            if len(path) == n:\n                res.append(path.copy())\n                return\n            \n            for i in range(n):\n                if not visited[i]:\n                    # 做选择\n                    visited[i] = True\n                    path.append(nums[i])\n                    \n                    # 递归\n                    backtrack()\n                    \n                    # 撤销选择\n                    path.pop()\n                    visited[i] = False\n        \n        backtrack()\n        return res"
+    }
+  ],
+  "common_errors": [
+    "忘记回溯：在递归调用后没有撤销选择（如未执行 path.pop() 或恢复 visited 状态），导致路径累积错误，只能得到部分结果或错误结果",
+    "使用 path 引用而非拷贝：将 path 直接 append 到 res 中（res.append(path)），由于 path 是引用类型，后续修改会影响已存入的结果，应使用 path.copy() 或 path[:]",
+    "visited 状态管理错误：在递归前标记 visited[i] = True，但回溯时忘记恢复为 False，导致后续分支无法正常访问该元素"
+  ],
+  "time_complexity_expected": "O(n × n!)",
+  "space_complexity_expected": "O(n)"
+}

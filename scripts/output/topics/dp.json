@@ -1,0 +1,27 @@
+{
+  "content": "# 动态规划（Dynamic Programming, DP）\n\n## 概念定义\n\n动态规划是一种通过**把原问题分解为相对简单的子问题**的方式求解复杂问题的方法。它由理查德·贝尔曼于1950年代发明，核心思想是**存储子问题的解以避免重复计算**，从而将指数级复杂度优化为多项式级。\n\n## 核心原理\n\n动态规划的有效性建立在两个关键性质上：\n\n- **最优子结构**：问题的最优解包含其子问题的最优解。例如，最短路径问题中，A→C的最短路径若经过B，则A→B和B→C也必须是最短路径。\n- **重叠子问题**：递归求解过程中，相同的子问题被多次计算。动态规划通过**备忘录（Memoization）**或**自底向上填表**来消除冗余计算。\n\n实现方式分为两类：\n1. **自顶向下（记忆化搜索）**：递归 + 哈希表存储\n2. **自底向上（迭代填表）**：按顺序计算并存储所有子问题解\n\n## 应用场景\n\n- 资源分配与背包问题\n- 字符串编辑距离、最长公共子序列\n- 图论中的最短路径（Floyd-Warshall）\n- 生物信息学中的序列比对\n\n## 与其他算法的对比\n\n| 特性 | 动态规划 | 分治法 | 贪心算法 |\n|------|---------|--------|---------|\n| 子问题重叠 | 存在重叠 | 互不重叠 | 无要求 |\n| 最优性保证 | 全局最优 | 全局最优 | 局部最优，不一定全局最优 |\n| 典型代表 | 斐波那契、背包 | 归并排序、快速排序 | Dijkstra、霍夫曼编码 |\n\n动态规划与贪心算法的本质区别在于：DP保存所有可能的状态转移，而贪心每步只做当前最优选择。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "# 示例1：自顶向下记忆化搜索 —— 斐波那契数列\nfrom functools import lru_cache\n\n@lru_cache(maxsize=None)  # 自动备忘录装饰器\ndef fib(n):\n    if n <= 1:\n        return n\n    return fib(n - 1) + fib(n - 2)\n\n# 手动实现备忘录版本\ndef fib_memo(n, memo=None):\n    if memo is None:\n        memo = {}\n    if n in memo:\n        return memo[n]\n    if n <= 1:\n        return n\n    memo[n] = fib_memo(n - 1, memo) + fib_memo(n - 2, memo)\n    return memo[n]\n\n# 时间复杂度: O(n), 空间复杂度: O(n)\nprint(fib_memo(50))  # 12586269025",
+      "explanation": "展示了记忆化搜索的核心模式：递归前先查表，计算后存储结果。lru_cache是Python内置的备忘录实现。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 示例2：自底向上填表 —— 0/1背包问题\n# 问题：在容量为W的背包中装入价值最大的物品\n\ndef knapsack(weights, values, W):\n    n = len(weights)\n    # dp[i][w] 表示前i个物品，容量为w时的最大价值\n    dp = [[0] * (W + 1) for _ in range(n + 1)]\n    \n    for i in range(1, n + 1):\n        for w in range(W + 1):\n            # 不选第i个物品\n            dp[i][w] = dp[i - 1][w]\n            # 选第i个物品（能装下时）\n            if w >= weights[i - 1]:\n                dp[i][w] = max(dp[i][w], \n                               dp[i - 1][w - weights[i - 1]] + values[i - 1])\n    \n    return dp[n][W]\n\n# 空间优化版本：一维数组\ndef knapsack_optimized(weights, values, W):\n    dp = [0] * (W + 1)\n    for w, v in zip(weights, values):\n        # 必须倒序遍历，防止重复选择\n        for j in range(W, w - 1, -1):\n            dp[j] = max(dp[j], dp[j - w] + v)\n    return dp[W]\n\nweights = [2, 3, 4, 5]\nvalues = [3, 4, 5, 6]\nprint(knapsack(weights, values, 8))  # 输出: 10\nprint(knapsack_optimized(weights, values, 8))  # 输出: 10",
+      "explanation": "经典0/1背包展示了状态转移方程的设计：dp[i][w] = max(不选, 选)。空间优化技巧中，倒序遍历是保证每个物品只选一次的关键。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 示例3：状态转移 —— 最长公共子序列(LCS)\ndef lcs(s1, s2):\n    m, n = len(s1), len(s2)\n    # dp[i][j] 表示 s1[0:i] 和 s2[0:j] 的LCS长度\n    dp = [[0] * (n + 1) for _ in range(m + 1)]\n    \n    for i in range(1, m + 1):\n        for j in range(1, n + 1):\n            if s1[i - 1] == s2[j - 1]:\n                # 字符匹配：LCS长度+1\n                dp[i][j] = dp[i - 1][j - 1] + 1\n            else:\n                # 字符不匹配：取较大值\n                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])\n    \n    # 回溯构造LCS（可选）\n    def reconstruct(i, j):\n        if i == 0 or j == 0:\n            return \"\"\n        if s1[i - 1] == s2[j - 1]:\n            return reconstruct(i - 1, j - 1) + s1[i - 1]\n        if dp[i - 1][j] > dp[i][j - 1]:\n            return reconstruct(i - 1, j)\n        return reconstruct(i, j - 1)\n    \n    return dp[m][n], reconstruct(m, n)\n\nprint(lcs(\"ABCBDAB\", \"BDCABA\"))  # 输出: (4, 'BCBA')",
+      "explanation": "LCS展示了二维状态转移的设计：匹配时对角线+1，不匹配时取上方或左方的最大值。同时包含结果回溯的完整实现。"
+    }
+  ],
+  "common_mistakes": [
+    "将递归写成自顶向下却忘记备忘录，导致时间复杂度仍为指数级",
+    "自底向上填表时遍历顺序错误，如0/1背包正序遍历导致物品被重复选取",
+    "状态定义不清晰，导致转移方程无法正确推导或边界条件设置错误",
+    "空间优化时过早压缩维度，使得调试困难且难以回溯具体方案",
+    "能用贪心却误用动态规划，或该用DP时错误使用贪心导致无法得到最优解"
+  ]
+}

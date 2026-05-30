@@ -1,0 +1,23 @@
+{
+  "description": "## 最大子数组和\n\n给定一个整数数组 `nums`，找到一个具有最大和的**连续**子数组（子数组最少包含一个元素），返回其最大和。\n\n### 示例 1\n```\n输入：nums = [-2,1,-3,4,-1,2,1,-5,4]\n输出：6\n解释：连续子数组 [4,-1,2,1] 的和最大，为 6。\n```\n\n### 示例 2\n```\n输入：nums = [1]\n输出：1\n```\n\n### 示例 3\n```\n输入：nums = [5,4,-1,7,8]\n输出：23\n解释：整个数组的和最大，为 23。\n```\n\n### 约束条件\n- `1 <= nums.length <= 10^5`\n- `-10^4 <= nums[i] <= 10^4`\n\n**进阶**：尝试使用**分治算法**解决此题。",
+  "hints": [
+    "提示1：思路方向 - 考虑如何将数组分成左右两部分，最大子数组和可能出现在左半部分、右半部分，或者跨越中间点",
+    "提示2：具体方法 - 分治的核心是：左子数组的最大和、右子数组的最大和，以及跨越中点的最大和（从中点向左最大前缀和 + 从中点向右最大后缀和）",
+    "提示3：实现要点 - 递归终止条件是只有一个元素；合并时需要计算包含中点的最大子数组和，即左半部分的后缀最大值加上右半部分的前缀最大值"
+  ],
+  "solution_outline": "使用分治策略，将数组递归分成左右两半，分别求解左半部分的最大子数组和、右半部分的最大子数组和，以及跨越中间点的最大子数组和。最终结果为三者中的最大值。",
+  "solution_detail": "## 详细解答\n\n### 分治思路\n\n最大子数组和的位置有三种情况：\n1. **完全在左半部分**：递归求解\n2. **完全在右半部分**：递归求解  \n3. **跨越中点**：从中点向左的最大后缀和 + 从中点向右的最大前缀和\n\n### 算法步骤\n\n1. 找到数组中点 `mid`\n2. 递归计算左半部分 `[left, mid]` 的最大子数组和\n3. 递归计算右半部分 `[mid+1, right]` 的最大子数组和\n4. **关键步骤**：计算跨越中点的最大子数组和\n   - 从 `mid` 向左遍历，找最大后缀和\n   - 从 `mid+1` 向右遍历，找最大前缀和\n   - 两者相加即为跨越中点的最大和\n5. 返回三者中的最大值\n\n### 代码实现\n\n```python\ndef maxSubArray(nums) -> int:\n    def divide_conquer(left, right):\n        # 递归终止：只有一个元素\n        if left == right:\n            return nums[left]\n        \n        mid = (left + right) // 2\n        \n        # 1. 左半部分的最大子数组和\n        left_max = divide_conquer(left, mid)\n        \n        # 2. 右半部分的最大子数组和\n        right_max = divide_conquer(mid + 1, right)\n        \n        # 3. 跨越中点的最大子数组和\n        # 从中点向左的最大后缀和\n        left_suffix = float('-inf')\n        temp_sum = 0\n        for i in range(mid, left - 1, -1):\n            temp_sum += nums[i]\n            left_suffix = max(left_suffix, temp_sum)\n        \n        # 从中点向右的最大前缀和\n        right_prefix = float('-inf')\n        temp_sum = 0\n        for i in range(mid + 1, right + 1):\n            temp_sum += nums[i]\n            right_prefix = max(right_prefix, temp_sum)\n        \n        cross_max = left_suffix + right_prefix\n        \n        return max(left_max, right_max, cross_max)\n    \n    return divide_conquer(0, len(nums) - 1)\n```\n\n### 复杂度分析\n\n- **时间复杂度**：$O(n \\log n)$\n  - 递归深度为 $\\log n$\n  - 每层需要 $O(n)$ 时间计算跨越中点的最大和\n  \n- **空间复杂度**：$O(\\log n)$\n  - 递归栈的深度为 $\\log n$\n\n### 对比：动态规划解法（Kadane算法）\n\n```python\ndef maxSubArray_dp(nums) -> int:\n    max_sum = cur_sum = nums[0]\n    for i in range(1, len(nums)):\n        cur_sum = max(nums[i], cur_sum + nums[i])\n        max_sum = max(max_sum, cur_sum)\n    return max_sum\n```\n- 时间 $O(n)$，空间 $O(1)$ —— 更优，但不符合本题分治要求",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "def maxSubArray(nums) -> int:\n    \"\"\"\n    分治法求解最大子数组和\n    \"\"\"\n    def divide_conquer(left, right):\n        # 递归终止：只有一个元素\n        if left == right:\n            return nums[left]\n        \n        mid = (left + right) // 2\n        \n        # 递归求解左右两部分\n        left_max = divide_conquer(left, mid)\n        right_max = divide_conquer(mid + 1, right)\n        \n        # 计算跨越中点的最大子数组和\n        # 从中点向左的最大后缀和\n        left_suffix = float('-inf')\n        temp_sum = 0\n        for i in range(mid, left - 1, -1):\n            temp_sum += nums[i]\n            left_suffix = max(left_suffix, temp_sum)\n        \n        # 从中点向右的最大前缀和\n        right_prefix = float('-inf')\n        temp_sum = 0\n        for i in range(mid + 1, right + 1):\n            temp_sum += nums[i]\n            right_prefix = max(right_prefix, temp_sum)\n        \n        cross_max = left_suffix + right_prefix\n        \n        return max(left_max, right_max, cross_max)\n    \n    return divide_conquer(0, len(nums) - 1)\n\n\n# 测试\nif __name__ == \"__main__\":\n    nums1 = [-2, 1, -3, 4, -1, 2, 1, -5, 4]\n    print(maxSubArray(nums1))  # 输出: 6\n    \n    nums2 = [1]\n    print(maxSubArray(nums2))  # 输出: 1\n    \n    nums3 = [5, 4, -1, 7, 8]\n    print(maxSubArray(nums3))  # 输出: 23"
+    }
+  ],
+  "common_errors": [
+    "常见错误1：计算跨越中点的最大和时，只比较了单个元素而没有累加，导致错误。例如只取 nums[mid] + nums[mid+1]，而没有分别向左和向右扩展求最大后缀/前缀和",
+    "常见错误2：递归终止条件处理错误，如使用 left > right 作为终止条件但没有正确返回，或者数组为空时没有处理边界情况",
+    "常见错误3：混淆了分治和贪心的思路，在递归内部试图用全局变量或额外参数传递信息，使问题复杂化。分治应保持子问题独立性，只返回子数组的最大和"
+  ],
+  "time_complexity_expected": "O(n log n)",
+  "space_complexity_expected": "O(log n)"
+}

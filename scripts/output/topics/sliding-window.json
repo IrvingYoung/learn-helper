@@ -1,0 +1,27 @@
+{
+  "content": "## 滑动窗口（Sliding Window）\n\n### 概念定义\n\n滑动窗口是一种基于双指针的高效遍历技术，通过维护一个**可变或固定大小的连续区间**（即\"窗口\"），在数组或字符串上移动，将嵌套循环的 $O(n^2)$ 问题优化至 $O(n)$。窗口由左右两个指针界定：`left` 和 `right`，随着遍历动态调整边界。\n\n### 核心原理\n\n滑动窗口的本质是**利用问题的连续性特征**，避免重复计算。其核心操作包含四个步骤：\n\n1. **窗口扩展**：移动 `right` 指针，将新元素纳入窗口，更新窗口状态（如统计字符频率、求和等）。\n2. **条件判断**：检查当前窗口是否满足题目约束条件。\n3. **窗口收缩**：当窗口违反约束时，移动 `left` 指针，剔除左侧元素，直至重新满足条件。\n4. **最值更新**：在窗口有效时，记录最优解（如最大/最小长度、最大和等）。\n\n> **关键洞见**：窗口的收缩具有**单调性**——`left` 和 `right` 均只增不减，因此整体时间复杂度为线性。\n\n### 应用场景\n\n| 类型 | 典型问题 |\n|------|---------|\n| 固定窗口大小 | 子数组最大平均数、长度为 K 的最大和 |\n| 可变窗口大小 | 无重复字符的最长子串、最小覆盖子串 |\n| 多指针协同 | 水果成篮、替换后的最长重复字符 |\n\n### 与其他算法的对比\n\n- ** vs 暴力枚举**：暴力需枚举所有子区间 $O(n^2)$，滑动窗口利用单调性降至 $O(n)$。\n- ** vs 前缀和**：前缀和解决\"静态区间查询\"，滑动窗口解决\"动态边界调整\"。\n- ** vs 单调队列/栈**：单调队列维护的是\"最值\"，滑动窗口维护的是\"可行性\"；两者常结合使用（如滑动窗口最大值）。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "# 示例1：可变窗口——无重复字符的最长子串\n# 思路：右指针扩展窗口，遇到重复字符时收缩左边界\n\ndef length_of_longest_substring(s: str) -> int:\n    char_set = set()          # 维护窗口内字符集合\n    left = 0\n    max_len = 0\n    \n    for right in range(len(s)):\n        # 窗口扩展：加入 s[right]\n        while s[right] in char_set:\n            char_set.remove(s[left])  # 窗口收缩：剔除左侧字符\n            left += 1\n        char_set.add(s[right])\n        \n        # 更新最值\n        max_len = max(max_len, right - left + 1)\n    \n    return max_len\n\n# 时间复杂度: O(n)，每个字符最多被加入和移除各一次\n# 空间复杂度: O(min(m, n))，m 为字符集大小",
+      "explanation": "经典的可变窗口模板。通过哈希集合快速判断重复，右指针线性遍历，左指针仅在必要时收缩，保证每个元素最多被访问两次。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 示例2：固定窗口——子数组最大平均数 I\n# 思路：先计算首个窗口的和，再逐次滑动更新\n\ndef find_max_average(nums: list[int], k: int) -> float:\n    # 初始窗口 [0, k-1]\n    window_sum = sum(nums[:k])\n    max_sum = window_sum\n    \n    for right in range(k, len(nums)):\n        # 滑动：右侧进入，左侧移出\n        window_sum += nums[right] - nums[right - k]\n        max_sum = max(max_sum, window_sum)\n    \n    return max_sum / k\n\n# 优化点：无需双指针同时维护，利用窗口大小固定的特性，\n# 直接通过索引差计算移出元素，避免使用队列或额外集合",
+      "explanation": "固定窗口的简化写法。由于窗口大小不变，只需用一个变量维护窗口和，通过加减操作实现 O(1) 滑动，空间复杂度降至 O(1)。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 示例3：复杂约束——最小覆盖子串（LeetCode 76）\n# 思路：双哈希表 + 有效字符计数，实现精准窗口控制\n\nfrom collections import Counter\n\ndef min_window(s: str, t: str) -> str:\n    need = Counter(t)      # 目标字符需求\n    window = Counter()      # 当前窗口字符统计\n    left = 0\n    valid = 0               # 窗口中满足 need 条件的字符种类数\n    start, min_len = 0, float('inf')\n    \n    for right, ch in enumerate(s):\n        if ch in need:\n            window[ch] += 1\n            if window[ch] == need[ch]:   # 某字符刚好满足需求\n                valid += 1\n        \n        # 窗口收缩条件：所有字符种类均满足\n        while valid == len(need):\n            # 更新最小窗口\n            if right - left + 1 < min_len:\n                start, min_len = left, right - left + 1\n            \n            # 左指针收缩\n            left_ch = s[left]\n            if left_ch in need:\n                if window[left_ch] == need[left_ch]:\n                    valid -= 1\n                window[left_ch] -= 1\n            left += 1\n    \n    return s[start: start + min_len] if min_len != float('inf') else \"\"\n\n# 核心技巧：valid 变量避免每次比较整个哈希表，将判断复杂度从 O(m) 降至 O(1)",
+      "explanation": "复杂滑动窗口的完整模板，展示了如何处理\"覆盖型\"约束。通过 valid 计数器优化判断效率，是面试高频考点。"
+    }
+  ],
+  "common_mistakes": [
+    "窗口收缩时使用 `while` 还是 `if` 混淆：需多次收缩时用 `while`，仅判断一次时用 `if`；误用会导致边界处理错误。",
+    "更新最值的时机放错位置：应在收缩完成后、窗口有效时更新，而非每次循环末尾，否则可能记录到无效窗口。",
+    "忽略字符/元素的重复次数：使用集合（set）而非计数器（Counter/Counter）处理有重复需求的场景。",
+    "固定窗口忘记处理边界：数组长度小于 k 时未提前返回，或初始窗口计算越界。",
+    "多条件约束时遗漏 valid 的同步更新：修改 window 后未同步调整 valid，导致窗口状态判断失效。"
+  ]
+}

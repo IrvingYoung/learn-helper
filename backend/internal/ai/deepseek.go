@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,96 +9,52 @@ import (
 	"net/http"
 )
 
-// DeepSeek API types
-type deepseekMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type deepseekRequest struct {
-	Model       string            `json:"model"`
-	Messages    []deepseekMessage `json:"messages"`
-	MaxTokens   int               `json:"max_tokens,omitempty"`
-	Stream      bool              `json:"stream"`
-	Temperature float64           `json:"temperature,omitempty"`
-}
-
-type deepseekResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int    `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index        int `json:"index"`
-		Message      struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-type deepseekStreamChoice struct {
-	Index        int `json:"index"`
-	Delta        struct {
-		Content string `json:"content"`
-	} `json:"delta"`
-	FinishReason string `json:"finish_reason"`
-}
-
-type deepseekStreamResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int    `json:"created"`
-	Model   string `json:"model"`
-	Choices []deepseekStreamChoice `json:"choices"`
-}
-
-// DeepSeekProvider implements AIProvider for DeepSeek API
 type DeepSeekProvider struct {
 	apiKey string
 	model  string
 }
 
-// NewDeepSeekProvider creates a new DeepSeek provider
 func NewDeepSeekProvider(apiKey, model string) *DeepSeekProvider {
 	if model == "" {
-		model = "deepseek-v4-flash"
+		model = "deepseek-chat"
 	}
 	return &DeepSeekProvider{apiKey: apiKey, model: model}
 }
 
-// Chat implements AIProvider.Chat for DeepSeek
 func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	model := req.Model
 	if model == "" {
 		model = p.model
 	}
 
-	messages := make([]deepseekMessage, 0, len(req.Messages)+1)
-	if req.SystemPrompt != "" {
-		messages = append(messages, deepseekMessage{Role: "system", Content: req.SystemPrompt})
-	}
+	messages := make([]deepseekMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		messages = append(messages, deepseekMessage{Role: m.Role, Content: m.Content})
 	}
 
-	deepseekReq := deepseekRequest{
-		Model:    model,
-		Messages: messages,
-		Stream:   false,
+	dsReq := deepseekRequest{
+		Model:       model,
+		Messages:    messages,
+		Stream:      false,
+		MaxTokens:   req.MaxTokens,
+		Temperature: 0.7,
 	}
 
-	if req.MaxTokens > 0 {
-		deepseekReq.MaxTokens = req.MaxTokens
+	if len(req.Tools) > 0 {
+		dsReq.Tools = make([]deepseekTool, len(req.Tools))
+		for i, t := range req.Tools {
+			dsReq.Tools[i] = deepseekTool{
+				Type: "function",
+				Function: deepseekFunctionDef{
+					Name:        t.Name,
+					Description: t.Description,
+					Parameters:  t.InputSchema,
+				},
+			}
+		}
 	}
 
-	jsonData, err := json.Marshal(deepseekReq)
+	jsonData, err := json.Marshal(dsReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -126,7 +81,16 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 		return nil, fmt.Errorf("DeepSeek API error: %s", string(body))
 	}
 
-	var dsResp deepseekResponse
+	var dsResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage struct {
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+	}
 	if err := json.Unmarshal(body, &dsResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -142,32 +106,40 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 	}, nil
 }
 
-// StreamChat implements AIProvider.StreamChat for DeepSeek
 func (p *DeepSeekProvider) StreamChat(ctx context.Context, req ChatRequest) (<-chan ChatChunk, error) {
 	model := req.Model
 	if model == "" {
 		model = p.model
 	}
 
-	messages := make([]deepseekMessage, 0, len(req.Messages)+1)
-	if req.SystemPrompt != "" {
-		messages = append(messages, deepseekMessage{Role: "system", Content: req.SystemPrompt})
-	}
+	messages := make([]deepseekMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		messages = append(messages, deepseekMessage{Role: m.Role, Content: m.Content})
 	}
 
-	deepseekReq := deepseekRequest{
-		Model:    model,
-		Messages: messages,
-		Stream:   true,
+	dsReq := deepseekRequest{
+		Model:       model,
+		Messages:    messages,
+		Stream:      true,
+		MaxTokens:   req.MaxTokens,
+		Temperature: 0.7,
 	}
 
-	if req.MaxTokens > 0 {
-		deepseekReq.MaxTokens = req.MaxTokens
+	if len(req.Tools) > 0 {
+		dsReq.Tools = make([]deepseekTool, len(req.Tools))
+		for i, t := range req.Tools {
+			dsReq.Tools[i] = deepseekTool{
+				Type: "function",
+				Function: deepseekFunctionDef{
+					Name:        t.Name,
+					Description: t.Description,
+					Parameters:  t.InputSchema,
+				},
+			}
+		}
 	}
 
-	jsonData, err := json.Marshal(deepseekReq)
+	jsonData, err := json.Marshal(dsReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -191,51 +163,16 @@ func (p *DeepSeekProvider) StreamChat(ctx context.Context, req ChatRequest) (<-c
 	}
 
 	ch := make(chan ChatChunk, 100)
-	go p.parseStreamResponse(resp.Body, ch)
+	go func() {
+		defer close(ch)
+		ParseDeepSeekSSE(resp.Body, func(chunk ChatChunk) {
+			ch <- chunk
+		})
+	}()
+
 	return ch, nil
 }
 
-func (p *DeepSeekProvider) parseStreamResponse(body io.Reader, ch chan<- ChatChunk) {
-	defer close(ch)
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 1024), 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if len(line) < 6 {
-			continue
-		}
-
-		if line[:6] != "data: " {
-			continue
-		}
-
-		data := line[6:]
-		if data == "[DONE]" {
-			ch <- ChatChunk{Done: true}
-			return
-		}
-
-		var streamResp deepseekStreamResponse
-		if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-			continue
-		}
-
-		if len(streamResp.Choices) > 0 {
-			content := streamResp.Choices[0].Delta.Content
-			if content != "" {
-				ch <- ChatChunk{Content: content, Done: false}
-			}
-
-			if streamResp.Choices[0].FinishReason != "" {
-				ch <- ChatChunk{Done: true}
-				return
-			}
-		}
-	}
-}
-
-// GetModel returns the current model name
 func (p *DeepSeekProvider) GetModel() string {
 	return p.model
 }

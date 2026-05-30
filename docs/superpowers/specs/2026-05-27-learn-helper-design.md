@@ -232,7 +232,7 @@ type ChatRequest struct {
 | 状态管理 | React Context + SWR | 单用户应用，不需要复杂状态管理 |
 | 后端 | Go 1.22+ + Chi router | 轻量、高性能 |
 | 数据库访问 | sqlc | 类型安全、Go 代码生成 |
-| 数据库 | SQLite (go-sqlite3) | 单用户零运维 |
+| 数据库 | SQLite (modernc.org/sqlite) | 单用户零运维 |
 | AI 接口 | Go provider 抽象 + 各 SDK | Claude 用 anthropic-sdk-go，OpenAI 用 go-openai |
 | 前后端通信 | REST + SSE | 简单直接 |
 

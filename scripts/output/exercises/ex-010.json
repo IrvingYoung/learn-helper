@@ -1,0 +1,23 @@
+{
+  "description": "## 每日温度\n\n给定一个数组 `temperatures` ，表示每天的温度，请计算在每一天之后，需要等待多少天才能遇到更高的温度。如果之后都不会有更高的温度，则用 `0` 代替。\n\n### 示例\n\n**输入：**\n```\ntemperatures = [73, 74, 75, 71, 69, 72, 76, 73]\n```\n\n**输出：**\n```\n[1, 1, 4, 2, 1, 1, 0, 0]\n```\n\n### 解释\n- 第 0 天温度 73，第 1 天温度 74（更高），所以等待 1 天\n- 第 1 天温度 74，第 2 天温度 75（更高），所以等待 1 天\n- 第 2 天温度 75，直到第 6 天温度 76（更高），所以等待 4 天\n- 第 6 天和第 7 天之后都没有更高的温度，所以结果为 0\n\n### 约束\n- `1 <= temperatures.length <= 10^5`\n- `30 <= temperatures[i] <= 100`",
+  "hints": [
+    "提示1：对于每一天，需要找到右边第一个比它大的元素，暴力解法是O(n²)，考虑如何优化",
+    "提示2：使用单调栈来维护一个递减的温度序列，栈中存储的是元素的索引",
+    "提示3：遍历数组时，当前元素大于栈顶元素对应的温度时，说明找到了栈顶元素的'下一个更大元素'，此时计算天数差并出栈"
+  ],
+  "solution_outline": "使用单调递减栈，栈中存储数组下标。遍历温度数组时，若当前温度大于栈顶对应温度，则栈顶元素的'下一个更大元素'就是当前元素，计算天数差并弹出栈顶；重复此过程直到栈为空或当前温度不大于栈顶温度，然后将当前索引入栈。",
+  "solution_detail": "## 解题思路\n\n本题是**单调栈**的经典应用场景：寻找每个元素右边第一个比它大的元素。\n\n### 核心思想\n- 维护一个**单调递减栈**（从栈底到栈顶温度递减），栈中存储的是**数组下标**\n- 遍历每一天的温度时：\n  - 若当前温度 > 栈顶温度：说明找到了栈顶元素的\"下一个更大元素\"，计算天数差，弹出栈顶\n  - 若当前温度 ≤ 栈顶温度：无法确定，将当前索引入栈\n\n### 为什么用栈？\n因为我们要找的是**右边第一个更大的元素**，栈的LIFO特性正好可以帮我们\"回溯\"那些还没找到更大元素的日期。\n\n### 示例模拟\n对于 `[73, 74, 75, 71, 69, 72, 76, 73]`：\n- i=0, 温度73，栈空，入栈 → 栈: [0]\n- i=1, 温度74 > 73(栈顶)，弹出0，result[0]=1-0=1，入栈1 → 栈: [1]\n- i=2, 温度75 > 74(栈顶)，弹出1，result[1]=2-1=1，入栈2 → 栈: [2]\n- i=3, 温度71 < 75，入栈 → 栈: [2,3]\n- i=4, 温度69 < 71，入栈 → 栈: [2,3,4]\n- i=5, 温度72 > 69，弹出4，result[4]=5-4=1；72 > 71，弹出3，result[3]=5-3=2；72 < 75，入栈5 → 栈: [2,5]\n- ...以此类推\n\n## 代码实现\n\n```python\ndef dailyTemperatures(temperatures):\n    n = len(temperatures)\n    result = [0] * n  # 默认为0，表示之后没有更高的温度\n    stack = []  # 单调递减栈，存储索引\n    \n    for i in range(n):\n        # 当前温度大于栈顶温度，说明找到了\"下一个更大元素\"\n        while stack and temperatures[i] > temperatures[stack[-1]]:\n            prev_idx = stack.pop()\n            result[prev_idx] = i - prev_idx  # 计算天数差\n        \n        stack.append(i)\n    \n    return result\n```\n\n## 复杂度分析\n\n- **时间复杂度**：O(n)，每个元素最多入栈和出栈各一次\n- **空间复杂度**：O(n)，栈的空间",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "def dailyTemperatures(temperatures):\n    n = len(temperatures)\n    result = [0] * n\n    stack = []  # 存储索引的单调递减栈\n    \n    for i in range(n):\n        while stack and temperatures[i] > temperatures[stack[-1]]:\n            prev_idx = stack.pop()\n            result[prev_idx] = i - prev_idx\n        stack.append(i)\n    \n    return result\n\n# 测试\ntemperatures = [73, 74, 75, 71, 69, 72, 76, 73]\nprint(dailyTemperatures(temperatures))  # [1, 1, 4, 2, 1, 1, 0, 0]"
+    }
+  ],
+  "common_errors": [
+    "栈中存储值而非索引：导致无法计算天数差，应该存储索引，通过 temperatures[idx] 获取温度值",
+    "使用 >= 而非 > 进行比较：题目要求'更高'的温度，等于时不应弹出，必须用 > 而不是 >=",
+    "忘记给结果数组初始化默认值0：如果某天之后没有更高温度，结果应保持为0"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(n)"
+}

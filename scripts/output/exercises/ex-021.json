@@ -1,0 +1,23 @@
+{
+  "description": "# BST中第K小的元素\n\n给定一棵二叉搜索树（BST）的根节点 `root` 和一个整数 `k`，请你找出其中第 `k` 小的元素（`1 ≤ k ≤ BST中元素个数`）。\n\n## 示例 1\n\n```\n输入：root = [3,1,4,null,2], k = 1\n输出：1\n```\n\n## 示例 2\n\n```\n输入：root = [5,3,6,2,4,null,null,1], k = 3\n输出：3\n```\n\n## 说明\n- 节点值的范围是 `[1, 10^4]`\n- `1 ≤ k ≤ BST中元素个数`\n- 你可以假设 `k` 总是有效的\n\n## 进阶\n如果二叉搜索树经常被修改（插入/删除操作）并且你需要频繁地查找第 `k` 小的值，你将如何优化算法？",
+  "hints": [
+    "提示1：利用二叉搜索树的性质——中序遍历结果为升序序列",
+    "提示2：进行中序遍历时计数，当计数等于k时即为所求元素，无需遍历完整棵树",
+    "提示3：可以使用迭代方式实现中序遍历，用栈来模拟递归过程，便于提前终止"
+  ],
+  "solution_outline": "利用BST中序遍历升序的特性，进行中序遍历并计数，当访问到第k个节点时即为答案。迭代实现可以在找到答案后立即停止，避免不必要的遍历。",
+  "solution_detail": "# 解题思路\n\n## 方法一：中序遍历（递归）\n\n二叉搜索树的中序遍历结果是升序排列的。因此，第 `k` 小的元素就是中序遍历序列中的第 `k` 个元素。\n\n```python\nclass Solution:\n    def kthSmallest(self, root: Optional[TreeNode], k: int) -> int:\n        def inorder(node):\n            if not node:\n                return []\n            return inorder(node.left) + [node.val] + inorder(node.right)\n        \n        return inorder(root)[k - 1]\n```\n\n但这种方法需要遍历完整棵树，空间复杂度较高。\n\n## 方法二：中序遍历（迭代，提前终止）⭐推荐\n\n使用栈模拟中序遍历，可以在找到第 `k` 个元素时立即返回，无需遍历完整棵树。\n\n```python\nclass Solution:\n    def kthSmallest(self, root: Optional[TreeNode], k: int) -> int:\n        stack = []\n        curr = root\n        \n        while curr or stack:\n            # 走到最左边\n            while curr:\n                stack.append(curr)\n                curr = curr.left\n            \n            # 访问节点\n            curr = stack.pop()\n            k -= 1\n            if k == 0:\n                return curr.val\n            \n            # 转向右子树\n            curr = curr.right\n```\n\n## 复杂度分析\n\n- **时间复杂度**：$O(H + k)$，其中 $H$ 是树的高度。最坏情况下（斜树）为 $O(k)$，平均情况下为 $O(\\log n + k)$\n- **空间复杂度**：$O(H)$，栈的最大深度为树的高度\n\n## 进阶优化（频繁查询场景）\n\n如果BST频繁修改且需要频繁查询第k小，可以给每个节点增加一个 `count` 字段记录以该节点为根的子树的节点总数，这样可以在 $O(H)$ 时间内完成查询和更新。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "# Definition for a binary tree node.\n# class TreeNode:\n#     def __init__(self, val=0, left=None, right=None):\n#         self.val = val\n#         self.left = left\n#         self.right = right\n\nclass Solution:\n    def kthSmallest(self, root: Optional[TreeNode], k: int) -> int:\n        stack = []\n        curr = root\n        \n        while curr or stack:\n            # 将所有左节点入栈\n            while curr:\n                stack.append(curr)\n                curr = curr.left\n            \n            # 处理当前节点\n            curr = stack.pop()\n            k -= 1\n            if k == 0:\n                return curr.val\n            \n            # 转向右子树\n            curr = curr.right\n        \n        return -1  # 不会执行到这里，因为k是有效的"
+    }
+  ],
+  "common_errors": [
+    "忘记处理k的递减：访问节点后忘记执行 `k -= 1`，导致无法正确计数",
+    "返回条件错误：在 `k == 0` 时返回，但忘记是在弹出栈顶节点、递减k之后判断，而不是在递减之前",
+    "循环条件写错：使用 `while curr` 而忽略 `stack`，导致栈中还有元素但curr为None时提前退出循环"
+  ],
+  "time_complexity_expected": "O(H + k)，其中H为树的高度，最坏情况下O(n)",
+  "space_complexity_expected": "O(H)，递归栈或显式栈的空间"
+}

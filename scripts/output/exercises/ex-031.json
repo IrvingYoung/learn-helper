@@ -1,0 +1,23 @@
+{
+  "description": "## 题目描述\n\n给定整数数组 `nums` 和整数 `k`，请返回数组中第 `k` 个最大的元素。\n\n请注意，你需要找的是数组排序后的第 `k` 个最大的元素，而不是第 `k` 个不同的元素。\n\n你必须设计并实现时间复杂度为 `O(n)` 的算法解决此问题。\n\n## 示例 1\n\n```\n输入: nums = [3,2,1,5,6,4], k = 2\n输出: 5\n解释: 排序后数组为 [1,2,3,4,5,6]，第 2 大的元素是 5。\n```\n\n## 示例 2\n\n```\n输入: nums = [3,2,3,1,2,4,5,5,6], k = 4\n输出: 4\n解释: 排序后数组为 [1,2,2,3,3,4,5,5,6]，第 4 大的元素是 4。\n```\n\n## 约束条件\n- `1 <= k <= nums.length <= 10^5`\n- `-10^4 <= nums[i] <= 10^4`",
+  "hints": [
+    "提示1：能否在不对整个数组进行完全排序的情况下找到第k大元素？考虑利用快速排序的分区思想。",
+    "提示2：使用快速选择（Quickselect）算法，每次分区后根据枢轴位置决定递归左半部分还是右半部分。",
+    "提示3：注意处理第k大与索引的对应关系（升序排列时第k大对应索引为len-k）；随机选择枢轴可避免最坏情况。"
+  ],
+  "solution_outline": "使用快速选择算法，基于快速排序的分区思想，每次将数组分为大于和小于枢轴的两部分，根据目标位置决定递归方向，平均时间复杂度可达O(n)。也可以通过维护大小为k的小顶堆来实现。",
+  "solution_detail": "## 解题思路\n\n### 方法一：快速选择（Quickselect）\n\n快速选择是快速排序的变种。核心思想是：\n1. 随机选择一个枢轴（pivot），将数组分为两部分\n2. 枢轴左边的元素都大于等于枢轴，右边的元素都小于等于枢轴\n3. 如果枢轴的位置正好是第k大的位置，直接返回\n4. 否则，只在包含目标的那一半递归查找\n\n### 方法二：堆（优先队列）\n\n维护一个大小为k的小顶堆：\n1. 遍历数组，将元素加入堆\n2. 当堆的大小超过k时，弹出堆顶（最小的元素）\n3. 最终堆顶即为第k大的元素\n\n## 代码实现（快速选择）\n\n```python\nimport random\n\nclass Solution:\n    def findKthLargest(self, nums: List[int], k: int) -> int:\n        def partition(left, right, pivot_idx):\n            pivot = nums[pivot_idx]\n            # 将枢轴移到末尾\n            nums[pivot_idx], nums[right] = nums[right], nums[pivot_idx]\n            store_idx = left\n            for i in range(left, right):\n                if nums[i] > pivot:  # 降序排列，大的放前面\n                    nums[store_idx], nums[i] = nums[i], nums[store_idx]\n                    store_idx += 1\n            # 将枢轴放到正确位置\n            nums[store_idx], nums[right] = nums[right], nums[store_idx]\n            return store_idx\n        \n        def quickselect(left, right, k_smallest):\n            # 返回第k_smallest大的元素（0-indexed）\n            if left == right:\n                return nums[left]\n            \n            # 随机选择枢轴\n            pivot_idx = random.randint(left, right)\n            pivot_idx = partition(left, right, pivot_idx)\n            \n            if k_smallest == pivot_idx:\n                return nums[k_smallest]\n            elif k_smallest < pivot_idx:\n                return quickselect(left, pivot_idx - 1, k_smallest)\n            else:\n                return quickselect(pivot_idx + 1, right, k_smallest)\n        \n        # 第k大 = 降序排列后的第k-1个位置\n        return quickselect(0, len(nums) - 1, k - 1)\n```\n\n## 复杂度分析\n\n- **时间复杂度**：\n  - 快速选择：平均 O(n)，最坏 O(n²)（可通过随机化避免）\n  - 堆方法：O(n log k)\n- **空间复杂度**：\n  - 快速选择：O(log n) 递归栈空间，或 O(1) 迭代实现\n  - 堆方法：O(k)",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "import random\nfrom typing import List\n\nclass Solution:\n    def findKthLargest(self, nums: List[int], k: int) -> int:\n        # 快速选择：迭代实现\n        def partition(left, right, pivot_idx):\n            pivot = nums[pivot_idx]\n            # 将枢轴移到末尾\n            nums[pivot_idx], nums[right] = nums[right], nums[pivot_idx]\n            store_idx = left\n            for i in range(left, right):\n                if nums[i] > pivot:  # 降序：大元素放左边\n                    nums[store_idx], nums[i] = nums[i], nums[store_idx]\n                    store_idx += 1\n            # 枢轴归位\n            nums[store_idx], nums[right] = nums[right], nums[store_idx]\n            return store_idx\n        \n        # 迭代版快速选择\n        left, right = 0, len(nums) - 1\n        target = k - 1  # 第k大对应降序的第k-1个索引\n        \n        while True:\n            if left == right:\n                return nums[left]\n            \n            pivot_idx = random.randint(left, right)\n            pivot_idx = partition(left, right, pivot_idx)\n            \n            if target == pivot_idx:\n                return nums[target]\n            elif target < pivot_idx:\n                right = pivot_idx - 1\n            else:\n                left = pivot_idx + 1\n\n\n# 堆方法（更简洁，适合面试快速实现）\nimport heapq\n\nclass SolutionHeap:\n    def findKthLargest(self, nums: List[int], k: int) -> int:\n        # 小顶堆，维护最大的k个元素\n        min_heap = []\n        for num in nums:\n            heapq.heappush(min_heap, num)\n            if len(min_heap) > k:\n                heapq.heappop(min_heap)\n        return min_heap[0]"
+    }
+  ],
+  "common_errors": [
+    "索引越界错误：混淆第k大与第k小的概念，或错误计算目标索引（如忘记k-1）。例如第1大元素对应索引0，而非索引1。",
+    "分区逻辑错误：在降序分区时错误使用'<'而非'>'，导致分区后枢轴位置不正确，造成无限递归或错误结果。",
+    "忽略随机化：固定选择第一个或最后一个元素作为枢轴，在数组已有序时导致O(n²)的最坏时间复杂度，无法通过严格的时间限制。"
+  ],
+  "time_complexity_expected": "O(n) 平均情况，O(n²) 最坏情况",
+  "space_complexity_expected": "O(1) 额外空间（迭代实现），或 O(log n) 递归栈空间"
+}

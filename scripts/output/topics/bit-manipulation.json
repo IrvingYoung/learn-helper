@@ -1,0 +1,27 @@
+{
+  "content": "## 位运算（Bitwise Operations）\n\n### 概念定义\n位运算是对二进制数的每一位直接进行操作的运算方式。由于计算机底层以二进制存储数据，位运算具有极高的执行效率，是算法优化的重要手段。核心操作包括：与（&）、或（|）、异或（^）、取反（~）、左移（<<）和右移（>>）。\n\n### 核心原理\n\n**基础运算规则：**\n- **与（AND）**：`a & b`，两位均为1时结果为1，常用于掩码提取特定位\n- **或（OR）**：`a | b`，任一位为1时结果为1，常用于设置某一位为1\n- **异或（XOR）**：`a ^ b`，两位不同时结果为1。核心性质：`a ^ a = 0`，`a ^ 0 = a`，满足交换律和结合律\n- **取反（NOT）**：`~a`，所有位取反\n- **移位**：左移`<<`相当于乘2，右移`>>`相当于除以2（向下取整）\n\n**位掩码与状态压缩：**\n- 位掩码：用一个整数的二进制位表示一组布尔标志，通过位运算高效读写\n- 状态压缩：将多维状态压缩到单个整数中，常用于动态规划（如旅行商问题TSP），将空间复杂度从 $O(2^n \\cdot n)$ 的数组优化到整数运算\n\n### 应用场景\n- **奇偶判断**：`x & 1` 替代 `x % 2`\n- **交换两数**：`a ^= b; b ^= a; a ^= b`（无需临时变量）\n- **权限系统**：用位掩码表示多权限组合\n- **算法优化**：快速幂、子集枚举、Lowbit操作（树状数组）\n- **经典问题**：只出现一次的数字、判断2的幂、汉明重量\n\n### 与其他技术的对比\n| 特性 | 位运算 | 普通算术/逻辑运算 |\n|------|--------|------------------|\n| 速度 | 极快（CPU单周期） | 相对较慢 |\n| 可读性 | 较低，需熟悉二进制 | 直观易懂 |\n| 内存占用 | 极小（一个整数存多状态） | 通常较大 |\n| 适用范围 | 状态压缩、标志位、特定优化 | 通用场景 |\n\n位运算是连接高级算法与底层性能的桥梁，掌握后能显著提升代码效率与解题能力。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "def find_single_number(nums):\n    \"\"\"\n    利用异或性质：找数组中唯一出现一次的数字（其他均出现两次）\n    异或满足交换律和结合律，成对出现的数字异或后会抵消为0\n    \"\"\"\n    result = 0\n    for num in nums:\n        result ^= num  # 0 ^ a = a; a ^ a = 0\n    return result\n\n# 示例：4 ^ 1 ^ 2 ^ 1 ^ 2 = 4\nprint(find_single_number([4, 1, 2, 1, 2]))  # 输出: 4\n\n# 扩展：利用异或交换两个数（无需额外空间）\na, b = 5, 3\na ^= b  # a = 5 ^ 3 = 6\nb ^= a  # b = 3 ^ 6 = 5 (原来的a)\na ^= b  # a = 6 ^ 5 = 3 (原来的b)\nprint(a, b)  # 输出: 3 5",
+      "explanation": "展示了异或运算最核心的性质：自反性（a ^ a = 0）和恒等性（a ^ 0 = a）。第一个函数在O(n)时间、O(1)空间内解决问题；第二个技巧展示了无临时变量交换，但注意这种方式可读性较差且可能引发溢出讨论（Python中无此问题）。"
+    },
+    {
+      "lang": "Python",
+      "code": "class BitmaskPermissions:\n    \"\"\"\n    位掩码实现权限管理系统\n    用整数的每一位表示一种权限，支持高效地组合和检查权限\n    \"\"\"\n    READ = 1 << 0    # 0b0001 = 1\n    WRITE = 1 << 1   # 0b0010 = 2\n    EXECUTE = 1 << 2 # 0b0100 = 4\n    DELETE = 1 << 3  # 0b1000 = 8\n    \n    def __init__(self):\n        self.permissions = 0  # 初始无任何权限\n    \n    def add_permission(self, perm):\n        self.permissions |= perm  # 用或运算设置位\n    \n    def remove_permission(self, perm):\n        self.permissions &= ~perm  # 与非运算清除位\n    \n    def has_permission(self, perm):\n        return self.permissions & perm != 0  # 与运算检查位\n    \n    def has_all_permissions(self, perm):\n        return self.permissions & perm == perm  # 检查是否包含所有指定权限\n\n# 使用示例\nuser = BitmaskPermissions()\nuser.add_permission(BitmaskPermissions.READ | BitmaskPermissions.WRITE)  # 组合权限\nprint(user.has_permission(BitmaskPermissions.READ))   # True\nprint(user.has_permission(BitmaskPermissions.DELETE)) # False",
+      "explanation": "位掩码的经典应用。通过`1 << n`定义第n位权限，`|`组合多个权限，`&`检查权限，`& ~`移除权限。相比用列表或字典存储权限，位掩码内存占用极小（一个整数），且判断操作都是O(1)的位运算。"
+    },
+    {
+      "lang": "Python",
+      "code": "def count_ones(n):\n    \"\"\"\n    Brian Kernighan算法：计算二进制中1的个数（汉明重量）\n    核心原理：n & (n-1) 每次消去最低位的1\n    \"\"\"\n    count = 0\n    while n:\n        n &= n - 1  # 关键操作：将最低位的1变为0\n        count += 1\n    return count\n\ndef is_power_of_two(n):\n    \"\"\"判断是否为2的幂：二进制中只有一位为1\"\"\"\n    return n > 0 and (n & (n - 1)) == 0\n\ndef get_lowbit(x):\n    \"\"\"获取最低位的1所对应的值，树状数组核心操作\"\"\"\n    return x & (-x)\n\n# 测试\nprint(count_ones(0b101011))      # 输出: 4\nprint(is_power_of_two(16))        # True\nprint(is_power_of_two(18))        # False\nprint(get_lowbit(0b10100))        # 0b100 = 4 (最低位的1在第2位)",
+      "explanation": "展示了三个位运算经典技巧：`n & (n-1)`消去最低位1用于计数；`n & (n-1) == 0`判断2的幂（因为2的幂只有一位为1，减1后该位变0，低位全变1，与原数与运算为0）；`x & (-x)`利用补码性质获取lowbit，是树状数组的核心。"
+    }
+  ],
+  "common_mistakes": [
+    "混淆逻辑运算符与位运算符：使用 `and/or` 而非 `&/|` 进行位操作，导致类型错误或意外结果",
+    "忽略运算符优先级：位运算优先级通常低于比较运算，如 `x & mask == 0` 应写为 `(x & mask) == 0`",
+    "右移运算的符号问题：Python中 `>>` 是算术右移（负数高位补1），而某些语言如Java需区分 `>>>` 无符号右移",
+    "滥用异或交换变量：虽然酷炫但可读性差、难以调试，且在某些语言中可能因同一地址导致结果为0",
+    "位掩码越界：当状态数超过整数位数（通常32或64位）时仍使用状态压缩，导致溢出或错误"
+  ]
+}

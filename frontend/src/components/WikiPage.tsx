@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import useSWR from 'swr';
+import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { fetchWikiTree, fetchWikiPage, fetchOverviewPage } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
 import type { WikiPage } from '../types';
@@ -7,11 +8,27 @@ import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
 
+const LAYOUT_KEY = 'wiki-layout';
+const DEFAULT_LAYOUT: Record<string, number> = { left: 20, center: 50, right: 30 };
+
+function loadLayout(): Record<string, number> | undefined {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+}
+
+function saveLayout(layout: Record<string, number>) {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  } catch { /* ignore */ }
+}
+
 export function WikiPageLayout() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [leftWidth] = useState(280);
-  const [rightWidth] = useState(400);
+  const leftPanelRef = useRef<PanelImperativeHandle>(null);
+  const rightPanelRef = useRef<PanelImperativeHandle>(null);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [provider, setProvider] = useState('claude');
@@ -90,7 +107,12 @@ export function WikiPageLayout() {
             </svg>
           </button>
           <button
-            onClick={() => setLeftCollapsed(!leftCollapsed)}
+            onClick={() => {
+              const panel = leftPanelRef.current;
+              if (!panel) return;
+              if (panel.isCollapsed()) panel.expand();
+              else panel.collapse();
+            }}
             className={`p-1.5 rounded text-sm transition-colors ${leftCollapsed ? 'text-th-accent bg-th-accent-bg' : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-bg-tertiary'}`}
             title={leftCollapsed ? '展开知识树' : '收起知识树'}
           >
@@ -99,7 +121,12 @@ export function WikiPageLayout() {
             </svg>
           </button>
           <button
-            onClick={() => setRightCollapsed(!rightCollapsed)}
+            onClick={() => {
+              const panel = rightPanelRef.current;
+              if (!panel) return;
+              if (panel.isCollapsed()) panel.expand();
+              else panel.collapse();
+            }}
             className={`p-1.5 rounded text-sm transition-colors ${rightCollapsed ? 'text-th-accent bg-th-accent-bg' : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-bg-tertiary'}`}
             title={rightCollapsed ? '展开页面' : '收起页面'}
           >
@@ -111,33 +138,60 @@ export function WikiPageLayout() {
       </header>
 
       {/* Main content - three columns */}
-      <div className="flex-1 flex overflow-hidden">
+      <Group
+        className="flex-1"
+        orientation="horizontal"
+        defaultLayout={loadLayout() || DEFAULT_LAYOUT}
+        onLayoutChanged={saveLayout}
+      >
         {/* Left: Knowledge Tree */}
-        <div
-          style={{ width: leftCollapsed ? 0 : leftWidth, minWidth: leftCollapsed ? 0 : leftWidth }}
-          className="shrink-0 overflow-hidden border-r border-th-border transition-all duration-200"
+        <Panel
+          id="left"
+          panelRef={leftPanelRef}
+          minSize={150}
+          collapsible
+          collapsedSize={0}
+          onResize={(size) => {
+            if (size.asPercentage === 0 && !leftCollapsed) setLeftCollapsed(true);
+            else if (size.asPercentage > 0 && leftCollapsed) setLeftCollapsed(false);
+          }}
         >
-          <KnowledgeTree
-            tree={tree || []}
-            selectedSlug={selectedSlug}
-            onSelect={setSelectedSlug}
-            collapsed={leftCollapsed}
-          />
-        </div>
+          <div className="h-full overflow-hidden">
+            <KnowledgeTree
+              tree={tree || []}
+              selectedSlug={selectedSlug}
+              onSelect={setSelectedSlug}
+              collapsed={leftCollapsed}
+            />
+          </div>
+        </Panel>
+
+        <Separator />
 
         {/* Center: Chat */}
-        <div className="flex-1 min-w-0">
+        <Panel id="center" minSize={300}>
           <ChatPanel onPageChanged={handlePageChanged} />
-        </div>
+        </Panel>
+
+        <Separator />
 
         {/* Right: Page Viewer */}
-        <div
-          style={{ width: rightCollapsed ? 0 : rightWidth, minWidth: rightCollapsed ? 0 : rightWidth }}
-          className="shrink-0 overflow-hidden border-l border-th-border transition-all duration-200"
+        <Panel
+          id="right"
+          panelRef={rightPanelRef}
+          minSize={200}
+          collapsible
+          collapsedSize={0}
+          onResize={(size) => {
+            if (size.asPercentage === 0 && !rightCollapsed) setRightCollapsed(true);
+            else if (size.asPercentage > 0 && rightCollapsed) setRightCollapsed(false);
+          }}
         >
-          <PageViewer page={displayPage} collapsed={rightCollapsed} />
-        </div>
-      </div>
+          <div className="h-full overflow-hidden">
+            <PageViewer page={displayPage} collapsed={rightCollapsed} />
+          </div>
+        </Panel>
+      </Group>
 
       {/* Settings Modal */}
       {showSettings && (

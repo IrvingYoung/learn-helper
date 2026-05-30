@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -143,11 +144,10 @@ EXERCISE_PROMPT = """你是一位算法面试题设计专家。请为以下知�
 
 
 def get_client():
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("Error: ANTHROPIC_API_KEY environment variable not set")
-        sys.exit(1)
-    return anthropic.Anthropic(api_key=api_key)
+    return anthropic.Anthropic(
+        base_url="https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic",
+        api_key="536de9613a405fbfbab0ce9bc5d537ed:YTg4MjVjYjVmYzZhNDYxYTUzODBkZGEw",
+    )
 
 
 def slug_to_id_map(topics):
@@ -155,6 +155,17 @@ def slug_to_id_map(topics):
     for i, t in enumerate(topics, start=1):
         mapping[t["slug"]] = i
     return mapping
+
+
+def clean_json_text(text):
+    """Strip markdown fences and remove invalid control characters from JSON."""
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = [l for l in lines if not l.startswith("```")]
+        text = "\n".join(lines)
+    # Remove control characters except newline, carriage return, tab
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+    return text
 
 
 def generate_topic_content(client, topic, parent_name):
@@ -165,16 +176,34 @@ def generate_topic_content(client, topic, parent_name):
         key_points=", ".join(topic["key_points"]),
     )
     resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=2000,
+        model="xopkimik26",
+        max_tokens=4000,
         messages=[{"role": "user", "content": prompt}],
     )
     text = resp.content[0].text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [l for l in lines if not l.startswith("```")]
-        text = "\n".join(lines)
-    return json.loads(text)
+    text = clean_json_text(text)
+    for attempt in range(3):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            match = re.search(r'\{[\s\S]*\}', text)
+            if match:
+                try:
+                    return json.loads(match.group())
+                except json.JSONDecodeError:
+                    pass
+            if attempt < 2:
+                print(f"    [retry] JSON parse failed, regenerating...")
+                time.sleep(1)
+                resp = client.messages.create(
+                    model="xopkimik26",
+                    max_tokens=4000,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = resp.content[0].text.strip()
+                text = clean_json_text(text)
+            else:
+                raise
 
 
 def generate_exercise_content(client, exercise, topic_name):
@@ -184,16 +213,34 @@ def generate_exercise_content(client, exercise, topic_name):
         title=exercise["title"],
     )
     resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=2000,
+        model="xopkimik26",
+        max_tokens=4000,
         messages=[{"role": "user", "content": prompt}],
     )
     text = resp.content[0].text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [l for l in lines if not l.startswith("```")]
-        text = "\n".join(lines)
-    return json.loads(text)
+    text = clean_json_text(text)
+    for attempt in range(3):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            match = re.search(r'\{[\s\S]*\}', text)
+            if match:
+                try:
+                    return json.loads(match.group())
+                except json.JSONDecodeError:
+                    pass
+            if attempt < 2:
+                print(f"    [retry] JSON parse failed, regenerating...")
+                time.sleep(1)
+                resp = client.messages.create(
+                    model="xopkimik26",
+                    max_tokens=4000,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = resp.content[0].text.strip()
+                text = clean_json_text(text)
+            else:
+                raise
 
 
 def generate_all_topics(client, topics):

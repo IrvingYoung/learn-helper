@@ -1,0 +1,27 @@
+{
+  "content": "# 基础数据结构\n\n## 概念定义\n\n**基础数据结构**是计算机科学中最核心的组织数据的方式，主要包括数组（Array）、链表（Linked List）、栈（Stack）和队列（Queue）等线性结构。这些结构是构建更复杂算法和数据系统的基石，理解它们是掌握高级数据结构的必要前提。\n\n## 核心原理\n\n### 线性结构\n线性结构中的数据元素之间存在**一对一**的先后关系，每个元素（除首尾外）有且仅有一个直接前驱和一个直接后继。主要特征包括：\n- **数组**：连续内存存储，支持随机访问，时间复杂度 O(1)\n- **链表**：离散内存存储，通过指针连接，插入删除 O(1)\n- **栈**：后进先出（LIFO），仅允许在一端操作\n- **队列**：先进先出（FIFO），一端入队、另一端出队\n\n### 存储方式\n| 方式 | 特点 | 代表 |\n|------|------|------|\n| 顺序存储 | 内存连续，访问快，扩容难 | 数组 |\n| 链式存储 | 内存灵活，增删快，访问慢 | 链表 |\n\n### 基本操作\n所有基础结构都支持**增删改查（CRUD）**，但不同实现的效率差异显著。选择数据结构时，需根据操作频率权衡时间/空间复杂度。\n\n## 应用场景\n\n- **数组**：需要频繁随机访问的场景，如图像像素矩阵、数据库索引\n- **链表**：频繁插入删除的场景，如 LRU 缓存、内存分配器\n- **栈**：函数调用栈、表达式求值、浏览器后退功能\n- **队列**：任务调度（如打印队列）、BFS 广度优先搜索、消息队列\n\n## 与其他数据结构的对比\n\n| 对比维度 | 基础线性结构 | 树/图等非线性结构 |\n|---------|-----------|---------------|\n| 元素关系 | 一对一 | 一对多 / 多对多 |\n| 复杂度 | 简单直观 | 更复杂，功能更强 |\n| 学习顺序 | 必须先掌握 | 建立在基础结构之上 |\n| 典型应用 | 通用容器 | 数据库索引、社交网络 |\n\n基础数据结构虽简单，但它们是理解**时间复杂度分析**和**内存管理**的最佳入口，也是面试中高频考察的重点。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "# 数组与链表的基本实现对比\n\n# 数组：Python 中的 list（动态数组）\narr = [1, 2, 3]\narr.append(4)        # 平均 O(1)，尾部添加\narr.insert(0, 0)     # O(n)，头部插入需移动元素\nprint(arr[2])        # O(1)，随机访问\n\n# 链表：手动实现单链表\nclass ListNode:\n    def __init__(self, val=0):\n        self.val = val\n        self.next = None\n\n# 构建链表 1 -> 2 -> 3\nhead = ListNode(1)\nhead.next = ListNode(2)\nhead.next.next = ListNode(3)\n\n# 遍历链表\nnode = head\nwhile node:\n    print(node.val, end=' ')\n    node = node.next  # 必须顺序访问，无法随机读取",
+      "explanation": "展示数组和链表的核心差异：数组支持 O(1) 随机访问但插入慢；链表插入快但必须顺序访问。Python 的 list 是动态数组，不是纯链表。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 栈与队列的经典应用：括号匹配\nfrom collections import deque\n\ndef is_valid(s: str) -> bool:\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    \n    for ch in s:\n        if ch in '([{':\n            stack.append(ch)          # 入栈\n        elif ch in ')]}':\n            if not stack or stack[-1] != pairs[ch]:\n                return False           # 不匹配或栈空\n            stack.pop()                # 匹配成功，出栈\n    \n    return len(stack) == 0\n\n# 队列实现：滑动窗口最大值（简化版）\ndef max_in_windows(nums, k):\n    from collections import deque\n    q = deque()  # 存储索引，保持单调递减\n    result = []\n    \n    for i, num in enumerate(nums):\n        # 移除窗口外的元素\n        if q and q[0] <= i - k:\n            q.popleft()\n        # 移除所有小于当前值的元素\n        while q and nums[q[-1]] <= num:\n            q.pop()\n        \n        q.append(i)\n        if i >= k - 1:\n            result.append(nums[q[0]])  # 队首即最大值\n    return result\n\nprint(is_valid(\"{[()]}\"))        # True\nprint(max_in_windows([1,3,-1,-3,5,3], 3))  # [3, 3, 5, 5]",
+      "explanation": "栈用于括号匹配（LIFO特性），单调队列用于滑动窗口问题。deque 双端队列是 Python 实现队列的高效选择，两端操作均为 O(1)。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 双链表实现：支持 O(1) 删除已知节点\nclass DListNode:\n    def __init__(self, val=0):\n        self.val = val\n        self.prev = None\n        self.next = None\n\nclass DoublyLinkedList:\n    def __init__(self):\n        self.head = DListNode()  # 哨兵节点\n        self.tail = DListNode()\n        self.head.next = self.tail\n        self.tail.prev = self.head\n    \n    def _add_after(self, prev_node, val):\n        \"\"\"在 prev_node 后插入新节点\"\"\"\n        new_node = DListNode(val)\n        new_node.prev = prev_node\n        new_node.next = prev_node.next\n        prev_node.next.prev = new_node\n        prev_node.next = new_node\n        return new_node\n    \n    def remove(self, node):\n        \"\"\"O(1) 删除已知节点（需保证节点存在）\"\"\"\n        node.prev.next = node.next\n        node.next.prev = node.prev\n        # 可选：断开指针，帮助垃圾回收\n        node.prev = node.next = None\n\n# 应用：LRU 缓存的核心数据结构\nfrom collections import OrderedDict\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        self.cache = OrderedDict()\n        self.capacity = capacity\n    \n    def get(self, key: int) -> int:\n        if key not in self.cache:\n            return -1\n        self.cache.move_to_end(key)  # 标记为最近使用\n        return self.cache[key]\n    \n    def put(self, key: int, value: int) -> None:\n        if key in self.cache:\n            self.cache.move_to_end(key)\n        self.cache[key] = value\n        if len(self.cache) > self.capacity:\n            self.cache.popitem(last=False)  # 淘汰最久未使用",
+      "explanation": "双链表实现 O(1) 删除，是 LRU 缓存的核心。Python 的 OrderedDict 底层即基于此原理，move_to_end 和 popitem 分别实现更新和淘汰。"
+    }
+  ],
+  "common_mistakes": [
+    "将 Python 的 list 当作链表使用，导致头部插入/删除时产生 O(n) 的性能问题",
+    "使用数组实现队列时从头部删除元素，造成 O(n) 的时间复杂度而非 O(1)",
+    "在单链表中尝试反向遍历或访问前驱节点，因未存储 prev 指针而失败",
+    "栈或队列操作时未检查空状态，引发 IndexError 或返回错误结果",
+    "混淆栈的 LIFO 与队列的 FIFO 特性，在 BFS/DFS 中选择错误的数据结构"
+  ]
+}

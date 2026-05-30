@@ -1,0 +1,22 @@
+{
+  "content": "## 二叉树（Binary Tree）\n\n### 概念定义\n\n二叉树是每个节点**最多有两个子节点**的树结构，分别称为左子树和右子树。若树为空，则称为空二叉树。二叉树是树结构的特殊形式，也是计算机科学中最基础、最重要的非线性数据结构之一。\n\n### 核心原理\n\n**遍历方式**是理解二叉树的核心。根据访问根节点的时机，分为三种深度优先遍历：\n\n- **前序遍历**：根 → 左 → 右，常用于复制树结构\n- **中序遍历**：左 → 根 → 右，对二叉搜索树可得到有序序列\n- **后序遍历**：左 → 右 → 根，常用于删除树节点\n\n此外，**层序遍历**（广度优先）按从上到下、从左到右逐层访问，通常借助队列实现。\n\n**深度与递归**密不可分。二叉树的最大深度定义为从根节点到最远叶子节点的最长路径上的节点数。递归是处理二叉树最自然的编程范式——每个子树本身也是一棵二叉树，这构成了递归的终止条件与递推关系。\\n### 应用场景\n\n- **表达式解析**：编译器用二叉树表示算术表达式\n- **文件系统**：目录结构的层级管理\n- **数据库索引**：B+树、红黑树等变种广泛用于数据库和操作系统\n- **哈夫曼编码**：数据压缩算法中的最优前缀编码\n\n### 对比分析\n\n与**多叉树**相比，二叉树结构更规整、存储更高效，许多算法可简化处理；与**图**相比，二叉树无环、有明确的层级关系，遍历和搜索更为简单。二叉搜索树在有序数据管理上优于普通数组和链表，但平衡维护是其关键挑战。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "from collections import deque\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef inorder_recursive(root):\n    \"\"\"中序遍历：递归实现，返回节点值列表\"\"\"\n    result = []\n    def dfs(node):\n        if not node:\n            return\n        dfs(node.left)      # 遍历左子树\n        result.append(node.val)  # 访问根节点\n        dfs(node.right)     # 遍历右子树\n    dfs(root)\n    return result\n\ndef level_order(root):\n    \"\"\"层序遍历：使用队列实现\"\"\"\n    if not root:\n        return []\n    result, queue = [], deque([root])\n    while queue:\n        node = queue.popleft()\n        result.append(node.val)\n        if node.left:\n            queue.append(node.left)\n        if node.right:\n            queue.append(node.right)\n    return result\n\ndef max_depth(root):\n    \"\"\"求二叉树最大深度：递归分治\"\"\"\n    if not root:\n        return 0\n    left_depth = max_depth(root.left)\n    right_depth = max_depth(root.right)\n    return max(left_depth, right_depth) + 1",
+      "explanation": "包含三个核心函数：中序递归遍历展示DFS的经典写法；层序遍历使用队列实现BFS；max_depth体现递归'大问题拆分为子问题'的思想，每个函数都充分利用了二叉树的递归特性。"
+    },
+    {
+      "lang": "Python",
+      "code": "def preorder_iterative(root):\n    \"\"\"前序遍历：非递归实现，使用栈模拟递归过程\"\"\"\n    if not root:\n        return []\n    result, stack = [], [root]\n    while stack:\n        node = stack.pop()\n        result.append(node.val)\n        # 栈后进先出，先压右子节点\n        if node.right:\n            stack.append(node.right)\n        if node.left:\n            stack.append(node.left)\n    return result\n\ndef inorder_iterative(root):\n    \"\"\"中序遍历：非递归实现，栈辅助\"\"\"\n    result, stack = [], []\n    current = root\n    while current or stack:\n        # 一路向左，全部入栈\n        while current:\n            stack.append(current)\n            current = current.left\n        # 弹出节点，转向右子树\n        current = stack.pop()\n        result.append(current.val)\n        current = current.right\n    return result",
+      "explanation": "展示两种经典遍历的非递归写法。迭代版本使用显式栈替代函数调用栈，空间复杂度仍为O(h)，其中h为树高度。中序迭代的'指针+栈'模式是面试高频考点，需重点掌握指针移动与栈操作的配合。"
+    }
+  ],
+  "common_mistakes": [
+    "递归遍历忘记写基准情形（空节点返回），导致无限递归栈溢出",
+    "层序遍历时错误使用栈（LIFO）代替队列（FIFO），导致遍历顺序混乱",
+    "求深度时混淆'节点数'与'边数'，返回结果未加1或多加1",
+    "非递归中序遍历时，弹出节点后忘记将指针转向右子树，造成死循环",
+    "递归遍历中先访问根节点再判断空值，导致对None调用属性而报错"
+  ]
+}

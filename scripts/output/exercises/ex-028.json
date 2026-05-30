@@ -1,0 +1,23 @@
+{
+  "description": "## 题目描述\n\n有 `n` 个网络节点，标记为 `1` 到 `n`。给定一个列表 `times`，表示信号从源节点传递到目标节点的时间，`times[i] = (ui, vi, wi)` 表示从节点 `ui` 发送信号到节点 `vi` 需要 `wi` 的时间。\n\n现在，从某个节点 `K` 发出一个信号。需要多久才能使所有节点都收到信号？如果无法使所有节点收到信号，返回 `-1`。\n\n### 示例\n\n**输入：**\n```\nn = 4, times = [[2,1,1],[2,3,1],[3,4,1]], K = 2\n```\n\n**输出：**\n```\n2\n```\n\n**解释：**\n- 节点 2 发送信号到节点 1，耗时 1\n- 节点 2 发送信号到节点 3，耗时 1\n- 节点 3 发送信号到节点 4，耗时 1\n- 节点 4 收到信号的总时间为 2（经过 2->3->4）\n- 所有节点收到信号的最大时间为 2\n\n### 约束条件\n- `1 <= k <= n <= 100`\n- `1 <= times.length <= 6000`\n- `times[i].length == 3`\n- `1 <= ui, vi <= n`\n- `ui != vi`\n- `0 <= wi <= 100`",
+  "hints": [
+    "提示1：思路方向 - 这是一道典型的单源最短路径问题，需要找到从节点 K 到所有其他节点的最短路径，然后取最大值",
+    "提示2：具体方法 - 可以使用 Dijkstra 算法（适合非负权边）或 Bellman-Ford 算法，由于边权非负，优先使用 Dijkstra 配合优先队列优化",
+    "提示3：实现要点 - 注意建图时使用邻接表，使用 heapq 实现小顶堆，注意处理重边情况，最后检查是否有节点不可达"
+  ],
+  "solution_outline": "使用 Dijkstra 算法计算从节点 K 到所有节点的最短路径。维护一个距离数组，用优先队列选取当前距离最小的节点进行松弛操作，最终返回所有最短距离中的最大值。",
+  "solution_detail": "## 详细解答\n\n### 解题思路\n\n这是一个经典的**单源最短路径**问题。我们需要找到从起点 `K` 到所有其他节点的最短路径，然后取这些路径中的最大值。\n\n由于边权都是非负数（`wi >= 0`），所以可以使用 **Dijkstra 算法**。\n\n### Dijkstra 算法步骤\n\n1. **建图**：使用邻接表存储有向图\n2. **初始化**：距离数组 `dist` 初始化为无穷大，`dist[K] = 0`\n3. **优先队列**：将 `(距离, 节点)` 放入小顶堆\n4. **松弛操作**：每次取出距离最小的节点，更新其邻居的距离\n5. **结果**：遍历所有节点的最短距离，取最大值；如果有节点不可达，返回 `-1`\n\n### 代码实现\n\n```python\nimport heapq\nfrom typing import List\n\nclass Solution:\n    def networkDelayTime(self, times: List[List[int]], n: int, k: int) -> int:\n        # 建图：邻接表\n        graph = [[] for _ in range(n + 1)]\n        for u, v, w in times:\n            graph[u].append((v, w))\n        \n        # Dijkstra\n        INF = float('inf')\n        dist = [INF] * (n + 1)\n        dist[k] = 0\n        \n        # 优先队列: (当前距离, 节点)\n        pq = [(0, k)]\n        \n        while pq:\n            d, u = heapq.heappop(pq)\n            \n            # 如果当前距离大于已记录的最短距离，跳过\n            if d > dist[u]:\n                continue\n            \n            # 松弛操作\n            for v, w in graph[u]:\n                if dist[u] + w < dist[v]:\n                    dist[v] = dist[u] + w\n                    heapq.heappush(pq, (dist[v], v))\n        \n        # 找到所有节点中的最大距离\n        max_dist = max(dist[1:])  # 节点编号从1开始\n        \n        return max_dist if max_dist != INF else -1\n```\n\n### 复杂度分析\n\n- **时间复杂度**：`O((V + E) log V)`，其中 `V = n` 是节点数，`E = len(times)` 是边数。每个节点和边都会被访问一次，优先队列的插入和删除操作是 `O(log V)`。\n- **空间复杂度**：`O(V + E)`，邻接表需要 `O(E)` 空间，距离数组和优先队列需要 `O(V)` 空间。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "import heapq\nfrom typing import List\n\nclass Solution:\n    def networkDelayTime(self, times: List[List[int]], n: int, k: int) -> int:\n        # 建图：邻接表，graph[u] = [(v1, w1), (v2, w2), ...]\n        graph = [[] for _ in range(n + 1)]\n        for u, v, w in times:\n            graph[u].append((v, w))\n        \n        # Dijkstra 算法\n        INF = float('inf')\n        dist = [INF] * (n + 1)  # 距离数组，初始化为无穷大\n        dist[k] = 0  # 起点到自身距离为0\n        \n        # 优先队列：(当前最短距离, 节点编号)\n        # Python 的 heapq 默认是小顶堆\n        pq = [(0, k)]\n        \n        while pq:\n            d, u = heapq.heappop(pq)\n            \n            # 关键优化：如果弹出的距离大于当前已知最短距离，跳过\n            if d > dist[u]:\n                continue\n            \n            # 遍历邻居，进行松弛操作\n            for v, w in graph[u]:\n                if dist[u] + w < dist[v]:\n                    dist[v] = dist[u] + w\n                    heapq.heappush(pq, (dist[v], v))\n        \n        # 找到到达所有节点的最大时间\n        max_dist = max(dist[1:])  # 节点从1开始编号\n        \n        # 如果有节点不可达，返回 -1\n        return max_dist if max_dist != INF else -1\n\n\n# 测试代码\ndef test():\n    sol = Solution()\n    \n    # 示例\n    times = [[2, 1, 1], [2, 3, 1], [3, 4, 1]]\n    n, k = 4, 2\n    print(sol.networkDelayTime(times, n, k))  # 输出: 2\n    \n    # 无法到达的情况\n    times2 = [[1, 2, 1]]\n    print(sol.networkDelayTime(times2, 2, 2))  # 输出: -1 (节点1收不到信号)\n\ntest()"
+    }
+  ],
+  "common_errors": [
+    "忘记处理不可达节点：没有检查所有节点是否都被访问到，导致在有节点不可达时返回错误的最大值而不是 -1",
+    "忽略 Dijkstra 的优化条件：没有判断 `if d > dist[u]` 就继续处理，导致同一节点被多次处理，虽然不影响正确性但严重影响效率",
+    "建图时混淆有向图和无向图：题目中是有向图，如果建成无向图会导致错误的结果"
+  ],
+  "time_complexity_expected": "O((V + E) log V)，其中 V = n，E = len(times)",
+  "space_complexity_expected": "O(V + E)"
+}

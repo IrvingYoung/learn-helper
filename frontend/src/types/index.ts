@@ -25,12 +25,8 @@ export interface WikiTreeNode {
 
 export interface PendingAction {
   type: 'create' | 'update' | 'delete';
-  page_id?: number;
-  title?: string;
-  slug?: string;
-  content?: string;
-  parent_id?: number;
   preview: string;
+  details?: Record<string, unknown>;
 }
 
 export type AIRole = 'wiki_maintainer'

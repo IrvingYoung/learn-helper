@@ -3,8 +3,11 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"learn-helper/internal/model"
@@ -63,7 +66,7 @@ func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nodeMap := make(map[int64]*WikiTreeNode)
-	var roots []WikiTreeNode
+	var roots []*WikiTreeNode
 
 	for i := range pages {
 		p := pages[i]
@@ -82,16 +85,19 @@ func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
 
 	for i := range pages {
 		p := pages[i]
-		node := nodeMap[p.ID]
 		if !p.ParentID.Valid || p.ParentID.Int64 == 0 {
-			roots = append(roots, *node)
+			roots = append(roots, nodeMap[p.ID])
 		} else if parent, ok := nodeMap[p.ParentID.Int64]; ok {
-			parent.Children = append(parent.Children, *node)
+			parent.Children = append(parent.Children, *nodeMap[p.ID])
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"tree": roots})
+	resultSlice := make([]WikiTreeNode, len(roots))
+	for i, r := range roots {
+		resultSlice[i] = *r
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"tree": resultSlice})
 }
 
 func (h *WikiHandler) GetWikiPageBySlug(w http.ResponseWriter, r *http.Request) {
@@ -283,4 +289,185 @@ func (h *WikiHandler) GetOverviewPage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// --- Structure operations (no confirmation needed) ---
+
+func (h *WikiHandler) RenameWikiPage(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid page ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == "" {
+		http.Error(w, "Title required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	page, err := h.queries.GetWikiPageByID(ctx, id)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Page not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Failed to fetch page", http.StatusInternalServerError)
+		return
+	}
+
+	// Generate new slug from title
+	newSlug := slugify(req.Title)
+	if newSlug == "" {
+		newSlug = page.Slug
+	}
+
+	err = h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
+		Title:         req.Title,
+		Slug:          newSlug,
+		PageType:      page.PageType,
+		Content:       page.Content,
+		Tags:          page.Tags,
+		ParentID:      page.ParentID,
+		ContentStatus: page.ContentStatus,
+		SortOrder:     page.SortOrder,
+		ID:            id,
+	})
+	if err != nil {
+		http.Error(w, "Failed to rename page", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"id": id, "title": req.Title, "slug": newSlug})
+}
+
+func (h *WikiHandler) MoveWikiPage(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid page ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		ParentID  *int64 `json:"parent_id"`
+		SortOrder *int64 `json:"sort_order"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	page, err := h.queries.GetWikiPageByID(ctx, id)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Page not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Failed to fetch page", http.StatusInternalServerError)
+		return
+	}
+
+	parentID := page.ParentID
+	if req.ParentID != nil {
+		parentID = sql.NullInt64{Int64: *req.ParentID, Valid: *req.ParentID > 0}
+		// Prevent moving page under itself
+		if parentID.Valid && parentID.Int64 == id {
+			http.Error(w, "Cannot move page under itself", http.StatusBadRequest)
+			return
+		}
+	}
+
+	sortOrder := page.SortOrder
+	if req.SortOrder != nil {
+		sortOrder = *req.SortOrder
+	}
+
+	err = h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
+		Title:         page.Title,
+		Slug:          page.Slug,
+		PageType:      page.PageType,
+		Content:       page.Content,
+		Tags:          page.Tags,
+		ParentID:      parentID,
+		ContentStatus: page.ContentStatus,
+		SortOrder:     sortOrder,
+		ID:            id,
+	})
+	if err != nil {
+		http.Error(w, "Failed to move page", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (h *WikiHandler) CreateEmptyWikiPage(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Title    string `json:"title"`
+		ParentID *int64 `json:"parent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == "" {
+		http.Error(w, "Title required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	slug := slugify(req.Title)
+	if slug == "" {
+		slug = fmt.Sprintf("page-%d", time.Now().Unix())
+	}
+
+	var parentID sql.NullInt64
+	if req.ParentID != nil && *req.ParentID > 0 {
+		parentID = sql.NullInt64{Int64: *req.ParentID, Valid: true}
+	}
+
+	result, err := h.queries.CreateWikiPage(ctx, model.CreateWikiPageParams{
+		Title:         req.Title,
+		Slug:          slug,
+		PageType:      "entity",
+		Content:       "",
+		ParentID:      parentID,
+		ContentStatus: "empty",
+		SortOrder:     0,
+	})
+	if err != nil {
+		http.Error(w, "Failed to create page", http.StatusInternalServerError)
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]any{"id": id, "slug": slug, "title": req.Title})
+}
+
+// slugify converts a title to a URL-friendly slug.
+func slugify(title string) string {
+	s := strings.ToLower(title)
+	// Replace spaces and common separators with hyphens
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+	s = strings.ReplaceAll(s, "/", "-")
+	// Remove non-alphanumeric characters (keep hyphens and CJK)
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r >= 0x4e00 {
+			b.WriteRune(r)
+		}
+	}
+	result := b.String()
+	// Collapse multiple hyphens
+	for strings.Contains(result, "--") {
+		result = strings.ReplaceAll(result, "--", "-")
+	}
+	return strings.Trim(result, "-")
 }

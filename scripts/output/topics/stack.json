@@ -1,0 +1,27 @@
+{
+  "content": "## 栈（Stack）\n\n### 概念定义\n\n栈是一种**后进先出**（LIFO, Last In First Out）的线性数据结构。想象一叠盘子，你只能从最顶端放入或取出盘子——最后放上去的盘子，会最先被取走。\n\n栈仅支持两种核心操作：\n- **入栈（push）**：将元素添加到栈顶\n- **出栈（pop）**：移除并返回栈顶元素\n\n此外通常还有 `peek`（查看栈顶）和 `isEmpty`（判空）等辅助操作。\n\n### 核心原理\n\n栈的本质是**访问受限**：所有操作都集中在同一端（称为栈顶，top），另一端（栈底，bottom）固定不动。这种限制带来了 O(1) 的常数时间复杂度，同时也保证了数据访问的确定性秩序。\n\n**单调栈**是栈的重要变种：通过维护栈内元素的单调性（递增或递减），可高效解决\"下一个更大/更小元素\"等问题。其核心在于：新元素入栈前，先弹出所有破坏单调性的元素。\n\n### 应用场景\n\n1. **括号匹配**：编译器利用栈检查代码括号是否合法——遇到左括号入栈，右括号则与栈顶匹配\n2. **函数调用栈**：操作系统保存函数调用上下文，实现嵌套调用与返回\n3. **表达式求值**：中缀转后缀、后缀表达式计算\n4. **浏览器后退功能**：历史页面形成栈结构\n5. **深度优先搜索（DFS）**：非递归实现时用栈保存路径\n\n### 与其他数据结构的对比\n\n| 特性 | 栈 | 队列 | 数组/链表 |\n|------|------|------|---------|\n| 访问原则 | LIFO | FIFO | 随机访问 |\n| 操作位置 | 仅栈顶 | 队首队尾 | 任意位置 |\n| 典型应用 | 回溯、递归 | BFS、缓冲 | 通用存储 |\n\n栈与递归本质相通：任何递归程序都可借助栈改写为迭代形式，这也是理解递归执行过程的关键。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "# 基础栈的实现与括号匹配\nclass Stack:\n    def __init__(self):\n        self._items = []  # 使用列表作为底层存储\n    \n    def push(self, item):\n        self._items.append(item)  # 入栈：添加到末尾\n    \n    def pop(self):\n        if self.is_empty():\n            raise IndexError(\"栈为空\")\n        return self._items.pop()  # 出栈：移除末尾元素\n    \n    def peek(self):\n        if self.is_empty():\n            raise IndexError(\"栈为空\")\n        return self._items[-1]  # 查看栈顶\n    \n    def is_empty(self):\n        return len(self._items) == 0\n\n\ndef is_valid_brackets(s: str) -> bool:\n    \"\"\"判断括号字符串是否合法\"\"\"\n    stack = Stack()\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for ch in s:\n        if ch in '([{':\n            stack.push(ch)  # 左括号入栈\n        elif ch in ')]}':\n            if stack.is_empty() or stack.pop() != pairs[ch]:\n                return False  # 栈空或括号不匹配\n    return stack.is_empty()  # 最终栈必须为空\n\n\n# 示例\nprint(is_valid_brackets(\"{[()]}\"))   # True\nprint(is_valid_brackets(\"{[(]}\"))    # False",
+      "explanation": "用 Python 列表实现栈的基本操作，并演示经典括号匹配问题。时间复杂度 O(n)，空间复杂度 O(n)。注意 Python 列表的 append/pop 在末尾操作是 O(1)。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 单调栈：求每个元素右边第一个更大的值\ndef next_greater_elements(nums):\n    \"\"\"\n    返回数组中每个元素右边第一个比它大的元素值\n    不存在则返回 -1\n    \"\"\"\n    n = len(nums)\n    result = [-1] * n\n    stack = []  # 存储索引，保持对应值递减\n    \n    for i in range(n):\n        # 当前元素大于栈顶元素时，说明找到了\"下一个更大值\"\n        while stack and nums[i] > nums[stack[-1]]:\n            idx = stack.pop()\n            result[idx] = nums[i]\n        stack.append(i)  # 当前索引入栈，等待后续更大值\n    \n    # 栈中剩余元素无更大值，保持 -1\n    return result\n\n\n# 示例\nnums = [2, 1, 2, 4, 3]\nprint(next_greater_elements(nums))  # [4, 2, 4, -1, -1]\n\n# 单调栈原理可视化（处理 nums = [2,1,2,4,3]）\n# i=0: stack=[0],      nums[0]=2\n# i=1: stack=[0,1],    nums[1]=1（递减，直接入栈）\n# i=2: nums[2]=2 > 1,  弹出1，result[1]=2；2 == nums[0]，入栈 → stack=[0,2]\n# i=3: nums[3]=4 > 2,  弹出2，result[2]=4；4 > 2，弹出0，result[0]=4 → stack=[3]\n# i=4: stack=[3,4],    nums[4]=3（递减，入栈）\n# 结束：3,4 无更大值，result[3]=result[4]=-1",
+      "explanation": "单调栈经典应用。栈中维护递减序列，遇到更大元素时连续弹出并记录结果。每个元素最多入栈出栈一次，时间复杂度 O(n)，空间复杂度 O(n)。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 使用函数调用栈理解递归：非递归实现 DFS\nfrom collections import deque\n\ndef dfs_iterative(graph, start):\n    \"\"\"\n    用栈实现非递归深度优先搜索\n    graph: 邻接表表示的图\n    \"\"\"\n    visited = set()\n    # 使用 deque 作为栈（右侧进出）\n    stack = deque([(start, [start])])  # (当前节点, 路径)\n    \n    while stack:\n        node, path = stack.pop()  # 弹出栈顶\n        \n        if node not in visited:\n            visited.add(node)\n            print(f\"访问节点: {node}, 路径: {path}\")\n            \n            # 将邻居入栈（注意顺序，保证正确遍历顺序）\n            for neighbor in reversed(graph.get(node, [])):\n                if neighbor not in visited:\n                    stack.append((neighbor, path + [neighbor]))\n    \n    return visited\n\n\n# 示例图\ngraph = {\n    'A': ['B', 'C'],\n    'B': ['D', 'E'],\n    'C': ['F'],\n    'D': [], 'E': [], 'F': []\n}\n\ndfs_iterative(graph, 'A')",
+      "explanation": "展示栈如何模拟递归的调用过程。递归本质是系统隐式维护的调用栈，理解这一点是排查栈溢出、改写递归为迭代的关键。使用 deque 替代 list 可获得更好的性能。"
+    }
+  ],
+  "common_mistakes": [
+    "使用 list.insert(0, x) 或 list.pop(0) 实现栈，导致时间复杂度退化为 O(n)",
+    "栈空时执行 pop 或 peek 操作引发 IndexError，未做边界检查",
+    "单调栈中混淆\"值\"与\"索引\"入栈，导致结果位置错误或越界",
+    "递归深度过大时忽视 Python 默认递归深度限制（1000），未改用迭代或增加限制",
+    "括号匹配类问题中，遍历结束后忘记检查栈是否为空，导致\"((())\"误判为合法"
+  ]
+}

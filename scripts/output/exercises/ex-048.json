@@ -1,0 +1,23 @@
+{
+  "description": "# 删除排序数组中的重复项\n\n给你一个 **非严格递增排列** 的数组 `nums` ，请你 **原地** 删除重复出现的元素，使每个元素 **只出现一次** ，返回删除后数组的新长度。元素的 **相对顺序** 应该保持 **一致** 。\n\n由于在某些语言中不能改变数组的长度，所以必须将结果放在数组 `nums` 的第一部分。更规范地说，如果在删除重复元素之后有 `k` 个元素，那么 `nums` 的前 `k` 个元素应该保存最终结果。\n\n将最终结果插入 `nums` 的前 `k` 个位置后返回 `k` 。\n\n不要使用额外的空间，你必须在 **原地** 修改输入数组 并在使用 O(1) 额外空间的条件下完成。\n\n## 示例 1：\n\n```\n输入：nums = [1,1,2]\n输出：2, nums = [1,2,_]\n解释：函数应该返回新的长度 2，并且 nums 的前两个元素被修改为 1, 2。不需要考虑数组中超出新长度后面的元素。\n```\n\n## 示例 2：\n\n```\n输入：nums = [0,0,1,1,1,2,2,3,3,4]\n输出：5, nums = [0,1,2,3,4]\n解释：函数应该返回新的长度 5，并且 nums 的前五个元素被修改为 0, 1, 2, 3, 4。不需要考虑数组中超出新长度后面的元素。\n```\n\n## 提示：\n- `1 <= nums.length <= 3 * 10^4`\n- `-10^4 <= nums[i] <= 10^4`\n- `nums` 已按 **非严格递增** 排列",
+  "hints": [
+    "提示1：思路方向 - 由于数组已经排序，重复的元素会连续出现，可以考虑使用双指针技巧来原地修改数组",
+    "提示2：具体方法 - 设置一个慢指针 `slow` 指向已去重部分的末尾，快指针 `fast` 遍历数组，当 `nums[fast] != nums[slow]` 时，将 `slow` 后移并将 `nums[fast]` 复制到该位置",
+    "提示3：实现要点 - 注意处理数组为空或只有一个元素的边界情况，返回的是新长度即 `slow + 1`（或 `slow` 的值取决于初始定义）"
+  ],
+  "solution_outline": "使用快慢双指针：慢指针 `slow` 指向去重后数组的最后一个位置，快指针 `fast` 遍历数组。当发现不重复元素时，将其放到 `slow+1` 位置并移动慢指针。最终返回 `slow+1` 作为新长度。",
+  "solution_detail": "## 解题思路\n\n本题核心是利用**数组已排序**的特性：重复元素必然连续出现。我们使用**快慢指针**实现原地修改：\n\n- **慢指针 `slow`**：指向去重后数组的最后一个有效位置\n- **快指针 `fast`**：遍历整个数组寻找下一个不重复的元素\n\n### 算法步骤\n\n1. 如果数组为空，直接返回 0\n2. 初始化 `slow = 0`，表示第一个元素已经保留\n3. `fast` 从 1 开始遍历：\n   - 若 `nums[fast] != nums[slow]`，说明发现了新元素\n   - 将 `slow` 后移一位，把 `nums[fast]` 放到 `nums[slow]` 位置\n4. 返回 `slow + 1` 作为新长度\n\n### 代码实现\n\n```python\ndef removeDuplicates(nums):\n    if not nums:\n        return 0\n    \n    slow = 0  # 慢指针，指向去重后最后一个元素\n    \n    for fast in range(1, len(nums)):\n        if nums[fast] != nums[slow]:\n            slow += 1\n            nums[slow] = nums[fast]\n    \n    return slow + 1\n```\n\n### 图解过程\n\n以 `nums = [0,0,1,1,1,2,2,3,3,4]` 为例：\n\n| 步骤 | fast | slow | nums 数组 | 操作 |\n|:---|:---|:---|:---|:---|\n| 初始 | - | 0 | `[0,0,1,1,1,2,2,3,3,4]` | slow=0 保留第一个0 |\n| 1 | 1 | 0 | `[0,0,1,1,1,2,2,3,3,4]` | nums[1]==nums[0]，跳过 |\n| 2 | 2 | 0 | `[0,1,1,1,1,2,2,3,3,4]` | nums[2]=1≠0，slow=1，赋值 |\n| 3 | 3 | 1 | `[0,1,1,1,1,2,2,3,3,4]` | nums[3]==nums[1]，跳过 |\n| 4 | 4 | 1 | `[0,1,1,1,1,2,2,3,3,4]` | nums[4]==nums[1]，跳过 |\n| 5 | 5 | 2 | `[0,1,2,1,1,2,2,3,3,4]` | nums[5]=2≠1，slow=2，赋值 |\n| ... | ... | ... | ... | ... |\n| 结束 | 9 | 4 | `[0,1,2,3,4,...]` | 返回 5 |\n\n### 复杂度分析\n\n- **时间复杂度**：O(n)，其中 n 是数组长度。快指针遍历整个数组一次。\n- **空间复杂度**：O(1)，只使用了常数个额外变量。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def removeDuplicates(self, nums: List[int]) -> int:\n        \"\"\"\n        双指针法删除排序数组中的重复项\n        \"\"\"\n        if not nums:\n            return 0\n        \n        slow = 0  # 慢指针：指向去重后数组的最后一个位置\n        \n        for fast in range(1, len(nums)):\n            # 发现新元素：与慢指针指向的元素不同\n            if nums[fast] != nums[slow]:\n                slow += 1           # 慢指针前移，为新元素腾位置\n                nums[slow] = nums[fast]  # 保存新元素\n        \n        # 新长度为慢指针索引 + 1\n        return slow + 1\n\n\n# 测试代码\ndef test():\n    sol = Solution()\n    \n    # 示例 1\n    nums1 = [1, 1, 2]\n    k1 = sol.removeDuplicates(nums1)\n    print(f\"示例1: 长度={k1}, 数组={nums1[:k1]}\")  # 长度=2, 数组=[1, 2]\n    \n    # 示例 2\n    nums2 = [0, 0, 1, 1, 1, 2, 2, 3, 3, 4]\n    k2 = sol.removeDuplicates(nums2)\n    print(f\"示例2: 长度={k2}, 数组={nums2[:k2]}\")  # 长度=5, 数组=[0, 1, 2, 3, 4]\n    \n    # 边界情况\n    nums3 = [1]\n    k3 = sol.removeDuplicates(nums3)\n    print(f\"示例3: 长度={k3}, 数组={nums3[:k3]}\")  # 长度=1, 数组=[1]\n    \n    nums4 = []\n    k4 = sol.removeDuplicates(nums4)\n    print(f\"示例4: 长度={k4}\")  # 长度=0\n\n\nif __name__ == \"__main__\":\n    test()"
+    }
+  ],
+  "common_errors": [
+    "忘记处理空数组的边界情况，导致访问 nums[0] 时出错",
+    "返回时错误地返回 slow 而不是 slow + 1，因为数组索引从 0 开始，新长度应该是索引值加 1",
+    "在 nums[fast] != nums[slow] 时只移动了 slow 但没有赋值，导致数据丢失或结果错误"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(1)"
+}

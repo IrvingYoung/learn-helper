@@ -1,0 +1,433 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>LLM Wiki - Prototype</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>﻿:root {
+  --color-bg: #FFFFFF;
+  --color-bg-secondary: #F9FAFB;
+  --color-bg-tertiary: #F3F4F6;
+  --color-border: #E5E7EB;
+  --color-border-hover: #D1D5DB;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6B7280;
+  --color-text-tertiary: #9CA3AF;
+  --color-accent: #2563EB;
+  --color-accent-hover: #1D4ED8;
+  --color-accent-bg: #EFF6FF;
+  --color-node-filled: #22C55E;
+  --color-node-partial: #F59E0B;
+  --color-node-empty: #D1D5DB;
+  --color-node-selected: #2563EB;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-chat-user: #2563EB;
+  --color-chat-ai: #F3F4F6;
+  --color-chat-preview: #FFFBEB;
+  --font-ui-xs: 11px;
+  --font-ui-sm: 12px;
+  --font-ui-base: 13px;
+  --font-ui-md: 14px;
+  --font-ui-lg: 16px;
+  --font-heading-sm: 16px;
+  --font-heading-md: 20px;
+  --font-heading-lg: 24px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.10);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.10);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: "Inter", -apple-system, sans-serif; background: var(--color-bg); color: var(--color-text-primary); font-size: var(--font-ui-base); line-height: 1.5; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+.navbar { height: 48px; min-height: 48px; display: flex; align-items: center; border-bottom: 1px solid var(--color-border); padding: 0 var(--space-4); background: var(--color-bg); z-index: 100; }
+.navbar-logo { font-size: var(--font-heading-sm); font-weight: 600; color: var(--color-accent); margin-right: var(--space-8); cursor: default; display: flex; align-items: center; gap: 6px; }
+.navbar-logo svg { width: 20px; height: 20px; }
+.nav-tabs { display: flex; gap: 0; flex: 1; }
+.nav-tab { padding: 0 var(--space-4); height: 48px; display: flex; align-items: center; gap: 6px; font-size: var(--font-ui-md); font-weight: 500; color: var(--color-text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; user-select: none; }
+.nav-tab:hover { color: var(--color-text-primary); background: var(--color-bg-tertiary); }
+.nav-tab.active { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+.navbar-right { display: flex; align-items: center; gap: var(--space-2); }
+.navbar-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); cursor: pointer; color: var(--color-text-secondary); }
+.navbar-icon:hover { background: var(--color-bg-tertiary); color: var(--color-text-primary); }
+.view { display: none; height: calc(100vh - 48px); }
+.view.active { display: flex; }
+.library-view { display: flex; }
+.panel { display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.panel-left { width: 300px; min-width: 220px; max-width: 400px; border-right: 1px solid var(--color-border); background: var(--color-bg-secondary); flex-shrink: 0; }
+.panel-middle { flex: 1; min-width: 360px; background: var(--color-bg); }
+.panel-right { width: 480px; min-width: 320px; max-width: 640px; border-left: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; overflow-y: auto; }
+.panel-header { height: 40px; min-height: 40px; display: flex; align-items: center; padding: 0 var(--space-3); border-bottom: 1px solid var(--color-border); gap: var(--space-2); user-select: none; }
+.panel-header h3 { font-size: var(--font-ui-md); font-weight: 600; flex: 1; display: flex; align-items: center; gap: 6px; }
+.panel-header-actions { display: flex; gap: 2px; }
+.panel-header-btn { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); cursor: pointer; color: var(--color-text-tertiary); font-size: 15px; }
+.panel-header-btn:hover { background: var(--color-bg-tertiary); color: var(--color-text-secondary); }
+.resize-handle { position: absolute; top: 0; bottom: 0; width: 4px; cursor: col-resize; transition: background 0.15s; z-index: 10; }
+.resize-handle:hover, .resize-handle.active { background: var(--color-accent); }
+.tree-container { flex: 1; overflow-y: auto; padding: var(--space-2) 0; }
+.tree-search { margin: 0 var(--space-3) var(--space-2); position: relative; }
+.tree-search input { width: 100%; height: 32px; padding: 0 10px 0 32px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-ui-sm); outline: none; background: var(--color-bg); }
+.tree-search input:focus { border-color: var(--color-accent); }
+.tree-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--color-text-tertiary); font-size: 14px; pointer-events: none; }
+.tree-node { display: flex; align-items: center; height: 32px; padding: 0 var(--space-3); cursor: pointer; user-select: none; gap: 4px; transition: background 0.1s; }
+.tree-node:hover { background: var(--color-bg-tertiary); }
+.tree-node.selected { background: var(--color-accent-bg); }
+.tree-node.selected .tree-node-text { color: var(--color-accent); font-weight: 500; }
+.tree-node-arrow { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--color-text-tertiary); flex-shrink: 0; transition: transform 0.15s; cursor: pointer; }
+.tree-node-arrow.expanded { transform: rotate(90deg); }
+.tree-node-arrow.hidden { visibility: hidden; }
+.tree-node-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-right: 4px; }
+.tree-node-dot.filled { background: var(--color-node-filled); }
+.tree-node-dot.partial { background: var(--color-node-partial); }
+.tree-node-dot.empty { background: var(--color-node-empty); border: 1px solid var(--color-border-hover); }
+.tree-node-text { flex: 1; font-size: var(--font-ui-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-node-count { font-size: 10px; color: var(--color-text-tertiary); margin-left: 4px; }
+.tree-node-more { opacity: 0; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0; cursor: pointer; }
+.tree-node:hover .tree-node-more { opacity: 1; }
+.tree-node-more:hover { background: var(--color-border); }
+.chat-messages { flex: 1; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.chat-msg { max-width: 80%; display: flex; flex-direction: column; gap: 4px; }
+.chat-msg.user { align-self: flex-end; align-items: flex-end; }
+.chat-msg.ai { align-self: flex-start; }
+.chat-bubble { padding: 10px 14px; font-size: var(--font-ui-sm); line-height: 1.6; }
+.chat-bubble.user { background: var(--color-chat-user); color: white; border-radius: 16px 16px 4px 16px; }
+.chat-bubble.ai { background: var(--color-chat-ai); color: var(--color-text-primary); border-radius: 4px 16px 16px 16px; }
+.chat-bubble.ai p { margin-bottom: 6px; }
+.chat-bubble.ai p:last-child { margin-bottom: 0; }
+.preview-card { border: 1.5px solid var(--color-warning); border-radius: var(--radius-lg); background: var(--color-chat-preview); padding: var(--space-3); margin-top: var(--space-2); font-size: var(--font-ui-sm); }
+.preview-card h4 { font-size: var(--font-ui-sm); font-weight: 600; margin-bottom: var(--space-2); display: flex; align-items: center; gap: 4px; color: var(--color-warning); }
+.preview-item { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: var(--font-ui-xs); }
+.preview-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+.btn { height: 30px; padding: 0 14px; border-radius: var(--radius-md); font-size: var(--font-ui-sm); font-weight: 500; cursor: pointer; border: none; display: flex; align-items: center; gap: 4px; transition: all 0.12s; }
+.btn-primary { background: var(--color-accent); color: white; }
+.btn-primary:hover { background: var(--color-accent-hover); }
+.btn-secondary { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-primary); }
+.btn-secondary:hover { background: var(--color-bg-tertiary); }
+.btn-danger { background: var(--color-danger); color: white; }
+.btn-danger:hover { opacity: 0.9; }
+.chat-input-area { border-top: 1px solid var(--color-border); padding: var(--space-3); background: var(--color-bg); }
+.chat-input-row { display: flex; align-items: flex-end; gap: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2); background: var(--color-bg); transition: border-color 0.15s; }
+.chat-input-row:focus-within { border-color: var(--color-accent); }
+.chat-input-row textarea { flex: 1; border: none; outline: none; resize: none; font-size: var(--font-ui-sm); font-family: inherit; min-height: 20px; max-height: 120px; line-height: 1.5; background: transparent; color: var(--color-text-primary); }
+.chat-input-row textarea::placeholder { color: var(--color-text-tertiary); }
+.chat-tools { display: flex; align-items: center; gap: var(--space-1); }
+.chat-tool-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); cursor: pointer; color: var(--color-text-tertiary); font-size: 16px; }
+.chat-tool-btn:hover { background: var(--color-bg-tertiary); color: var(--color-text-secondary); }
+.chat-send-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--color-accent); color: white; cursor: pointer; border: none; font-size: 16px; flex-shrink: 0; }
+.chat-send-btn:hover { background: var(--color-accent-hover); }
+.page-browser { padding: var(--space-6); max-width: 620px; }
+.page-header { margin-bottom: var(--space-5); }
+.page-breadcrumb { font-size: var(--font-ui-xs); color: var(--color-text-tertiary); margin-bottom: var(--space-1); display: flex; gap: 4px; }
+.page-breadcrumb span { cursor: pointer; }
+.page-breadcrumb span:hover { color: var(--color-accent); }
+.page-title { font-size: var(--font-heading-lg); font-weight: 700; margin-bottom: 2px; line-height: 1.3; }
+.page-subtitle { font-size: var(--font-ui-sm); color: var(--color-text-secondary); margin-bottom: var(--space-3); }
+.page-meta { display: flex; align-items: center; gap: var(--space-3); font-size: var(--font-ui-xs); color: var(--color-text-tertiary); border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-3); margin-bottom: var(--space-5); flex-wrap: wrap; }
+.page-status { display: flex; align-items: center; gap: 4px; }
+.page-status.published { color: var(--color-success); }
+.page-status.draft { color: var(--color-warning); }
+.page-content { font-size: 14px; line-height: 1.8; color: var(--color-text-primary); }
+.page-content h2 { font-size: 18px; font-weight: 600; margin: var(--space-5) 0 var(--space-2); padding-bottom: var(--space-1); border-bottom: 1px solid var(--color-border); }
+.page-content h3 { font-size: 15px; font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
+.page-content p { margin-bottom: var(--space-3); }
+.page-content code { background: var(--color-bg-tertiary); padding: 1px 5px; border-radius: 3px; font-size: 13px; font-family: monospace; }
+.page-content pre { background: #1e293b; color: #e2e8f0; padding: var(--space-4); border-radius: var(--radius-lg); overflow-x: auto; margin: var(--space-3) 0; font-size: 13px; line-height: 1.6; }
+.page-content pre code { background: none; padding: 0; color: inherit; }
+.page-content ul { margin: var(--space-2) 0; padding-left: var(--space-5); }
+.page-content li { margin-bottom: 4px; }
+.tag { display: inline-block; padding: 2px 8px; background: var(--color-accent-bg); color: var(--color-accent); border-radius: 99px; font-size: 11px; font-weight: 500; margin-right: 4px; }
+.page-footer { margin-top: var(--space-8); padding-top: var(--space-3); border-top: 1px solid var(--color-border); font-size: var(--font-ui-xs); color: var(--color-text-tertiary); }
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-text-tertiary); text-align: center; padding: var(--space-8); }
+.empty-state-icon { font-size: 48px; margin-bottom: var(--space-4); opacity: 0.4; }
+.empty-state h3 { font-size: var(--font-ui-lg); font-weight: 600; margin-bottom: var(--space-2); color: var(--color-text-secondary); }
+.empty-state p { font-size: var(--font-ui-sm); max-width: 280px; line-height: 1.6; }
+.dashboard { flex: 1; overflow-y: auto; padding: var(--space-6); max-width: 800px; margin: 0 auto; width: 100%; }
+.dashboard h2 { font-size: var(--font-heading-md); font-weight: 600; margin-bottom: var(--space-5); display: flex; align-items: center; gap: 8px; }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); margin-bottom: var(--space-6); }
+.stat-card { background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-4); }
+.stat-card .value { font-size: 28px; font-weight: 700; color: var(--color-text-primary); line-height: 1; }
+.stat-card .label { font-size: var(--font-ui-xs); color: var(--color-text-secondary); margin-top: var(--space-1); }
+.section-title { font-size: var(--font-ui-md); font-weight: 600; margin-bottom: var(--space-3); display: flex; align-items: center; gap: 6px; }
+.coverage-list { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-6); padding: var(--space-4); background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+.coverage-item { display: flex; align-items: center; gap: var(--space-3); }
+.coverage-name { width: 100px; font-size: var(--font-ui-sm); font-weight: 500; flex-shrink: 0; }
+.coverage-bar { flex: 1; height: 8px; background: var(--color-border); border-radius: 99px; overflow: hidden; }
+.coverage-fill { height: 100%; border-radius: 99px; background: var(--color-accent); transition: width 0.3s; }
+.coverage-pct { font-size: var(--font-ui-xs); color: var(--color-text-secondary); width: 60px; text-align: right; }
+.activity-list { padding: var(--space-4); background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+.activity-item { display: flex; align-items: center; gap: var(--space-3); padding: 6px 0; font-size: var(--font-ui-sm); }
+.activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; }
+.activity-time { font-size: var(--font-ui-xs); color: var(--color-text-tertiary); margin-left: auto; flex-shrink: 0; }
+.browse-view { flex: 1; display: flex; overflow: hidden; }
+.browse-tree { width: 320px; min-width: 320px; border-right: 1px solid var(--color-border); background: var(--color-bg-secondary); overflow-y: auto; flex-shrink: 0; }
+.browse-content { flex: 1; overflow-y: auto; padding: var(--space-6); }
+</style></head><body><nav class="navbar"><div class="navbar-logo"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 5a1 1 0 112 0v5a1 1 0 11-2 0V5zm1 10a1 1 0 100-2 1 1 0 000 2z"/></svg>LLM Wiki</div><div class="nav-tabs"><div class="nav-tab active" data-view="library" onclick="switchView('library')">🧠 知识库</div><div class="nav-tab" data-view="browse" onclick="switchView('browse')">📖 浏览</div><div class="nav-tab" data-view="dashboard" onclick="switchView('dashboard')">📊 仪表盘</div></div><div class="navbar-right"><div class="navbar-icon">⚙️</div></div></nav><div class="view library-view active" id="view-library"><div class="panel panel-left" id="leftPanel"><div class="panel-header"><h3>🌳 知识库</h3><div class="panel-header-actions"><div class="panel-header-btn">🔍</div><div class="panel-header-btn">＋</div><div class="panel-header-btn" onclick="togglePanel('left')">◀</div></div></div><div class="tree-search"><span class="tree-search-icon">🔍</span><input placeholder="搜索知识树..."></div><div class="tree-container" id="knowledgeTree"></div></div><div class="resize-handle" data-panel="left" onmousedown="startResize(event,'left')"></div><div class="panel panel-middle" id="middlePanel"><div class="panel-header"><h3>💬 AI 助手</h3><div class="panel-header-actions"><div class="panel-header-btn">🗑️</div></div></div><div class="chat-messages" id="chatMessages"></div><div class="chat-input-area"><div class="chat-input-row"><div class="chat-tools"><div class="chat-tool-btn">📎</div></div><textarea rows="1" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea><button class="chat-send-btn" onclick="sendChat()">➤</button></div></div></div><div class="resize-handle" data-panel="middle" onmousedown="startResize(event,'middle')"></div><div class="panel panel-right" id="rightPanel"><div class="panel-header"><h3>📄 页面</h3><div class="panel-header-actions"><div class="panel-header-btn">⭐</div><div class="panel-header-btn">⋮</div><div class="panel-header-btn" onclick="togglePanel('right')">▶</div></div></div><div class="page-browser" id="pageBrowser"></div></div></div><div class="view dashboard" id="view-dashboard"><h2>📊 仪表盘</h2><div class="stats-row"><div class="stat-card"><div class="value">28</div><div class="label">总页面</div></div><div class="stat-card"><div class="value">64%</div><div class="label">内容覆盖度</div></div><div class="stat-card"><div class="value">5</div><div class="label">待填充</div></div><div class="stat-card"><div class="value">3</div><div class="label">知识领域</div></div></div><div class="section-title">📈 领域覆盖</div><div class="coverage-list"><div class="coverage-item"><span class="coverage-name">Go</span><div class="coverage-bar"><div class="coverage-fill" style="width:67%"></div></div><span class="coverage-pct">8/12</span></div><div class="coverage-item"><span class="coverage-name">Redis</span><div class="coverage-bar"><div class="coverage-fill" style="width:62%"></div></div><span class="coverage-pct">5/8</span></div><div class="coverage-item"><span class="coverage-name">系统设计</span><div class="coverage-bar"><div class="coverage-fill" style="width:50%"></div></div><span class="coverage-pct">3/6</span></div></div><div class="section-title">🕐 最近活动</div><div class="activity-list"><div class="activity-item"><div class="activity-dot"></div>📝 更新 goroutine<span class="activity-time">2 小时前</span></div><div class="activity-item"><div class="activity-dot"></div>➕ 创建 GMP 模型<span class="activity-time">2 小时前</span></div><div class="activity-item"><div class="activity-dot"></div>📝 更新 Channel<span class="activity-time">昨天</span></div><div class="activity-item"><div class="activity-dot"></div>📝 更新 Go 基础语法<span class="activity-time">3 天前</span></div><div class="activity-item"><div class="activity-dot"></div>➕ 创建 Redis 数据结构<span class="activity-time">5 天前</span></div></div></div><div class="view browse-view" id="view-browse"><div class="browse-tree"><div class="panel-header"><h3>🌳 知识库</h3></div><div class="tree-container" id="browseTree"></div></div><div class="browse-content"><div class="page-browser" id="browseContent"></div></div></div><script>﻿// Tree Data
+const treeData = [
+  { id:"go", title:"Go", count:5, state:"filled", children:[
+    { id:"goroutine", title:"goroutine", count:3, state:"filled", children:[
+      { id:"gmp", title:"GMP 模型", count:0, state:"partial" },
+      { id:"channel", title:"Channel", count:0, state:"filled" },
+      { id:"sync", title:"sync 原语", count:0, state:"empty" }
+    ]},
+    { id:"datatypes", title:"数据类型", count:0, state:"partial" },
+    { id:"patterns", title:"并发模式", count:0, state:"empty" }
+  ]},
+  { id:"redis", title:"Redis", count:2, state:"filled", children:[
+    { id:"ds", title:"数据结构", count:0, state:"filled" },
+    { id:"persist", title:"持久化", count:0, state:"partial" }
+  ]},
+  { id:"sysdesign", title:"系统设计", count:2, state:"partial", children:[
+    { id:"cap", title:"CAP 理论", count:0, state:"filled" },
+    { id:"consist", title:"一致性算法", count:0, state:"empty" }
+  ]},
+  { id:"overview", title:"📊 概览", count:0, state:"filled" }
+];
+
+const pages = {
+  goroutine: {
+    title:"goroutine", subtitle:"goroutine 与并发", breadcrumb:["Go","goroutine"],
+    status:"published", tags:["#concurrency","#basics"], updated:"2026-05-29",
+    content:"<h2>基本概念</h2><p>Goroutine 是 Go 语言的轻量级线程，由 Go 运行时管理。它比操作系统线程轻量得多，创建成本极低。</p><pre><code>go func() {\n    fmt.Println(\"hello from goroutine\")\n}()</code></pre><h2>调度模型</h2><p>GMP 模型是 Go 的运行时调度核心：</p><ul><li><b>G</b> (Goroutine) — 用户态协程</li><li><b>M</b> (Machine) — 操作系统线程</li><li><b>P</b> (Processor) — 逻辑处理器</li></ul><h2>通信机制</h2><p>Channel 是 goroutine 之间的通信桥梁：</p><pre><code>ch := make(chan int)\ngo func() { ch <- 42 }()\nvalue := <-ch</code></pre>"
+  },
+  gmp: {
+    title:"GMP 模型", subtitle:"Go 的并发调度模型", breadcrumb:["Go","goroutine","GMP 模型"],
+    status:"draft", tags:["#concurrency","#scheduler"], updated:"2026-05-29",
+    content:"<p>GMP 模型是 Go 运行时调度器的核心架构。</p><h2>三个角色</h2><ul><li><b>G (Goroutine)</b> — 用户态轻量级线程</li><li><b>M (Machine)</b> — 操作系统线程</li><li><b>P (Processor)</b> — 逻辑处理器</li></ul>"
+  },
+  channel: {
+    title:"Channel", subtitle:"Goroutine 间通信", breadcrumb:["Go","goroutine","Channel"],
+    status:"published", tags:["#concurrency","#communication"], updated:"2026-05-28",
+    content:"<p>Channel 是 Go 中 goroutine 之间通信的主要方式。</p><pre><code>ch := make(chan int, 2)\nch <- 1\nch <- 2\nfmt.Println(<-ch)</code></pre>"
+  },
+  sync: {
+    title:"sync 原语", subtitle:"", breadcrumb:["Go","goroutine","sync 原语"],
+    status:"empty", tags:[], updated:"2026-05-28", content:""
+  },
+  datatypes: {
+    title:"数据类型", subtitle:"", breadcrumb:["Go","数据类型"],
+    status:"draft", tags:["#basics"], updated:"2026-05-27",
+    content:"<p>Go 语言提供了丰富的数据类型。</p><ul><li>bool</li><li>string</li><li>int / int8 / ... / int64</li><li>float32 / float64</li></ul>"
+  },
+  patterns: {
+    title:"并发模式", subtitle:"", breadcrumb:["Go","并发模式"],
+    status:"empty", tags:[], updated:"2026-05-27", content:""
+  },
+  ds: {
+    title:"数据结构", subtitle:"", breadcrumb:["Redis","数据结构"],
+    status:"published", tags:["#redis","#data-structures"], updated:"2026-05-26",
+    content:"<p>Redis 提供了多种数据结构：</p><ul><li>String — 字符串</li><li>List — 列表</li><li>Set — 集合</li><li>Hash — 哈希</li><li>ZSet — 有序集合</li></ul>"
+  },
+  persist: {
+    title:"持久化", subtitle:"", breadcrumb:["Redis","持久化"],
+    status:"draft", tags:["#redis","#persistence"], updated:"2026-05-26",
+    content:"<p>Redis 支持 RDB 和 AOF 两种持久化方式。</p>"
+  },
+  cap: {
+    title:"CAP 理论", subtitle:"", breadcrumb:["系统设计","CAP 理论"],
+    status:"published", tags:["#distributed","#theory"], updated:"2026-05-25",
+    content:"<p>CAP 定理指出分布式系统最多同时满足两项。</p>"
+  },
+  consist: {
+    title:"一致性算法", subtitle:"", breadcrumb:["系统设计","一致性算法"],
+    status:"empty", tags:[], updated:"2026-05-25", content:""
+  },
+  overview: {
+    title:"知识库概览", subtitle:"AI 自动维护", breadcrumb:["概览"],
+    status:"published", tags:["#auto"], updated:"2026-05-29 22:00",
+    content:"<h2>统计</h2><p>📄 总页面数: <b>28</b> | ✅ 已填充: <b>18 (64%)</b> | 📝 草稿: <b>5 (18%)</b> | ⬜ 空页面: <b>5 (18%)</b></p><h2>领域分布</h2><ul><li><b>Go</b> — 8 页面 (4 已填充)</li><li><b>Redis</b> — 5 页面 (3 已填充)</li><li><b>系统设计</b> — 4 页面 (2 已填充)</li></ul><h2>最近更新</h2><ul><li>goroutine — 2 小时前</li><li>GMP 模型 — 2 小时前</li><li>Channel — 昨天</li></ul><p><i>AI 自动维护 · 最后更新: 2026-05-29 22:00</i></p>"
+  }
+};
+
+function renderTree(container, nodes, depth) {
+  depth = depth || 0;
+  nodes.forEach(n => {
+    const hasChildren = n.children && n.children.length > 0;
+    const div = document.createElement("div");
+    div.className = "tree-node" + (n.id === "goroutine" ? " selected" : "");
+    div.dataset.id = n.id;
+    div.style.paddingLeft = (8 + depth * 16) + "px";
+    div.onclick = () => selectTreeNode(n.id);
+    const arrow = document.createElement("span");
+    arrow.className = "tree-node-arrow" + (hasChildren ? " expanded" : " hidden");
+    arrow.textContent = "▶";
+    arrow.onclick = (e) => { e.stopPropagation(); toggleTreeNode(div, arrow); };
+    div.appendChild(arrow);
+    const dot = document.createElement("span");
+    dot.className = "tree-node-dot " + n.state;
+    div.appendChild(dot);
+    const text = document.createElement("span");
+    text.className = "tree-node-text";
+    text.textContent = n.title;
+    div.appendChild(text);
+    if (n.count > 0) {
+      const cnt = document.createElement("span");
+      cnt.className = "tree-node-count";
+      cnt.textContent = "(" + n.count + ")";
+      div.appendChild(cnt);
+    }
+    if (hasChildren) {
+      const more = document.createElement("span");
+      more.className = "tree-node-more";
+      more.textContent = "⋮";
+      div.appendChild(more);
+    }
+    container.appendChild(div);
+    if (hasChildren) {
+      const ch = document.createElement("div");
+      ch.className = "tree-children";
+      renderTree(ch, n.children, depth + 1);
+      container.appendChild(ch);
+    }
+  });
+}
+
+function toggleTreeNode(node, arrow) {
+  const ch = node.nextElementSibling;
+  if (ch && ch.classList.contains("tree-children")) {
+    const isHidden = ch.style.display === "none";
+    ch.style.display = isHidden ? "" : "none";
+    arrow.classList.toggle("expanded", isHidden);
+  }
+}
+
+function selectTreeNode(id) {
+  document.querySelectorAll(".tree-node").forEach(n => n.classList.remove("selected"));
+  const node = document.querySelector('.tree-node[data-id="' + id + '"]');
+  if (node) { node.classList.add("selected"); }
+  loadPage(id);
+}
+
+function loadPage(id) {
+  const page = pages[id];
+  const container = document.getElementById("pageBrowser");
+  if (!page) {
+    container.innerHTML = '<div class="page-content"><p>选择左侧节点查看内容</p></div>';
+    return;
+  }
+  if (page.status === "empty" || !page.content) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⬜</div><h3>空页面</h3><p>这个页面还没有内容。<br>在聊天中告诉 AI：<br><b>"展开讲讲 ' + page.title + '"</b></p></div>';
+    return;
+  }
+  const statusMap = { published:"✅ 已发布", draft:"📝 草稿", empty:"⬜ 空页面" };
+  const bc = page.breadcrumb.map(b => "<span>" + b + "</span>").join('<span style="color:var(--color-border)"> / </span>');
+  const tags = (page.tags || []).map(t => '<span class="tag">' + t + "</span>").join(" ");
+  container.innerHTML = '<div class="page-header"><div class="page-breadcrumb">' + bc + '</div><div class="page-title"># ' + page.title + '</div><div class="page-subtitle">' + page.subtitle + '</div><div class="page-meta"><span class="page-status ' + page.status + '">' + statusMap[page.status] + '</span><span>最后更新: ' + page.updated + '</span>' + (tags ? "<span>" + tags + "</span>" : "") + '</div></div><div class="page-content">' + page.content + '</div><div class="page-footer">AI 自动维护 · 第 ' + id + ' 号页面</div>';
+  const bc2 = document.getElementById("browseContent");
+  if (bc2) bc2.innerHTML = container.innerHTML;
+}
+
+function sendChat() {
+  const inp = document.querySelector(".chat-input-row textarea");
+  const msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = "";
+  inp.style.height = "auto";
+  addChatMsg("user", msg);
+  const lower = msg.toLowerCase();
+  if (lower.includes("go") && (lower.includes("学") || lower.includes("后端"))) {
+    setTimeout(() => simulateAI(), 500);
+  } else if (lower.includes("hello") || lower.includes("hi") || lower.includes("你好")) {
+    setTimeout(() => addChatMsg("ai", "你好！我是你的知识库管家。告诉我你想学什么，我来帮你建立知识库。<br><br>你可以：<br>• 输入 \"我要学...\" 新建知识领域<br>• 输入 \"展开讲...\" 深入某个主题<br>• 拖拽文件让我帮你吸收资料"), 400);
+  } else {
+    setTimeout(() => addChatMsg("ai", "收到！让我想想... 我已理解你的需求，请确认以下变更计划。"), 400);
+    setTimeout(() => addPreview(), 1200);
+  }
+}
+
+function addChatMsg(type, html) {
+  const c = document.getElementById("chatMessages");
+  const d = document.createElement("div");
+  d.className = "chat-msg " + type;
+  d.innerHTML = '<div class="chat-bubble ' + type + '">' + html + "</div>";
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+}
+
+function addPreview() {
+  const c = document.getElementById("chatMessages");
+  const d = document.createElement("div");
+  d.className = "chat-msg ai";
+  d.innerHTML = '<div class="chat-bubble ai"><p>📋 以下是变更预览：</p><div class="preview-card"><h4>📝 待执行变更</h4><div class="preview-item"><span>🟢</span><span>CREATE</span><span style="color:var(--color-text-secondary)">Go 基础语法</span></div><div class="preview-item"><span>🟡</span><span>UPDATE</span><span style="color:var(--color-text-secondary)">goroutine (添加"调度原理"章节)</span></div><div class="preview-item"><span>🟢</span><span>CREATE</span><span style="color:var(--color-text-secondary)">GMP 模型 (子页面)</span></div><div class="preview-actions"><button class="btn btn-secondary" onclick="this.parentElement.innerHTML=\'已发送调整请求\'">✏️ 调整</button><button class="btn btn-danger" onclick="this.parentElement.innerHTML=\'已拒绝\'">❌ 拒绝</button><button class="btn btn-primary" onclick="this.parentElement.innerHTML=\'✅ 已确认，正在写入...\'">✅ 确认</button></div></div></div>';
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+}
+
+function simulateAI() {
+  addChatMsg("ai", '好的！我来为你规划 Go 后端的学习路线：<br><br>📚 <b>大纲：</b><br>• <b>Go 基础语法</b> — 变量、类型、控制流<br>• <b>goroutine 与并发</b> — 协程、channel、GMP<br>• <b>Web 框架</b> — Gin / Echo<br>• <b>数据库操作</b> — GORM、SQL<br>• <b>项目实战</b> — REST API 开发<br><br>共将创建 5 个新页面，是否确认？');
+  setTimeout(() => addPreview(), 600);
+}
+
+function switchView(name) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+  document.getElementById("view-" + name).classList.add("active");
+  document.querySelector('.nav-tab[data-view="' + name + '"]').classList.add("active");
+  if (name === "browse") {
+    const bt = document.getElementById("browseTree");
+    bt.innerHTML = "";
+    renderTree(bt, treeData, 0);
+  }
+}
+
+let leftVisible = true, rightVisible = true;
+function togglePanel(side) {
+  const panel = document.getElementById(side + "Panel");
+  const btn = document.getElementById("toggle" + (side === "left" ? "Left" : "Right"));
+  if (side === "left") {
+    leftVisible = !leftVisible;
+    panel.style.display = leftVisible ? "" : "none";
+    btn.textContent = leftVisible ? "◀" : "▶";
+  } else {
+    rightVisible = !rightVisible;
+    panel.style.display = rightVisible ? "" : "none";
+    btn.textContent = rightVisible ? "▶" : "◀";
+  }
+}
+
+let isResizing = false, currentResize = null, startX, startWidth;
+function startResize(e, panel) {
+  isResizing = true;
+  currentResize = panel;
+  startX = e.clientX;
+  const el = document.getElementById(panel + "Panel");
+  startWidth = el.offsetWidth;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+}
+
+document.addEventListener("mousemove", e => {
+  if (!isResizing) return;
+  const el = document.getElementById(currentResize + "Panel");
+  let newW;
+  if (currentResize === "left") {
+    newW = startWidth + (e.clientX - startX);
+    newW = Math.max(220, Math.min(400, newW));
+  } else {
+    newW = startWidth - (e.clientX - startX);
+    newW = Math.max(320, Math.min(640, newW));
+  }
+  el.style.width = newW + "px";
+  el.style.flex = "none";
+});
+
+document.addEventListener("mouseup", () => {
+  isResizing = false;
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+});
+
+renderTree(document.getElementById("knowledgeTree"), treeData, 0);
+loadPage("goroutine");
+
+document.querySelector("textarea").addEventListener("input", function() {
+  this.style.height = "auto";
+  this.style.height = Math.min(this.scrollHeight, 120) + "px";
+});
+</script></body></html>

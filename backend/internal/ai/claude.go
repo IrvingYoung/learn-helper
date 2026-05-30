@@ -9,48 +9,6 @@ import (
 	"net/http"
 )
 
-type ClaudeConfig struct {
-	APIKey string
-	Model  string
-}
-
-type claudeMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type claudeRequest struct {
-	Model         string           `json:"model"`
-	MaxTokens     int              `json:"max_tokens"`
-	SystemPrompt string           `json:"system,omitempty"`
-	Messages     []claudeMessage `json:"messages"`
-	Stream       bool             `json:"stream"`
-}
-
-type claudeResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
-}
-
-type claudeStreamResponse struct {
-	Type string `json:"type"`
-	Delta struct {
-		Type       string `json:"type"`
-		Text       string `json:"text"`
-		StopReason string `json:"stop_reason"`
-	} `json:"delta"`
-	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
-}
-
 type ClaudeProvider struct {
 	apiKey string
 	model  string
@@ -75,11 +33,18 @@ func (p *ClaudeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 	}
 
 	claudeReq := claudeRequest{
-		Model:         model,
-		MaxTokens:     req.MaxTokens,
-		SystemPrompt:  req.SystemPrompt,
-		Messages:      messages,
-		Stream:        false,
+		Model:     model,
+		MaxTokens: req.MaxTokens,
+		System:    req.SystemPrompt,
+		Messages:  messages,
+		Stream:    false,
+	}
+
+	if len(req.Tools) > 0 {
+		claudeReq.Tools = make([]claudeTool, len(req.Tools))
+		for i, t := range req.Tools {
+			claudeReq.Tools[i] = claudeTool{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema}
+		}
 	}
 
 	jsonData, err := json.Marshal(claudeReq)
@@ -111,7 +76,13 @@ func (p *ClaudeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 		return nil, fmt.Errorf("Claude API error: %s", string(body))
 	}
 
-	var claudeResp claudeResponse
+	var claudeResp struct {
+		Content []claudeContentBlock `json:"content"`
+		Usage   struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	}
 	if err := json.Unmarshal(body, &claudeResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -141,11 +112,18 @@ func (p *ClaudeProvider) StreamChat(ctx context.Context, req ChatRequest) (<-cha
 	}
 
 	claudeReq := claudeRequest{
-		Model:         model,
-		MaxTokens:     req.MaxTokens,
-		SystemPrompt:  req.SystemPrompt,
-		Messages:      messages,
-		Stream:        true,
+		Model:     model,
+		MaxTokens: req.MaxTokens,
+		System:    req.SystemPrompt,
+		Messages:  messages,
+		Stream:    true,
+	}
+
+	if len(req.Tools) > 0 {
+		claudeReq.Tools = make([]claudeTool, len(req.Tools))
+		for i, t := range req.Tools {
+			claudeReq.Tools[i] = claudeTool{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema}
+		}
 	}
 
 	jsonData, err := json.Marshal(claudeReq)
@@ -174,27 +152,14 @@ func (p *ClaudeProvider) StreamChat(ctx context.Context, req ChatRequest) (<-cha
 	}
 
 	ch := make(chan ChatChunk, 100)
-	go p.streamResponse(resp.Body, ch)
+	go func() {
+		defer close(ch)
+		ParseClaudeSSE(resp.Body, func(chunk ChatChunk) {
+			ch <- chunk
+		})
+	}()
+
 	return ch, nil
-}
-
-func (p *ClaudeProvider) streamResponse(body io.Reader, ch chan<- ChatChunk) {
-	defer close(ch)
-	decoder := json.NewDecoder(body)
-
-	for decoder.More() {
-		var event claudeStreamResponse
-		if err := decoder.Decode(&event); err != nil {
-			return
-		}
-
-		if event.Type == "content_block_delta" {
-			ch <- ChatChunk{Content: event.Delta.Text, Done: false}
-		} else if event.Type == "message_stop" {
-			ch <- ChatChunk{Done: true}
-			return
-		}
-	}
 }
 
 func (p *ClaudeProvider) GetModel() string {

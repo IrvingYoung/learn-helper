@@ -1,0 +1,22 @@
+{
+  "content": "# 数据结构与算法概述\n\n## 概念定义\n\n**数据结构**是计算机存储、组织数据的方式，指相互之间存在一种或多种特定关系的数据元素的集合。**算法**则是对特定问题求解步骤的描述，是指令的有限序列。二者相辅相成：数据结构是算法的基石，算法依赖数据结构实现高效运算。\n\n## 核心原理\n\n### 时间复杂度与空间复杂度\n- **时间复杂度**：衡量算法执行时间随输入规模增长的变化趋势，常用大O表示法（如 O(1)、O(n)、O(n²)、O(log n)）\n- **空间复杂度**：衡量算法占用额外内存空间随输入规模增长的变化趋势\n\n复杂度分析关注**最坏情况**和**渐近增长**，忽略常数因子和低阶项，让我们能在编码前评估算法效率。\n\n## 应用场景\n\n| 场景 | 典型选择 |\n|------|---------|\n| 快速查找 | 哈希表、二分查找（O(log n)） |\n| 频繁增删 | 链表（O(1)）优于数组（O(n)） |\n| 排序需求 | 快速排序、归并排序（O(n log n)） |\n| 最短路径 | Dijkstra、BFS/DFS |\n\n## 对比分析\n\n- **数组 vs 链表**：数组支持随机访问O(1)但插入删除O(n)；链表相反\n- **暴力算法 vs 优化算法**：如两数之和，暴力O(n²) vs 哈希优化O(n)\n- **递归 vs 迭代**：递归代码简洁但可能栈溢出，迭代更省空间",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "# 示例1：时间复杂度的直观对比 —— 查找元素\n# 方法A：线性查找 O(n)\ndef linear_search(arr, target):\n    for i in range(len(arr)):      # 遍历n次\n        if arr[i] == target:\n            return i\n    return -1\n\n# 方法B：哈希表查找 O(1)\ndef hash_search(hash_set, target):\n    return target in hash_set       # 平均O(1)时间\n\n# 方法C：二分查找 O(log n)，要求数组有序\ndef binary_search(arr, target):\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1",
+      "explanation": "三种查找方法展示了不同数据结构与算法的时间复杂度差异。线性查找无需预处理但最慢；哈希查找最快但需额外空间；二分查找折中，要求数据有序。实际开发中需权衡时间、空间、代码复杂度。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 示例2：空间复杂度的权衡 —— 斐波那契数列\n# 方法A：递归（时间O(2^n)，空间O(n)栈空间）\ndef fib_recursive(n):\n    if n <= 1:\n        return n\n    return fib_recursive(n-1) + fib_recursive(n-2)\n\n# 方法B：动态规划优化（时间O(n)，空间O(n)）\ndef fib_dp(n):\n    if n <= 1:\n        return n\n    dp = [0] * (n + 1)\n    dp[1] = 1\n    for i in range(2, n + 1):\n        dp[i] = dp[i-1] + dp[i-2]\n    return dp[n]\n\n# 方法C：空间压缩（时间O(n)，空间O(1)）\ndef fib_optimized(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b      # 只保留前两个状态\n    return b",
+      "explanation": "通过斐波那契问题展示空间优化技巧。递归有大量重复计算；动态规划用数组存储避免重复；最终优化发现只需两个变量滚动更新，将空间从O(n)降至O(1)，这是算法优化的经典思路。"
+    }
+  ],
+  "common_mistakes": [
+    "混淆时间复杂度和实际运行时间，O(n)算法在n小时可能比O(n²)更慢（常数因子影响）",
+    "忽略空间复杂度，使用递归过深导致栈溢出或内存超限",
+    "盲目追求最优复杂度，忽视代码可读性和实际数据规模（小规模时O(n²)可能优于O(n log n)）",
+    "认为同一数据结构的所有操作都是相同复杂度（如数组访问O(1)但插入O(n)）",
+    "在循环中做重复计算或创建不必要的临时数据结构，导致隐性复杂度上升"
+  ]
+}

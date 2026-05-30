@@ -8,6 +8,7 @@ package model
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const batchUpdateTopicContent = `-- name: BatchUpdateTopicContent :exec
@@ -51,6 +52,27 @@ func (q *Queries) CountWikiPagesByStatus(ctx context.Context, contentStatus stri
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createAIConfig = `-- name: CreateAIConfig :execresult
+INSERT INTO ai_configs (provider, model_name, api_key, is_active)
+VALUES (?, ?, ?, ?)
+`
+
+type CreateAIConfigParams struct {
+	Provider  string
+	ModelName string
+	ApiKey    string
+	IsActive  sql.NullInt64
+}
+
+func (q *Queries) CreateAIConfig(ctx context.Context, arg CreateAIConfigParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createAIConfig,
+		arg.Provider,
+		arg.ModelName,
+		arg.ApiKey,
+		arg.IsActive,
+	)
 }
 
 const createConversation = `-- name: CreateConversation :one
@@ -146,6 +168,15 @@ func (q *Queries) CreateWikiPage(ctx context.Context, arg CreateWikiPageParams) 
 	)
 }
 
+const deactivateAllConfigs = `-- name: DeactivateAllConfigs :exec
+UPDATE ai_configs SET is_active = 0 WHERE is_active = 1
+`
+
+func (q *Queries) DeactivateAllConfigs(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deactivateAllConfigs)
+	return err
+}
+
 const deleteWikiPage = `-- name: DeleteWikiPage :exec
 DELETE FROM wiki_pages WHERE id = ?
 `
@@ -155,8 +186,28 @@ func (q *Queries) DeleteWikiPage(ctx context.Context, id int64) error {
 	return err
 }
 
+const getAIConfigByProvider = `-- name: GetAIConfigByProvider :one
+SELECT id, provider, model_name, api_key, is_active, config, created_at, updated_at FROM ai_configs WHERE provider = ? LIMIT 1
+`
+
+func (q *Queries) GetAIConfigByProvider(ctx context.Context, provider string) (AiConfig, error) {
+	row := q.db.QueryRowContext(ctx, getAIConfigByProvider, provider)
+	var i AiConfig
+	err := row.Scan(
+		&i.ID,
+		&i.Provider,
+		&i.ModelName,
+		&i.ApiKey,
+		&i.IsActive,
+		&i.Config,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getActiveAIConfig = `-- name: GetActiveAIConfig :one
-SELECT id, provider, model_name, api_key, is_active, config, created_at, updated_at FROM ai_configs WHERE is_active = 1
+SELECT id, provider, model_name, api_key, is_active, config, created_at, updated_at FROM ai_configs WHERE is_active = 1 LIMIT 1
 `
 
 func (q *Queries) GetActiveAIConfig(ctx context.Context) (AiConfig, error) {
@@ -783,6 +834,53 @@ func (q *Queries) GetPrevTopic(ctx context.Context, arg GetPrevTopicParams) (Get
 	return i, err
 }
 
+const getRecentlyUpdatedWikiPages = `-- name: GetRecentlyUpdatedWikiPages :many
+SELECT id, title, slug, page_type, content_status, updated_at
+FROM wiki_pages
+WHERE page_type != 'overview'
+ORDER BY updated_at DESC
+LIMIT 10
+`
+
+type GetRecentlyUpdatedWikiPagesRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	ContentStatus string
+	UpdatedAt     time.Time
+}
+
+func (q *Queries) GetRecentlyUpdatedWikiPages(ctx context.Context) ([]GetRecentlyUpdatedWikiPagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getRecentlyUpdatedWikiPages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetRecentlyUpdatedWikiPagesRow
+	for rows.Next() {
+		var i GetRecentlyUpdatedWikiPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.PageType,
+			&i.ContentStatus,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTopicAncestors = `-- name: GetTopicAncestors :many
 WITH RECURSIVE ancestors AS (
     SELECT t.id, t.slug, t.name, t.parent_id, 0 as depth FROM topics t WHERE t.slug = ?
@@ -905,9 +1003,7 @@ func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (GetTopicBySl
 }
 
 const getWikiPageByID = `-- name: GetWikiPageByID :one
-SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
-FROM wiki_pages
-WHERE id = ?
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE id = ?
 `
 
 func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, error) {
@@ -1047,6 +1143,31 @@ func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, er
 	return items, nil
 }
 
+const updateAIConfig = `-- name: UpdateAIConfig :exec
+UPDATE ai_configs
+SET provider = ?, model_name = ?, api_key = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type UpdateAIConfigParams struct {
+	Provider  string
+	ModelName string
+	ApiKey    string
+	IsActive  sql.NullInt64
+	ID        int64
+}
+
+func (q *Queries) UpdateAIConfig(ctx context.Context, arg UpdateAIConfigParams) error {
+	_, err := q.db.ExecContext(ctx, updateAIConfig,
+		arg.Provider,
+		arg.ModelName,
+		arg.ApiKey,
+		arg.IsActive,
+		arg.ID,
+	)
+	return err
+}
+
 const updateExerciseErrors = `-- name: UpdateExerciseErrors :exec
 UPDATE exercises SET common_errors = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `
@@ -1143,37 +1264,6 @@ type UpdateWikiPageContentParams struct {
 
 func (q *Queries) UpdateWikiPageContent(ctx context.Context, arg UpdateWikiPageContentParams) error {
 	_, err := q.db.ExecContext(ctx, updateWikiPageContent, arg.Content, arg.ContentStatus, arg.ID)
-	return err
-}
-
-const upsertAIConfig = `-- name: UpsertAIConfig :exec
-INSERT INTO ai_configs (provider, model_name, api_key, is_active, config)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-    provider = excluded.provider,
-    model_name = excluded.model_name,
-    api_key = excluded.api_key,
-    is_active = excluded.is_active,
-    config = excluded.config,
-    updated_at = CURRENT_TIMESTAMP
-`
-
-type UpsertAIConfigParams struct {
-	Provider  string
-	ModelName string
-	ApiKey    string
-	IsActive  sql.NullInt64
-	Config    sql.NullString
-}
-
-func (q *Queries) UpsertAIConfig(ctx context.Context, arg UpsertAIConfigParams) error {
-	_, err := q.db.ExecContext(ctx, upsertAIConfig,
-		arg.Provider,
-		arg.ModelName,
-		arg.ApiKey,
-		arg.IsActive,
-		arg.Config,
-	)
 	return err
 }
 

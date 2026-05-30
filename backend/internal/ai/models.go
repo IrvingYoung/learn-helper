@@ -10,11 +10,7 @@ type ChatRequest struct {
 	SystemPrompt string
 	Model        string
 	MaxTokens    int
-}
-
-type ChatChunk struct {
-	Content string `json:"content"`
-	Done    bool   `json:"done"`
+	Tools        []Tool
 }
 
 type ChatResponse struct {

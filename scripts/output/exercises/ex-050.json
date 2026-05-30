@@ -1,0 +1,27 @@
+{
+  "description": "## 汉明距离\n\n两个整数之间的 [汉明距离](https://baike.baidu.com/item/%E6%B1%89%E6%98%8E%E8%B7%9D%E7%A6%BB) 指的是这两个数字对应二进制位不同的位置的数目。\n\n给你两个整数 `x` 和 `y`，计算并返回它们之间的汉明距离。\n\n### 示例 1\n```\n输入：x = 1, y = 4\n输出：2\n解释：\n1   (0 0 0 1)\n4   (0 1 0 0)\n       ↑   ↑\n上面的箭头指出了对应二进制位不同的位置。\n```\n\n### 示例 2\n```\n输入：x = 3, y = 1\n输出：1\n```\n\n### 约束条件\n- `0 <= x, y < 2^31`",
+  "hints": [
+    "提示1：首先思考如何找到两个数二进制位不同的位置——异或运算可以帮助你标记出所有不同的位",
+    "提示2：异或结果中1的个数就是汉明距离，问题转化为如何高效统计一个整数二进制中1的个数",
+    "提示3：可以使用逐位检查（n & 1）配合右移，或者利用 n & (n-1) 每次消除最右边的1来统计"
+  ],
+  "solution_outline": "利用异或运算得到两个数不同的位，然后统计异或结果中1的个数。可以使用逐位检查或Brian Kernighan算法来优化统计1的过程。",
+  "solution_detail": "## 解题思路\n\n### 方法一：逐位检查（基础做法）\n1. 计算 `xor = x ^ y`，得到所有不同的位\n2. 对 `xor` 逐位检查：每次取最低位（`xor & 1`），然后右移一位\n3. 统计其中1的个数\n\n### 方法二：Brian Kernighan 算法（优化）\n利用性质：`n & (n - 1)` 可以消除 `n` 最右边的1。重复此操作直到 `n` 变为0，操作次数即为1的个数。\n\n## 代码实现\n\n### 方法一：逐位检查\n```python\ndef hammingDistance(x: int, y: int) -> int:\n    xor = x ^ y\n    count = 0\n    while xor:\n        count += xor & 1  # 检查最低位是否为1\n        xor >>= 1         # 右移一位\n    return count\n```\n\n### 方法二：Brian Kernighan 算法（推荐）\n```python\ndef hammingDistance(x: int, y: int) -> int:\n    xor = x ^ y\n    count = 0\n    while xor:\n        xor &= xor - 1  # 消除最右边的1\n        count += 1\n    return count\n```\n\n### 方法三：内置函数（面试不推荐直接使用）\n```python\ndef hammingDistance(x: int, y: int) -> int:\n    return bin(x ^ y).count('1')\n```\n\n## 复杂度分析\n\n| 方法 | 时间复杂度 | 空间复杂度 |\n|:---|:---|:---|\n| 逐位检查 | O(1) — 最多检查31位 | O(1) |\n| Brian Kernighan | O(1) — 最坏31次，平均更少 | O(1) |\n\n> 注：虽然循环次数与位数相关，但由于整数位数固定（32位），时间复杂度也可视为 O(1)。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "def hammingDistance(x: int, y: int) -> int:\n    xor = x ^ y\n    count = 0\n    while xor:\n        xor &= xor - 1  # 消除最右边的1\n        count += 1\n    return count\n\n# 测试\nprint(hammingDistance(1, 4))  # 输出: 2\nprint(hammingDistance(3, 1))  # 输出: 1"
+    },
+    {
+      "lang": "Python",
+      "code": "# 逐位检查版本（更易理解）\ndef hammingDistance(x: int, y: int) -> int:\n    xor = x ^ y\n    count = 0\n    while xor:\n        count += xor & 1\n        xor >>= 1\n    return count"
+    }
+  ],
+  "common_errors": [
+    "忘记异或操作，直接对x和y进行位运算，导致统计的是两个数都为1的位置而非不同的位置",
+    "右移时使用逻辑右移和算术右移混淆，在Python中虽然无影响，但在其他语言（如Java/C++）中处理负数时需注意使用无符号右移 >>>",
+    "Brian Kernighan算法中写错为 `xor -= 1` 而非 `xor &= xor - 1`，导致无法正确消除最右边的1"
+  ],
+  "time_complexity_expected": "O(1)",
+  "space_complexity_expected": "O(1)"
+}

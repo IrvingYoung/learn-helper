@@ -1,0 +1,23 @@
+{
+  "description": "## 组合总和\n\n给定一个**无重复元素**的整数数组 `candidates` 和一个目标整数 `target`，找出 `candidates` 中所有可以使数字和为 `target` 的组合。\n\n`candidates` 中的数字可以**无限制重复选取**。\n\n### 示例\n\n**输入：**\n```\ncandidates = [2, 3, 6, 7], target = 7\n```\n\n**输出：**\n```\n[[2, 2, 3], [7]]\n```\n\n**解释：**\n- 2 + 2 + 3 = 7\n- 7 = 7\n\n### 约束条件\n- `1 <= candidates.length <= 30`\n- `2 <= candidates[i] <= 40`\n- `candidates` 中的所有元素**互不相同**\n- `1 <= target <= 40`",
+  "hints": [
+    "提示1：这是一个经典的组合问题，可以考虑使用回溯（深度优先搜索）来枚举所有可能的组合。",
+    "提示2：为了避免重复组合，可以规定每次递归只从当前位置或之后的位置选取元素，而不是从头开始。",
+    "提示3：注意剪枝优化——当当前和已经超过 target 时直接返回；也可以先对数组排序，便于剪枝和去重。"
+  ],
+  "solution_outline": "使用回溯算法，通过深度优先搜索枚举所有可能的数字组合。为避免重复组合，每次递归时只从当前索引及之后的位置选取数字，并通过剪枝优化减少不必要的搜索。",
+  "solution_detail": "## 解题思路\n\n### 核心思想：回溯 + 剪枝\n\n1. **状态定义**：递归函数需要记录当前搜索的起始位置 `start`、当前路径 `path`、当前路径和 `current_sum`\n2. **去重策略**：由于数字可以重复使用，但组合不能重复（如 `[2,2,3]` 和 `[2,3,2]` 视为相同），我们规定每次只能从 `start` 位置及之后选取数字\n3. **终止条件**：`current_sum == target` 时找到合法组合；`current_sum > target` 时剪枝返回\n4. **优化**：先对数组排序，当 `current_sum + candidates[i] > target` 时可直接break\n\n### 代码实现\n\n```python\ndef combinationSum(candidates, target):\n    def backtrack(start, path, current_sum):\n        # 终止条件\n        if current_sum == target:\n            result.append(path[:])  # 注意要复制一份\n            return\n        if current_sum > target:\n            return\n        \n        # 从start开始，避免重复组合\n        for i in range(start, len(candidates)):\n            # 选择 candidates[i]\n            path.append(candidates[i])\n            # 递归：注意下一次仍可以从i开始（因为可重复）\n            backtrack(i, path, current_sum + candidates[i])\n            # 撤销选择\n            path.pop()\n    \n    result = []\n    # 排序便于剪枝\n    candidates.sort()\n    backtrack(0, [], 0)\n    return result\n```\n\n### 复杂度分析\n\n- **时间复杂度**：最坏情况下需要枚举所有可能的组合。对于每个元素，可以选择选或不选（实际上限是 `target // min(candidates)` 次），复杂度为 O(N^(T/M))，其中 T=target, M=candidates 中最小值\n- **空间复杂度**：递归栈深度最多为 T/M，即 O(T/M)，加上存储结果的空间",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\ndef combinationSum(candidates: List[int], target: int) -> List[List[int]]:\n    \"\"\"\n    组合总和：找出所有和为 target 的组合，数字可重复使用\n    \"\"\"\n    def backtrack(start: int, path: List[int], current_sum: int):\n        # 找到合法组合\n        if current_sum == target:\n            result.append(path[:])  # 必须复制，否则后续修改会影响结果\n            return\n        \n        # 剪枝：超过目标值\n        if current_sum > target:\n            return\n        \n        # 从 start 开始遍历，保证组合不重复\n        for i in range(start, len(candidates)):\n            # 做选择\n            path.append(candidates[i])\n            # 递归搜索：i 而不是 i+1，因为数字可重复\n            backtrack(i, path, current_sum + candidates[i])\n            # 撤销选择\n            path.pop()\n    \n    result = []\n    candidates.sort()  # 排序便于剪枝\n    backtrack(0, [], 0)\n    return result\n\n\n# 测试\nif __name__ == \"__main__\":\n    candidates = [2, 3, 6, 7]\n    target = 7\n    print(combinationSum(candidates, target))\n    # 输出: [[2, 2, 3], [7]]\n    \n    candidates2 = [2, 3, 5]\n    target2 = 8\n    print(combinationSum(candidates2, target2))\n    # 输出: [[2, 2, 2, 2], [2, 3, 3], [3, 5]]"
+    }
+  ],
+  "common_errors": [
+    "常见错误1：result.append(path) 时没有复制 path，导致结果中所有列表都变成空列表或相同内容。应使用 result.append(path[:]) 或 result.append(path.copy())。",
+    "常见错误2：递归时使用了 backtrack(i+1, ...) 而不是 backtrack(i, ...)，导致每个数字只能使用一次，违反了题目中\"无限制重复选取\"的要求。",
+    "常见错误3：忘记对 candidates 排序，导致剪枝逻辑（如 current_sum + candidates[i] > target 时 break）无法正确执行，造成超时或错误。"
+  ],
+  "time_complexity_expected": "O(N^(T/M))，其中 N 为 candidates 长度，T 为 target，M 为 candidates 中最小值",
+  "space_complexity_expected": "O(T/M)，递归栈深度"
+}

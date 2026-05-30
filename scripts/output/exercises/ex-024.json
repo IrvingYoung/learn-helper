@@ -1,0 +1,23 @@
+{
+  "description": "# 实现 Trie（前缀树）\n\nTrie（发音类似 \"try\"）或称前缀树，是一种树形数据结构，用于高效地存储和检索字符串数据集中的键。\n\n请你实现 Trie 类：\n\n- `Trie()` 初始化前缀树对象。\n- `void insert(String word)` 向前缀树中插入字符串 `word`。\n- `boolean search(String word)` 如果字符串 `word` 在前缀树中，返回 `true`；否则，返回 `false`。\n- `boolean startsWith(String prefix)` 如果之前已经插入的字符串 `word` 的前缀之一为 `prefix`，返回 `true`；否则，返回 `false`。\n\n## 示例\n\n**输入：**\n```\n[\"Trie\", \"insert\", \"search\", \"search\", \"startsWith\", \"insert\", \"search\"]\n[[], [\"apple\"], [\"apple\"], [\"app\"], [\"app\"], [\"app\"], [\"app\"]]\n```\n\n**输出：**\n```\n[null, null, true, false, true, null, true]\n```\n\n**解释：**\n```\nTrie trie = new Trie();\ntrie.insert(\"apple\");\ntrie.search(\"apple\");   // 返回 True\ntrie.search(\"app\");     // 返回 False\ntrie.startsWith(\"app\"); // 返回 True\ntrie.insert(\"app\");\ntrie.search(\"app\");     // 返回 True\n```\n\n## 提示\n- `1 <= word.length, prefix.length <= 2000`\n- `word` 和 `prefix` 仅由小写英文字母组成\n- `insert`、`search` 和 `startsWith` 调用次数总计不超过 `3 * 10^4` 次",
+  "hints": [
+    "提示1：思路方向 - 每个 Trie 节点需要存储什么信息？考虑用字典/哈希表来存储子节点，并标记是否为单词结尾。",
+    "提示2：具体方法 - insert 时逐字符创建节点；search 和 startsWith 都需从根节点出发遍历，区别在于 search 最后要检查 is_end 标记。",
+    "提示3：实现要点 - 注意 startsWith 只需判断前缀路径存在即可，不要求该前缀是一个完整单词；同时注意处理空字符串的边界情况。"
+  ],
+  "solution_outline": "Trie 的核心是每个节点包含一个子节点映射和一个标记位。insert 操作逐字符创建路径，search 和 startsWith 都是沿路径匹配，区别在于 search 需要额外检查当前路径是否构成完整单词。",
+  "solution_detail": "## 解题思路\n\n### 数据结构\n\n每个 TrieNode 包含：\n- `children`: 字典，键是字符，值是对应的子节点\n- `is_end`: 布尔值，标记从根到当前节点的路径是否构成一个完整单词\n\n### 操作分析\n\n| 操作 | 流程 |\n|------|------|\n| `insert` | 从根出发，逐字符遍历；字符不存在则创建新节点，最后标记 `is_end = True` |\n| `search` | 从根出发逐字符匹配，路径中断则返回 False，最后检查 `is_end` |\n| `startsWith` | 同 search，但不需要检查 `is_end`，路径存在即返回 True |\n\n### 代码实现\n\n```python\nclass TrieNode:\n    def __init__(self):\n        self.children = {}  # 子节点映射\n        self.is_end = False  # 是否为单词结尾\n\nclass Trie:\n    def __init__(self):\n        self.root = TrieNode()\n\n    def insert(self, word: str) -> None:\n        node = self.root\n        for ch in word:\n            if ch not in node.children:\n                node.children[ch] = TrieNode()\n            node = node.children[ch]\n        node.is_end = True  # 标记单词结尾\n\n    def search(self, word: str) -> bool:\n        node = self._find_prefix_node(word)\n        return node is not None and node.is_end\n\n    def startsWith(self, prefix: str) -> bool:\n        return self._find_prefix_node(prefix) is not None\n\n    def _find_prefix_node(self, s: str) -> TrieNode:\n        \"\"\"辅助方法：找到字符串 s 对应的最后一个节点，不存在则返回 None\"\"\"\n        node = self.root\n        for ch in s:\n            if ch not in node.children:\n                return None\n            node = node.children[ch]\n        return node\n```\n\n### 复杂度分析\n\n- **时间复杂度**：`insert`、`search`、`startsWith` 均为 $O(m)$，其中 $m$ 为字符串长度\n- **空间复杂度**：$O(n \\times m)$，$n$ 为插入单词数，$m$ 为平均单词长度；最坏情况下每个单词没有公共前缀，需要创建 $n \\times m$ 个节点",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "class TrieNode:\n    def __init__(self):\n        self.children = {}\n        self.is_end = False\n\nclass Trie:\n    def __init__(self):\n        self.root = TrieNode()\n\n    def insert(self, word: str) -> None:\n        node = self.root\n        for ch in word:\n            if ch not in node.children:\n                node.children[ch] = TrieNode()\n            node = node.children[ch]\n        node.is_end = True\n\n    def search(self, word: str) -> bool:\n        node = self._find_node(word)\n        return node is not None and node.is_end\n\n    def startsWith(self, prefix: str) -> bool:\n        return self._find_node(prefix) is not None\n\n    def _find_node(self, s: str) -> TrieNode:\n        node = self.root\n        for ch in s:\n            if ch not in node.children:\n                return None\n            node = node.children[ch]\n        return node\n\n\n# 测试\nif __name__ == \"__main__\":\n    trie = Trie()\n    trie.insert(\"apple\")\n    print(trie.search(\"apple\"))    # True\n    print(trie.search(\"app\"))      # False\n    print(trie.startsWith(\"app\"))  # True\n    trie.insert(\"app\")\n    print(trie.search(\"app\"))      # True"
+    }
+  ],
+  "common_errors": [
+    "insert 后忘记标记 is_end，导致 search 始终返回 False",
+    "混淆 search 和 startsWith：search 需要检查 is_end，而 startsWith 只需路径存在",
+    "使用列表代替字典存储 children 时，索引计算错误（如未将字符转为 0-25 的索引）"
+  ],
+  "time_complexity_expected": "O(m)，其中 m 为字符串长度",
+  "space_complexity_expected": "O(n × m)，n 为插入单词数，m 为平均长度"
+}

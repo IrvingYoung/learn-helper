@@ -1,0 +1,23 @@
+{
+  "description": "# 分割等和子集\n\n给定一个**只包含正整数**的数组 `nums`，判断是否可以将该数组分割成两个子集，使得两个子集的元素和相等。\n\n## 示例 1\n\n```\n输入：nums = [1, 5, 11, 5]\n输出：true\n解释：数组可以分割成 [1, 5, 5] 和 [11]，它们的和都是 11。\n```\n\n## 示例 2\n\n```\n输入：nums = [1, 2, 3, 5]\n输出：false\n解释：数组不能分割成两个和相等的子集。\n```\n\n## 约束条件\n- `1 <= nums.length <= 200`\n- `1 <= nums[i] <= 100`",
+  "hints": [
+    "提示1：思路方向 - 如果数组能被分割成两个等和子集，那么数组总和一定是偶数，且需要找到一个子集的和等于总和的一半。",
+    "提示2：具体方法 - 这是一个经典的 0/1 背包问题：将数组元素视为物品，每个物品的重量和价值都是其数值，背包容量为总和的一半，判断能否恰好装满。",
+    "提示3：实现要点 - 使用动态规划时，注意状态转移方程 `dp[j] = dp[j] or dp[j - nums[i]]`，其中 `dp[j]` 表示能否用数组中的数凑出和为 `j`。"
+  ],
+  "solution_outline": "首先判断数组总和是否为偶数，若不是则直接返回 false。将问题转化为 0/1 背包问题：在数组中选取若干个数，使其和恰好等于总和的一半。使用一维动态规划优化空间，dp[j] 表示能否凑出和为 j。",
+  "solution_detail": "## 解题思路\n\n### 问题转化\n\n设数组总和为 `sum`，若 `sum` 为奇数，则不可能分割成两个等和子集，直接返回 `false`。\n\n若 `sum` 为偶数，设 `target = sum / 2`，问题转化为：**能否从数组中选出若干个数，使其和恰好等于 `target`**。\n\n### 0/1 背包模型\n\n- **物品**：数组中的每个数 `nums[i]`\n- **物品重量**：`nums[i]`\n- **物品价值**：`nums[i]`（这里重量和价值相同）\n- **背包容量**：`target`\n- **目标**：判断能否恰好装满背包\n\n### 动态规划\n\n定义 `dp[j]` 表示：能否用数组中的数凑出和为 `j`。\n\n**状态转移方程**：\n```\ndp[j] = dp[j] or dp[j - nums[i]]  (j >= nums[i])\n```\n\n即：不选 `nums[i]` 时能凑出 `j`，或者选 `nums[i]` 时能凑出 `j - nums[i]`。\n\n### 代码实现\n\n```python\ndef canPartition(nums):\n    total = sum(nums)\n    # 总和为奇数，无法分割\n    if total % 2 != 0:\n        return False\n    \n    target = total // 2\n    # dp[j] 表示能否凑出和为 j\n    dp = [False] * (target + 1)\n    dp[0] = True  # 和为0总是可以凑出（不选任何数）\n    \n    for num in nums:\n        # 倒序遍历，避免重复计算（0/1背包特性）\n        for j in range(target, num - 1, -1):\n            dp[j] = dp[j] or dp[j - num]\n        # 提前终止优化\n        if dp[target]:\n            return True\n    \n    return dp[target]\n```\n\n### 复杂度分析\n\n- **时间复杂度**：`O(n × target)`，其中 `n` 为数组长度，`target` 为数组总和的一半。\n- **空间复杂度**：`O(target)`，使用一维数组优化了空间。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def canPartition(self, nums: List[int]) -> bool:\n        total = sum(nums)\n        # 总和为奇数，无法分割成两个等和子集\n        if total % 2 != 0:\n            return False\n        \n        target = total // 2\n        # dp[j] 表示能否用数组中的元素凑出和为 j\n        dp = [False] * (target + 1)\n        dp[0] = True  # 和为0总是可以凑出\n        \n        for num in nums:\n            # 倒序遍历：0/1背包，每个数只能用一次\n            for j in range(target, num - 1, -1):\n                dp[j] = dp[j] or dp[j - num]\n            # 提前终止优化\n            if dp[target]:\n                return True\n        \n        return dp[target]\n\n\n# 测试\nif __name__ == \"__main__\":\n    sol = Solution()\n    print(sol.canPartition([1, 5, 11, 5]))  # True\n    print(sol.canPartition([1, 2, 3, 5]))     # False\n    print(sol.canPartition([1, 2, 5]))      # False"
+    }
+  ],
+  "common_errors": [
+    "正序遍历背包容量导致重复选择：0/1背包问题必须倒序遍历 j，否则同一个元素可能被多次使用，变成完全背包问题。",
+    "忽略总和为奇数的提前判断：忘记先判断 `sum(nums) % 2 != 0` 的情况，导致不必要的计算或错误结果。",
+    "dp数组初始化错误：忘记设置 `dp[0] = True`，或者数组长度初始化错误（应该是 `target + 1` 而不是 `len(nums) + 1`）。"
+  ],
+  "time_complexity_expected": "O(n × target)，其中 n 为数组长度，target 为数组总和的一半",
+  "space_complexity_expected": "O(target)"
+}

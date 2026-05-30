@@ -1,0 +1,23 @@
+{
+  "description": "# Top K 频繁元素\n\n给定一个非空的整数数组 `nums` 和一个整数 `k`，返回其中出现频率前 `k` 高的元素。\n\n## 示例 1\n\n```\n输入: nums = [1,1,1,2,2,3], k = 2\n输出: [1,2]\n```\n\n## 示例 2\n\n```\n输入: nums = [1], k = 1\n输出: [1]\n```\n\n## 约束条件\n- `1 <= nums.length <= 10^5`\n- `k` 的取值范围是 `[1, 数组中不重复元素的个数]`\n- 题目数据保证答案唯一，换句话说，数组中前 `k` 个高频元素的集合是唯一的\n\n## 进阶\n- 要求算法的时间复杂度必须优于 `O(n log n)`，其中 `n` 是数组的大小",
+  "hints": [
+    "提示1：首先统计每个元素的出现频率，然后思考如何从频率中快速找出前 k 个最大的值",
+    "提示2：可以使用最小堆来维护当前频率最高的 k 个元素，堆的大小始终保持在 k",
+    "提示3：Python 中使用 heapq 模块时，注意默认是最小堆，需要存储 (频率, 元素) 的元组，当堆大小超过 k 时弹出最小频率的元素"
+  ],
+  "solution_outline": "首先使用哈希表统计每个元素的出现频率，然后使用大小为 k 的最小堆来维护频率最高的 k 个元素。遍历所有频率时，若堆大小小于 k 则直接入堆，否则比较当前频率与堆顶频率，若更大则替换。",
+  "solution_detail": "## 解题思路\n\n本题是经典的 **Top K 问题**，有多种解法：\n\n### 方法一：哈希表 + 最小堆（推荐）\n1. 用哈希表统计每个元素的频率，时间复杂度 O(n)\n2. 维护一个大小为 k 的最小堆，遍历所有 (元素, 频率) 对：\n   - 堆中元素不足 k 个，直接入堆\n   - 堆中已有 k 个，若当前频率 > 堆顶频率，则弹出堆顶，当前元素入堆\n3. 最后堆中的 k 个元素即为答案\n\n### 方法二：哈希表 + 快速选择（Quickselect）\n- 可以将问题转化为在频率数组中求第 k 大的元素，使用快速选择算法达到平均 O(n) 的时间复杂度\n\n### 方法三：桶排序\n- 由于频率最大不超过 n，可以用桶排序达到 O(n) 的时间复杂度\n\n## 代码实现（最小堆解法）\n\n```python\nimport heapq\nfrom collections import Counter\n\nclass Solution:\n    def topKFrequent(self, nums: List[int], k: int) -> List[int]:\n        # 统计频率\n        count = Counter(nums)  # 元素 -> 频率的映射\n        \n        # 最小堆，存储 (频率, 元素)\n        heap = []\n        for num, freq in count.items():\n            heapq.heappush(heap, (freq, num))\n            # 保持堆的大小不超过 k\n            if len(heap) > k:\n                heapq.heappop(heap)\n        \n        # 提取结果\n        return [num for freq, num in heap]\n```\n\n## 复杂度分析\n\n- **时间复杂度**：O(n log k)，其中 n 是数组长度。统计频率需要 O(n)，建堆过程每个元素最多入堆和出堆一次，每次堆操作 O(log k)\n- **空间复杂度**：O(n)，哈希表存储频率需要 O(n)，堆需要 O(k)\n\n## 优化：使用 nlargest\n\n```python\nfrom collections import Counter\nimport heapq\n\nclass Solution:\n    def topKFrequent(self, nums: List[int], k: int) -> List[int]:\n        count = Counter(nums)\n        # heapq.nlargest 内部也是用最小堆实现，但更简洁\n        return heapq.nlargest(k, count.keys(), key=count.get)\n```",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "import heapq\nfrom collections import Counter\nfrom typing import List\n\nclass Solution:\n    def topKFrequent(self, nums: List[int], k: int) -> List[int]:\n        # 统计每个元素的频率\n        freq_map = Counter(nums)\n        \n        # 使用最小堆，维护频率最高的 k 个元素\n        # Python 的 heapq 是小根堆，存储 (频率, 元素)\n        min_heap = []\n        \n        for num, freq in freq_map.items():\n            heapq.heappush(min_heap, (freq, num))\n            # 堆大小超过 k，弹出频率最小的元素\n            if len(min_heap) > k:\n                heapq.heappop(min_heap)\n        \n        # 提取结果（顺序不影响，题目未要求按频率排序）\n        return [num for freq, num in min_heap]\n\n\n# 测试\nif __name__ == \"__main__\":\n    sol = Solution()\n    print(sol.topKFrequent([1,1,1,2,2,3], 2))  # [1, 2]\n    print(sol.topKFrequent([1], 1))           # [1]\n    # 进阶测试：多个元素频率相同\n    print(sol.topKFrequent([1,2], 2))           # [1, 2]"
+    }
+  ],
+  "common_errors": [
+    "使用最大堆时直接弹出 k 次，导致时间复杂度变为 O(n log n)，没有利用 k << n 的优势；正确做法是使用大小为 k 的最小堆，复杂度为 O(n log k)",
+    "忽略题目约束中答案唯一的保证，在实现时过度处理频率相同的情况；实际上只需返回任意满足条件的 k 个元素即可",
+    "统计频率时误用 list.count() 导致 O(n^2) 复杂度；应使用哈希表（Counter 或 dict）在 O(n) 时间内完成频率统计"
+  ],
+  "time_complexity_expected": "O(n log k)",
+  "space_complexity_expected": "O(n)"
+}

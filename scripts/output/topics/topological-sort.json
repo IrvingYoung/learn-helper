@@ -1,0 +1,27 @@
+{
+  "content": "## 拓扑排序（Topological Sort）\n\n### 概念定义\n拓扑排序是对**有向无环图（DAG, Directed Acyclic Graph）** 中的节点进行线性排序，使得对于图中的任意一条有向边 `(u, v)`，节点 `u` 在排序序列中都始终位于节点 `v` 之前。拓扑排序的结果不是唯一的，一个 DAG 可能存在多个合法的拓扑序列。\n\n### 核心原理\n拓扑排序的实现依赖两个关键概念：\n- **入度（In-degree）**：指向某节点的边的数量\n- **后序遍历（Post-order DFS）**：优先访问所有后继节点，再记录当前节点\n\n两种经典算法：\n1. **Kahn 算法**：基于 BFS 思想，反复选取入度为 0 的节点加入序列，并将该节点指向的所有邻居入度减 1。时间复杂度 O(V + E)。\n2. **DFS 后序逆序**：通过深度优先搜索，在递归返回时记录节点，最终得到的后序序列的逆序即为拓扑排序结果。\n\n### 应用场景\n- 课程选修计划（先修课依赖关系）\n- 编译工程的 Makefile 依赖解析\n- 任务调度与流水线工序安排\n- 数据流分析与算子执行顺序优化\n\n### 与其他算法的对比\n| 特性 | 拓扑排序 | 普通图遍历（BFS/DFS） |\n|------|---------|-------------------|\n| 适用对象 | 有向无环图 | 任意图 |\n| 核心约束 | 维护节点间的依赖顺序 | 无特殊顺序要求 |\n| 循环检测 | 可自然检测（存在环则无法完成排序） | 需额外标记处理 |\n| 与最短路径关系 | 拓扑排序后可在线性时间内求 DAG 单源最短路径 | 需 Dijkstra / Bellman-Ford 等算法 |",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "from collections import deque, defaultdict\n\ndef kahn_topo_sort(graph, num_nodes):\n    \"\"\"\n    Kahn 算法：基于入度的 BFS 实现拓扑排序\n    graph: 邻接表，graph[u] = [v1, v2, ...] 表示 u -> v 的边\n    \"\"\"\n    # 计算所有节点的入度\n    in_degree = [0] * num_nodes\n    for u in range(num_nodes):\n        for v in graph[u]:\n            in_degree[v] += 1\n    \n    # 将所有入度为 0 的节点加入队列\n    queue = deque([i for i in range(num_nodes) if in_degree[i] == 0])\n    result = []\n    \n    while queue:\n        u = queue.popleft()\n        result.append(u)\n        for v in graph[u]:\n            in_degree[v] -= 1\n            if in_degree[v] == 0:\n                queue.append(v)\n    \n    # 若结果节点数不足，说明图中存在环\n    if len(result) != num_nodes:\n        raise ValueError(\"图中存在环，无法进行拓扑排序\")\n    return result\n\n# 示例：课程依赖 0->1, 0->2, 1->3, 2->3\ngraph = {0: [1, 2], 1: [3], 2: [3], 3: []}\nprint(kahn_topo_sort(graph, 4))  # 输出: [0, 1, 2, 3] 或 [0, 2, 1, 3]",
+      "explanation": "Kahn 算法的标准实现：首先统计所有节点入度，然后将入度为 0 的节点入队处理。处理节点时将其邻居入度减 1，若邻居入度变为 0 则入队。最终通过结果数量判断图中是否存在环。"
+    },
+    {
+      "lang": "Python",
+      "code": "def dfs_topo_sort(graph, num_nodes):\n    \"\"\"\n    DFS 后序逆序实现拓扑排序\n    \"\"\"\n    visited = [False] * num_nodes\n    rec_stack = [False] * num_nodes  # 用于检测环\n    result = []\n    \n    def dfs(u):\n        visited[u] = True\n        rec_stack[u] = True\n        \n        for v in graph.get(u, []):\n            if not visited[v]:\n                if not dfs(v):\n                    return False  # 发现环\n            elif rec_stack[v]:\n                return False  # 发现回边，存在环\n        \n        rec_stack[u] = False\n        result.append(u)  # 后序位置记录\n        return True\n    \n    for i in range(num_nodes):\n        if not visited[i]:\n            if not dfs(i):\n                raise ValueError(\"图中存在环，无法进行拓扑排序\")\n    \n    return result[::-1]  # 逆序得到拓扑排序结果\n\n# 同上图示例\ngraph = {0: [1, 2], 1: [3], 2: [3], 3: []}\nprint(dfs_topo_sort(graph, 4))  # 输出拓扑序列",
+      "explanation": "DFS 版本利用后序遍历特性：一个节点的所有后继节点都处理完毕后，才将该节点加入结果。最终需要将后序结果逆序。同时使用 rec_stack 检测环，若访问到 rec_stack 中为 True 的节点，说明存在有向环。"
+    },
+    {
+      "lang": "Python",
+      "code": "def topo_sort_with_level(graph, num_nodes):\n    \"\"\"\n    带层级的拓扑排序：可用于计算最长路径/关键路径\n    同时返回每个节点的拓扑层级\n    \"\"\"\n    from collections import deque\n    \n    in_degree = [0] * num_nodes\n    for u in range(num_nodes):\n        for v in graph.get(u, []):\n            in_degree[v] += 1\n    \n    queue = deque()\n    level = [0] * num_nodes\n    for i in range(num_nodes):\n        if in_degree[i] == 0:\n            queue.append(i)\n    \n    while queue:\n        u = queue.popleft()\n        for v in graph.get(u, []):\n            in_degree[v] -= 1\n            # 更新层级：当前节点层级 + 1\n            level[v] = max(level[v], level[u] + 1)\n            if in_degree[v] == 0:\n                queue.append(v)\n    \n    return level  # level[i] 表示以 i 结尾的最长路径长度\n\n# 示例：计算关键路径长度\ngraph = {0: [1, 2], 1: [3], 2: [3], 3: [4], 4: []}\nprint(topo_sort_with_level(graph, 5))  # [0, 1, 1, 2, 3]",
+      "explanation": "扩展应用：在 Kahn 算法基础上记录节点层级，可用于求解 DAG 中的最长路径（关键路径）。每个节点的层级等于其所有前驱节点层级的最大值加 1，这是许多工程调度问题的核心解法。"
+    }
+  ],
+  "common_mistakes": [
+    "在有向图中存在环时未做检测，导致算法无法终止或返回错误结果",
+    "Kahn 算法中忘记将已处理节点的邻居入度减 1，导致入度计算错误",
+    "DFS 版本混淆前序与后序，将节点在递归入口而非返回时加入结果序列",
+    "使用 DFS 时未正确维护 rec_stack 或未及时清除标记，导致环检测失效",
+    "将无向图或有向图中的双向边直接套用拓扑排序，忽略算法对 DAG 的严格要求"
+  ]
+}

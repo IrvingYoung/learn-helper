@@ -1,0 +1,23 @@
+{
+  "description": "# 最小覆盖子串\n\n给你一个字符串 `s`、一个字符串 `t`。返回 `s` 中涵盖 `t` 所有字符的最小子串。如果不存在符合条件的子串，则返回空字符串 `\"\"`。\n\n**注意：**\n- 如果 `s` 中存在这样的子串，我们保证它是唯一的答案。\n- 对于 `t` 中重复字符，子串中该字符数量必须不少于 `t` 中该字符数量。\n\n## 示例\n\n**示例 1：**\n```\n输入：s = \"ADOBECODEBANC\", t = \"ABC\"\n输出：\"BANC\"\n解释：子串 \"BANC\" 包含 t = \"ABC\" 中的 'A'、'B'、'C'。\n```\n\n**示例 2：**\n```\n输入：s = \"a\", t = \"a\"\n输出：\"a\"\n```\n\n**示例 3：**\n```\n输入：s = \"a\", t = \"aa\"\n输出：\"\n解释：t 中两个 'a' 均应包含在子串中，但 s 中只有一个 'a'。\n```\n\n## 约束\n- `1 <= s.length, t.length <= 10^5`\n- `s` 和 `t` 由英文字母组成",
+  "hints": [
+    "提示1：思路方向 —— 考虑使用滑动窗口技术，维护一个窗口，先向右扩展找到可行解，再向左收缩寻找最优解。",
+    "提示2：具体方法 —— 用哈希表记录 t 中各字符所需数量，再用一个变量记录当前窗口中满足条件的字符种类数。",
+    "提示3：实现要点 —— 收缩窗口时，只有当左端字符在 t 中且窗口内该字符数量刚好等于所需数量时才停止收缩；注意处理 t 中重复字符的情况。"
+  ],
+  "solution_outline": "使用滑动窗口算法：右指针扩展窗口直到包含 t 的所有字符，然后左指针收缩窗口找到最小覆盖子串。用哈希表维护字符需求量和当前窗口内字符出现次数。",
+  "solution_detail": "# 解题思路\n\n## 核心思想：滑动窗口（双指针）\n\n1. **初始化**：用 `need` 哈希表记录 `t` 中每个字符的需求次数，用 `window` 哈希表记录当前窗口中各字符的出现次数。\n\n2. **扩展右边界**：右指针 `right` 向右移动，将字符加入窗口，更新对应计数。\n\n3. **收缩左边界**：当窗口已包含 `t` 中所有字符（满足条件），尝试移动左指针 `left` 缩小窗口，同时更新最小子串记录。\n\n4. **判断满足条件**：使用变量 `valid` 记录当前窗口中满足需求字符的种类数，当 `valid == len(need)` 时说明窗口有效。\n\n## 代码实现\n\n```python\nfrom collections import defaultdict\n\ndef minWindow(s: str, t: str) -> str:\n    need = defaultdict(int)      # t 中字符的需求\n    window = defaultdict(int)    # 当前窗口中的字符计数\n    \n    for c in t:\n        need[c] += 1\n    \n    left, right = 0, 0\n    valid = 0                    # 窗口中满足 need 条件的字符种类数\n    start, length = 0, float('inf')\n    \n    while right < len(s):\n        # c 是将移入窗口的字符\n        c = s[right]\n        right += 1\n        \n        # 更新窗口内数据\n        if c in need:\n            window[c] += 1\n            if window[c] == need[c]:\n                valid += 1\n        \n        # 判断左侧窗口是否要收缩\n        while valid == len(need):\n            # 更新最小覆盖子串\n            if right - left < length:\n                start = left\n                length = right - left\n            \n            # d 是将移出窗口的字符\n            d = s[left]\n            left += 1\n            \n            if d in need:\n                if window[d] == need[d]:\n                    valid -= 1\n                window[d] -= 1\n    \n    return \"\" if length == float('inf') else s[start:start + length]\n```\n\n## 复杂度分析\n\n- **时间复杂度**：O(|s| + |t|)，每个字符最多被访问两次（被右指针和被左指针各一次）。\n- **空间复杂度**：O(|Σ|)，其中 |Σ| 是字符集大小，这里最多为 O(128) 或 O(256)，即 O(1)。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from collections import defaultdict\n\ndef minWindow(s: str, t: str) -> str:\n    need = defaultdict(int)\n    window = defaultdict(int)\n    \n    for c in t:\n        need[c] += 1\n    \n    left, right = 0, 0\n    valid = 0\n    start, length = 0, float('inf')\n    \n    while right < len(s):\n        c = s[right]\n        right += 1\n        \n        if c in need:\n            window[c] += 1\n            if window[c] == need[c]:\n                valid += 1\n        \n        while valid == len(need):\n            if right - left < length:\n                start = left\n                length = right - left\n            \n            d = s[left]\n            left += 1\n            \n            if d in need:\n                if window[d] == need[d]:\n                    valid -= 1\n                window[d] -= 1\n    \n    return \"\" if length == float('inf') else s[start:start + length]\n\n# 测试\nif __name__ == \"__main__\":\n    print(minWindow(\"ADOBECODEBANC\", \"ABC\"))  # \"BANC\"\n    print(minWindow(\"a\", \"a\"))                  # \"a\"\n    print(minWindow(\"a\", \"aa\"))                 # \"\""
+    }
+  ],
+  "common_errors": [
+    "收缩窗口时，错误地在 window[d] < need[d] 时才减少 valid，实际上应该在 window[d] == need[d] 时减少，因为此时移出的是关键字符。",
+    "忽略 t 中重复字符的情况，直接用集合判断字符存在性，而没有统计字符出现次数，导致 \"aa\" 包含于 \"aa\" 这类情况失败。",
+    "没有处理 s 中不存在解的情况，返回时没有判断 length 是否被更新过，导致返回错误的子串。"
+  ],
+  "time_complexity_expected": "O(|s| + |t|)",
+  "space_complexity_expected": "O(|Σ|)，其中 |Σ| 为字符集大小，可视为 O(1)"
+}

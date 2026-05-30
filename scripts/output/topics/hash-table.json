@@ -1,0 +1,22 @@
+{
+  "content": "## 哈希表（Hash Table）\n\n### 概念定义\n\n哈希表，又称散列表，是一种通过**哈希函数**将键（Key）映射到值（Value）位置的数据结构。它实现了键到值的直接访问，是计算机科学中最重要、最高效的数据结构之一。\n\n### 核心原理\n\n哈希表的核心在于**哈希函数**的设计。理想的哈希函数能将任意键均匀分布到固定大小的数组空间中，使得查找时可以直接通过计算得到目标位置，从而实现平均 **O(1)** 的时间复杂度。\n\n然而，哈希冲突不可避免——当不同键映射到同一位置时，需要**冲突处理**机制。常见方法包括：\n- **链地址法**：每个槽位维护一个链表，冲突元素依次链接\n- **开放寻址法**：探测其他空槽位（线性探测、二次探测、双重哈希）\n\n**负载因子**（α = 元素个数 / 槽位总数）是衡量哈希表性能的关键指标。通常当 α > 0.75 时需要进行**扩容再哈希**，以维持操作效率。\n\n### 应用场景\n\n哈希表广泛应用于：数据库索引、缓存系统（如 Redis）、编译器符号表、密码学中的数据校验、编程语言的字典/Map 实现等。\n\n### 与其他数据结构的对比\n\n| 特性 | 哈希表 | 平衡二叉搜索树 | 数组 |\n|:---|:---|:---|:---|\n| 查找 | 平均 O(1)，最坏 O(n) | O(log n) | O(n) 或 O(log n) |\n| 有序性 | 无序 | 有序 | 有序 |\n| 空间效率 | 有冗余 | 紧凑 | 紧凑 |\n| 适用场景 | 快速查找 | 范围查询 | 随机访问 |\n\n哈希表牺牲有序性换取极致的查找速度，是\"空间换时间\"的经典范例。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "# 示例1：手动实现简易哈希表（链地址法处理冲突）\nclass HashTable:\n    def __init__(self, capacity=8):\n        self.capacity = capacity\n        self.size = 0\n        self.buckets = [[] for _ in range(capacity)]  # 每个槽位是一个链表\n    \n    def _hash(self, key):\n        return hash(key) % self.capacity\n    \n    def put(self, key, value):\n        index = self._hash(key)\n        bucket = self.buckets[index]\n        # 检查是否已存在该键，存在则更新\n        for i, (k, v) in enumerate(bucket):\n            if k == key:\n                bucket[i] = (key, value)\n                return\n        bucket.append((key, value))\n        self.size += 1\n    \n    def get(self, key):\n        index = self._hash(key)\n        for k, v in self.buckets[index]:\n            if k == key:\n                return v\n        raise KeyError(f\"Key {key} not found\")\n\n# 使用示例\nht = HashTable()\nht.put(\"apple\", 5)\nht.put(\"banana\", 3)\nprint(ht.get(\"apple\"))  # 输出: 5",
+      "explanation": "演示哈希表的基本实现：通过取模运算定位桶，使用链地址法（链表）处理冲突。put 和 get 操作在理想情况下均为 O(1)。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 示例2：利用 Python 内置 dict 理解哈希表特性\n# 以及负载因子对性能的影响演示\n\ndef demonstrate_load_factor():\n    \"\"\"\n    Python dict 会在负载因子达到 2/3 时自动扩容（3.6+版本优化后）\n    扩容时会重新分配更大空间并重新哈希所有元素\n    \"\"\"\n    d = {}\n    \n    # 查看内部属性（CPython 实现细节）\n    d['a'] = 1\n    print(f\"初始大小: {len(d)}\")\n    \n    # 大量插入触发扩容\n    for i in range(10000):\n        d[i] = i * 2\n    \n    # 查找仍为 O(1)\n    assert d[5000] == 10000\n    \n    # 注意：遍历时顺序与插入顺序一致（Python 3.7+ 保证）\n    print(\"遍历前5个键:\", list(d.keys())[:5])\n\ndemonstrate_load_factor()\n\n# 示例3：使用 collections.Counter 进行频率统计\nfrom collections import Counter\n\nwords = [\"apple\", \"banana\", \"apple\", \"cherry\", \"banana\", \"apple\"]\nfreq = Counter(words)\nprint(freq)  # Counter({'apple': 3, 'banana': 2, 'cherry': 1})\nprint(freq.most_common(2))  # [('apple', 3), ('banana', 2)]",
+      "explanation": "展示 Python 内置 dict 的自动扩容机制，以及基于哈希表实现的高效工具类 Counter，用于解决经典的频率统计问题。"
+    }
+  ],
+  "common_mistakes": [
+    "忽略哈希函数的质量，使用容易冲突的简单函数（如直接取固定值），导致性能退化为 O(n) 链表",
+    "自定义对象作为键时未实现 __hash__ 和 __eq__ 方法，导致相同逻辑值的对象被视为不同键",
+    "在哈希表遍历过程中直接修改结构（增删元素），可能引发运行时错误或遗漏元素",
+    "未处理哈希冲突时假设所有键唯一，导致数据被静默覆盖或无法查找",
+    "将可变对象（如列表）作为字典键，因其哈希值会变化而破坏哈希表不变性"
+  ]
+}

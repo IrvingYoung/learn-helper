@@ -1,0 +1,22 @@
+{
+  "content": "## 树结构（Tree）\n\n### 概念定义\n\n树是一种**非线性层次数据结构**，由节点（Node）和边（Edge）组成。树结构存在一个特殊的根节点（Root），其余节点递归地划分为若干互不相交的子树。每个节点包含数据元素以及指向其子节点的引用，节点拥有的子树数量称为**度（Degree）**。树中不存在环路，且任意两个节点之间有且仅有一条路径相连。\n\n### 核心原理\n\n树的本质魅力在于**递归性**：一棵树由根节点和若干子树构成，而每棵子树本身也是树。这种自相似特性使得递归成为处理树问题的天然工具。\n\n**关键术语与性质：**\n- **深度（Depth）**：从根到该节点的路径长度\n- **高度（Height）**：从该节点到最远叶节点的路径长度\n- **二叉树**：每个节点最多有两个子节点，是应用最广泛的树变体\n- **遍历方式**：前序、中序、后序（深度优先）与层序（广度优先），时间复杂度均为 O(n)\n\n树的存储通常采用**链式结构**（指针连接）或**顺序结构**（如堆的数组实现）。二叉搜索树（BST）通过维持\"左<根<右\"的有序性，将查找效率提升至 O(log n)。\n\n### 应用场景\n\n- **文件系统**：目录与文件的层级组织\n- **数据库索引**：B+树是 MySQL InnoDB 引擎的核心数据结构\n- **HTML/XML 解析**：DOM 树构建与操作\n- **编译原理**：语法树的构建与遍历\n- **机器学习**：决策树的节点分裂与预测\n- **游戏 AI**：极小化极大搜索树\n\n### 与其他数据结构的对比\n\n| 特性 | 树 | 链表 | 数组/哈希表 |\n|------|------|------|-----------|\n| 结构 | 层次/非线性 | 线性 | 线性/散列 |\n| 查找 | O(log n) ~ O(n) | O(n) | O(1) ~ O(n) |\n| 插入删除 | O(log n) ~ O(n) | O(1)（已知位置） | O(n) ~ O(1) |\n| 有序性 | 天然有序（BST） | 需额外维护 | 无序 |\n| 空间局部性 | 较差（指针跳跃） | 较差 | 优秀 |\n\n树牺牲了数组的随机访问能力，换取了动态性和层次表达能力；相比链表，通过分支结构显著提升了搜索效率。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "class TreeNode:\n    def __init__(self, val=0):\n        self.val = val\n        self.left = None\n        self.right = None\n\n# 递归前序遍历：根 -> 左 -> 右\ndef preorder(root):\n    if not root:\n        return []\n    return [root.val] + preorder(root.left) + preorder(root.right)\n\n# 迭代层序遍历（BFS），借助队列实现\nfrom collections import deque\n\ndef level_order(root):\n    if not root:\n        return []\n    result, queue = [], deque([root])\n    while queue:\n        node = queue.popleft()\n        result.append(node.val)\n        if node.left:\n            queue.append(node.left)\n        if node.right:\n            queue.append(node.right)\n    return result\n\n# 构建示例树:     1\n#                / \\\n#               2   3\nroot = TreeNode(1)\nroot.left = TreeNode(2)\nroot.right = TreeNode(3)\nprint(preorder(root))      # [1, 2, 3]\nprint(level_order(root))   # [1, 2, 3]",
+      "explanation": "定义二叉树节点类，展示递归前序遍历与迭代层序遍历两种经典实现。递归利用了树的自相似特性；层序遍历使用队列按层收集节点，体现BFS思想。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 二叉搜索树（BST）的插入与查找\nclass BST:\n    def __init__(self):\n        self.root = None\n    \n    def insert(self, val):\n        if not self.root:\n            self.root = TreeNode(val)\n            return\n        # 迭代插入，维护BST性质\n        node, parent = self.root, None\n        while node:\n            parent = node\n            if val < node.val:\n                node = node.left\n            else:\n                node = node.right\n        # 连接新节点\n        new_node = TreeNode(val)\n        if val < parent.val:\n            parent.left = new_node\n        else:\n            parent.right = new_node\n    \n    def search(self, val):\n        node = self.root\n        while node:\n            if val == node.val:\n                return True\n            node = node.left if val < node.val else node.right\n        return False\n\n# 使用示例\nbst = BST()\nfor v in [5, 3, 7, 1, 4]:\n    bst.insert(v)\nprint(bst.search(4))   # True\nprint(bst.search(10))  # False",
+      "explanation": "实现二叉搜索树的插入与查找操作，核心在于利用BST的有序性进行路径决策，平均时间复杂度为O(log n)。插入时需找到合适的叶节点位置，保持左子树<根<右子树的性质。"
+    }
+  ],
+  "common_mistakes": [
+    "递归遍历树时忘记处理空节点（base case），导致 AttributeError 或无限递归",
+    "混淆前序、中序、后序遍历的访问顺序，特别是在递归代码中写错节点访问位置",
+    "在二叉搜索树中直接比较节点值却未处理重复值的情况，导致逻辑漏洞或插入错误",
+    "修改树结构（如删除节点）后未正确更新子树指针，造成内存泄漏或树断裂",
+    "将树的高度与深度概念混淆，或在递归计算时错误地累加计数器"
+  ]
+}

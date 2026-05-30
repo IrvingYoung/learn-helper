@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Wiki - Dark</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg-elevated: #111118;
+      --bg-card: #16161e;
+      --bg-hover: #1e1e28;
+      --border: #2a2a35;
+      --border-hover: #3a3a4a;
+      --text-primary: #e2e2e8;
+      --text-secondary: #a0a0b0;
+      --text-muted: #6a6a7a;
+      --accent: #7c3aed;
+      --accent-light: #a78bfa;
+      --cyan: #06b6d4;
+      --green: #22c55e;
+      --amber: #f59e0b;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+    }
+
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Glow effects */
+    .glow { box-shadow: 0 0 20px rgba(124, 58, 237, 0.15); }
+    .glow-strong { box-shadow: 0 0 30px rgba(124, 58, 237, 0.25), 0 0 60px rgba(124, 58, 237, 0.1); }
+
+    /* Scrollbar */
+    .custom-scroll::-webkit-scrollbar { width: 4px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* Animations */
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .chat-appear { animation: slideUp 0.4s ease-out; }
+
+    @keyframes typingPulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+    .typing-dot { animation: typingPulse 1.4s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes borderGlow {
+      0%, 100% { border-color: rgba(124, 58, 237, 0.3); }
+      50% { border-color: rgba(124, 58, 237, 0.6); }
+    }
+    .preview-glow { animation: borderGlow 2s ease-in-out infinite; }
+
+    /* Gradient text */
+    .gradient-text {
+      background: linear-gradient(135deg, #a78bfa 0%, #06b6d4 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Utility classes using CSS variables */
+    .bg-dark { background: var(--bg); }
+    .bg-elevated { background: var(--bg-elevated); }
+    .bg-card { background: var(--bg-card); }
+    .bg-hover { background: var(--bg-hover); }
+    .border-dark { border-color: var(--border); }
+    .border-hover { border-color: var(--border-hover); }
+    .text-primary { color: var(--text-primary); }
+    .text-secondary { color: var(--text-secondary); }
+    .text-muted { color: var(--text-muted); }
+    .text-accent { color: var(--accent); }
+    .text-accent-light { color: var(--accent-light); }
+    .text-cyan { color: var(--cyan); }
+    .bg-accent { background: var(--accent); }
+    .bg-accent-10 { background: rgba(124, 58, 237, 0.1); }
+    .border-accent-20 { border-color: rgba(124, 58, 237, 0.2); }
+    .border-accent-30 { border-color: rgba(124, 58, 237, 0.3); }
+    .shadow-glow { box-shadow: 0 0 20px rgba(124, 58, 237, 0.15); }
+    .shadow-green { box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
+    .shadow-amber { box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+  </style>
+</head>
+<body class="h-screen overflow-hidden">
+
+  <!-- Top Navigation -->
+  <header class="h-12 bg-elevated border-b border-dark flex items-center justify-between px-5 flex-shrink-0">
+    <div class="flex items-center gap-8">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 19.477 5.754 20 7.5 20s3.332-.477 4.5-1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 19.477 18.247 20 16.5 20a3.5 3.5 0 01-3.5-3.5" />
+          </svg>
+        </div>
+        <span class="font-bold text-lg gradient-text">LLM Wiki</span>
+      </div>
+      <nav class="flex gap-1">
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium text-accent-light border border-accent-20" style="background: rgba(124, 58, 237, 0.1);">
+          知识库
+        </a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium text-secondary hover:text-primary hover:bg-hover transition-all">
+          浏览
+        </a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm font-medium text-secondary hover:text-primary hover:bg-hover transition-all">
+          仪表盘
+        </a>
+      </nav>
+    </div>
+    <button class="p-1.5 text-secondary hover:text-primary rounded-lg hover:bg-hover transition-all">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z" />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    </button>
+  </header>
+
+  <!-- Three Column Layout -->
+  <div class="flex h-[calc(100vh-48px)]">
+
+    <!-- Left Panel - Knowledge Tree -->
+    <div class="w-[300px] bg-elevated border-r border-dark flex flex-col flex-shrink-0">
+      <div class="p-3 border-b border-dark flex items-center justify-between">
+        <h2 class="font-semibold text-sm text-primary">知识树</h2>
+        <div class="flex gap-1">
+          <button class="p-1.5 text-secondary hover:text-primary rounded hover:bg-hover transition-all" title="搜索">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+          <button class="p-1.5 text-secondary hover:text-accent rounded hover:bg-hover transition-all" title="新建">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto custom-scroll p-2">
+        <!-- Root: Go -->
+        <div class="relative">
+          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-hover transition-all">
+            <button class="text-muted hover:text-primary w-4 h-4 flex items-center justify-center">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4);"></span>
+            <span class="text-sm font-medium text-primary">Go</span>
+            <span class="text-xs text-muted ml-auto">(5)</span>
+          </div>
+          <div class="ml-4 relative">
+            <div class="absolute left-[11px] top-0 bottom-0 w-px" style="background: var(--border);"></div>
+            <!-- goroutine -->
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-hover transition-all">
+              <button class="text-muted hover:text-primary w-4 h-4 flex items-center justify-center">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <span class="w-2 h-2 rounded-full flex-shrink-0" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4);"></span>
+              <span class="text-sm text-primary">goroutine</span>
+              <span class="text-xs text-muted ml-auto">(3)</span>
+            </div>
+            <!-- GMP Model -->
+            <div class="ml-4 flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-hover transition-all">
+              <span class="w-4"></span>
+              <span class="w-2 h-2 rounded-full flex-shrink-0" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4);"></span>
+              <span class="text-sm text-primary">GMP 模型</span>
+            </div>
+            <!-- Channel -->
+            <div class="ml-4 flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-hover transition-all">
+              <span class="w-4"></span>
+              <span class="w-2 h-2 rounded-full flex-shrink-0" style="background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.4);"></span>
+              <span class="text-sm text-primary">Channel</span>
+            </div>
+            <!-- Data Types -->
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-hover transition-all">
+              <button class="text-muted hover:text-primary w-4 h-4 flex items-center justify-center">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              <span class="w-2 h-2 rounded-full flex-shrink-0" style="background: var(--text-muted);"></span>
+              <span class="text-sm text-muted">数据类型</span>
+            </div>
+          </div>
+        </div>
+        <!-- Root: Redis -->
+        <div class="mt-1">
+          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-hover transition-all">
+            <button class="text-muted hover:text-primary w-4 h-4 flex items-center justify-center">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.4);"></span>
+            <span class="text-sm font-medium text-primary">Redis</span>
+            <span class="text-xs text-muted ml-auto">(2)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize Handle -->
+    <div class="w-1 cursor-col-resize hover:bg-accent transition-colors"></div>
+
+    <!-- Middle Panel - AI Chat -->
+    <div class="flex-1 min-w-[360px] bg-dark flex flex-col">
+      <!-- Chat Messages -->
+      <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-4">
+        <!-- System Welcome -->
+        <div class="chat-appear text-center py-8">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3" style="background: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%); box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 19.477 5.754 20 7.5 20s3.332-.477 4.5-1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 19.477 18.247 20 16.5 20a3.5 3.5 0 01-3.5-3.5" />
+            </svg>
+          </div>
+          <h3 class="font-bold text-lg gradient-text mb-1">欢迎使用 LLM Wiki</h3>
+          <p class="text-sm text-secondary max-w-md mx-auto">告诉我你想学什么，我会帮你构建知识库。所有内容都会经过你的确认才会写入。</p>
+        </div>
+
+        <!-- AI Message -->
+        <div class="chat-appear flex justify-start">
+          <div class="max-w-[85%]">
+            <div class="bg-card rounded-2xl rounded-tl-sm px-4 py-3 border" style="border-color: var(--border);">
+              <p class="text-sm text-primary leading-relaxed">你好！我是你的 AI 知识库助手。你可以告诉我：</p>
+              <ul class="text-sm text-secondary mt-2 space-y-1 ml-4">
+                <li>• 想学什么新知识（如"我想学 Go 语言"）</li>
+                <li>• 粘贴文章让我吸收</li>
+                <li>• 上传文件（.md/.txt/.pdf）</li>
+                <li>• 查看学习进度</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- User Message -->
+        <div class="chat-appear flex justify-end">
+          <div class="max-w-[85%]">
+            <div class="text-white rounded-2xl rounded-tr-sm px-4 py-3" style="background: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);">
+              <p class="text-sm leading-relaxed">我想学 Go 语言</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Response with Preview -->
+        <div class="chat-appear flex justify-start">
+          <div class="max-w-[90%] w-full">
+            <div class="bg-card rounded-2xl rounded-tl-sm px-4 py-3 border" style="border-color: var(--border);">
+              <p class="text-sm text-primary leading-relaxed mb-3">好的！我为你规划了 Go 语言的知识体系：</p>
+
+              <!-- Preview Card -->
+              <div class="preview-glow bg-elevated border rounded-xl p-4 mb-3" style="border-color: rgba(124, 58, 237, 0.3);">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="text-accent-light">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </span>
+                  <span class="font-medium text-sm text-primary">待确认变更</span>
+                </div>
+
+                <div class="space-y-2 text-sm">
+                  <div class="flex items-start gap-2">
+                    <span class="text-green-400 mt-0.5">●</span>
+                    <span class="text-primary">CREATE: Go / goroutine / GMP 模型</span>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <span class="text-green-400 mt-0.5">●</span>
+                    <span class="text-primary">CREATE: Go / goroutine / Channel</span>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <span class="text-amber-400 mt-0.5">●</span>
+                    <span class="text-primary">UPDATE: Go / goroutine (添加调度原理章节)</span>
+                  </div>
+                </div>
+
+                <div class="mt-3 pt-3 border-t flex items-center justify-between" style="border-color: var(--border);">
+                  <span class="text-xs text-muted">影响: 新增 2 页，更新 1 页</span>
+                  <div class="flex gap-2">
+                    <button class="px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary border rounded-md hover:bg-hover transition-all" style="border-color: var(--border);">
+                      调整
+                    </button>
+                    <button class="px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary border rounded-md hover:bg-hover transition-all" style="border-color: var(--border);">
+                      拒绝
+                    </button>
+                    <button class="px-3 py-1.5 text-xs font-medium text-white rounded-md transition-all" style="background: var(--accent); box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);">
+                      确认
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <p class="text-sm text-secondary">点击"确认"后，这些页面将被创建到你的知识库中。</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Typing Indicator -->
+        <div class="flex justify-start">
+          <div class="bg-card rounded-2xl rounded-tl-sm px-4 py-3 border" style="border-color: var(--border);">
+            <div class="flex gap-1.5">
+              <span class="w-2 h-2 rounded-full typing-dot" style="background: var(--text-muted);"></span>
+              <span class="w-2 h-2 rounded-full typing-dot" style="background: var(--text-muted);"></span>
+              <span class="w-2 h-2 rounded-full typing-dot" style="background: var(--text-muted);"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Input -->
+      <div class="p-3 border-t bg-elevated" style="border-color: var(--border);">
+        <div class="flex items-end gap-2">
+          <button class="p-2 text-secondary hover:text-primary rounded-lg hover:bg-hover transition-all flex-shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 00-.586 1.414v.001a2 2 0 002 2h.001a2 2 0 001.414-.586l6.586-6.586" />
+            </svg>
+          </button>
+          <div class="flex-1 relative">
+            <textarea class="w-full border rounded-xl px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 transition-all placeholder:text-muted text-primary" rows="1" placeholder="输入消息..." style="min-height: 40px; max-height: 120px; background: var(--bg-card); border-color: var(--border); --tw-ring-color: rgba(124, 58, 237, 0.2);"></textarea>
+          </div>
+          <button class="p-2.5 text-white rounded-xl hover:opacity-90 transition-all flex-shrink-0" style="background: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%); box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          </button>
+        </div>
+        <div class="flex items-center gap-3 mt-2 px-1">
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" class="w-3.5 h-3.5 rounded" style="background: var(--bg-card); border-color: var(--border);">
+            <span class="text-xs text-secondary">知识库搜索</span>
+          </label>
+          <span class="text-xs text-muted">按 Enter 发送，Shift+Enter 换行</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize Handle -->
+    <div class="w-1 cursor-col-resize hover:bg-accent transition-colors"></div>
+
+    <!-- Right Panel - Page Browser -->
+    <div class="w-[480px] bg-elevated border-l border-dark flex flex-col flex-shrink-0">
+      <!-- Page Header -->
+      <div class="p-4 border-b" style="border-color: var(--border);">
+        <!-- Breadcrumb -->
+        <nav class="flex items-center gap-1.5 text-xs text-muted mb-2">
+          <span>Go</span>
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+          <span>goroutine</span>
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+          <span class="text-primary">GMP 模型</span>
+        </nav>
+
+        <!-- Title & Status -->
+        <div class="flex items-start justify-between">
+          <div>
+            <h1 class="font-bold text-xl text-primary">GMP 模型</h1>
+            <div class="flex items-center gap-2 mt-1.5">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" style="background: rgba(34, 197, 94, 0.1); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2);">
+                <span class="w-1.5 h-1.5 rounded-full mr-1" style="background: #4ade80; box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);"></span>
+                已发布
+              </span>
+              <span class="text-xs text-muted">最后更新: 2 小时前</span>
+            </div>
+          </div>
+          <div class="flex gap-1">
+            <button class="p-1.5 text-secondary hover:text-primary rounded hover:bg-hover transition-all">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </button>
+            <button class="p-1.5 text-secondary hover:text-primary rounded hover:bg-hover transition-all">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="flex flex-wrap gap-1.5 mt-3">
+          <span class="px-2 py-0.5 text-xs rounded-md border" style="background: var(--bg-card); color: var(--text-secondary); border-color: var(--border);">并发</span>
+          <span class="px-2 py-0.5 text-xs rounded-md border" style="background: var(--bg-card); color: var(--text-secondary); border-color: var(--border);">调度</span>
+          <span class="px-2 py-0.5 text-xs rounded-md border" style="background: var(--bg-card); color: var(--text-secondary); border-color: var(--border);">Go</span>
+        </div>
+      </div>
+
+      <!-- Page Content -->
+      <div class="flex-1 overflow-y-auto custom-scroll p-4">
+        <article>
+          <p class="text-primary leading-relaxed mb-4" style="color: var(--text-primary);">
+            GMP 是 Go 语言并发模型的核心机制，代表 Goroutine（G）、Machine（M）和 Processor（P）三个关键概念。理解 GMP 模型是掌握 Go 并发编程的基础。
+          </p>
+
+          <h2 class="font-bold text-lg text-primary mb-3 mt-6">核心概念</h2>
+
+          <h3 class="font-semibold text-sm text-primary mb-2 mt-4">Goroutine (G)</h3>
+          <p class="leading-relaxed mb-3" style="color: var(--text-secondary);">
+            Goroutine 是 Go 语言中的轻量级线程，由 Go 运行时管理。相比操作系统线程，Goroutine 的创建和切换成本极低，初始栈大小仅 2KB。
+          </p>
+
+          <h3 class="font-semibold text-sm text-primary mb-2 mt-4">Machine (M)</h3>
+          <p class="leading-relaxed mb-3" style="color: var(--text-secondary);">
+            M 代表操作系统线程，是执行 Goroutine 的实体。Go 运行时会维护一个 M 的线程池，但 M 的数量通常远少于 Goroutine 的数量。
+          </p>
+
+          <h3 class="font-semibold text-sm text-primary mb-2 mt-4">Processor (P)</h3>
+          <p class="leading-relaxed mb-3" style="color: var(--text-secondary);">
+            P 是逻辑处理器，代表执行 Go 代码所需的上下文。P 的数量由 <code class="px-1 py-0.5 rounded text-xs font-mono" style="background: var(--bg-card); color: #06b6d4;">GOMAXPROCS</code> 决定，默认等于 CPU 核心数。
+          </p>
+
+          <h2 class="font-bold text-lg text-primary mb-3 mt-6">调度流程</h2>
+          <div class="rounded-lg p-4 my-4 border" style="background: var(--bg-card); border-color: var(--border);">
+            <ol class="space-y-2 list-decimal list-inside text-sm" style="color: var(--text-secondary);">
+              <li>创建 Goroutine 时，G 被放入 P 的本地队列</li>
+              <li>P 的本地队列满时，G 被放入全局队列</li>
+              <li>M 从 P 的本地队列获取 G 执行</li>
+              <li>本地队列空时，M 尝试从全局队列或其他 P 偷取 G</li>
+              <li>G 阻塞时，M 与 P 分离，P 分配给其他 M</li>
+            </ol>
+          </div>
+
+          <h2 class="font-bold text-lg text-primary mb-3 mt-6">关键要点</h2>
+          <div class="flex flex-wrap gap-2 mt-4">
+            <span class="px-3 py-1 text-sm rounded-full font-medium border" style="background: rgba(124, 58, 237, 0.1); color: #a78bfa; border-color: rgba(124, 58, 237, 0.2);">M:N 调度</span>
+            <span class="px-3 py-1 text-sm rounded-full font-medium border" style="background: rgba(124, 58, 237, 0.1); color: #a78bfa; border-color: rgba(124, 58, 237, 0.2);">工作窃取</span>
+            <span class="px-3 py-1 text-sm rounded-full font-medium border" style="background: rgba(124, 58, 237, 0.1); color: #a78bfa; border-color: rgba(124, 58, 237, 0.2);">协程调度</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

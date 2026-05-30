@@ -1,0 +1,23 @@
+{
+  "description": "## 两数之和\n\n给定一个整数数组 `nums` 和一个整数目标值 `target`，请你在该数组中找出 **和为目标值** `target` 的那 **两个** 整数，并返回它们的数组下标。\n\n你可以假设每种输入只会对应一个答案。但是，数组中同一个元素在答案里不能重复出现。\n\n你可以按任意顺序返回答案。\n\n### 示例 1\n\n```\n输入：nums = [2,7,11,15], target = 9\n输出：[0,1]\n解释：因为 nums[0] + nums[1] == 9，返回 [0, 1]。\n```\n\n### 示例 2\n\n```\n输入：nums = [3,2,4], target = 6\n输出：[1,2]\n```\n\n### 示例 3\n\n```\n输入：nums = [3,3], target = 6\n输出：[0,1]\n```\n\n### 提示\n\n- `2 <= nums.length <= 10^4`\n- `-10^9 <= nums[i] <= 10^9`\n- `-10^9 <= target <= 10^9`\n- 只会存在一个有效答案\n\n---\n\n**进阶**：你可以想出一个时间复杂度小于 `O(n^2)` 的算法吗？",
+  "hints": [
+    "提示1：暴力解法是枚举所有两数组合，但时间复杂度较高，思考如何用空间换时间",
+    "提示2：遍历数组时，将每个数需要的「另一个数」（即 target - 当前数）存入哈希表，或查询之前是否已出现过",
+    "提示3：使用哈希表存储「数值→下标」的映射，一次遍历即可完成；注意处理同一个元素不能重复使用的边界情况"
+  ],
+  "solution_outline": "使用哈希表存储已遍历过的元素及其下标。对于当前元素，先在哈希表中查找是否存在满足条件的另一个数，若存在则找到答案；否则将当前元素存入哈希表继续遍历。这样可将时间复杂度从 O(n²) 优化至 O(n)。",
+  "solution_detail": "## 解题思路\n\n### 方法一：暴力枚举（不推荐）\n\n枚举数组中的每一个数 `x`，寻找数组中是否存在 `target - x`。\n\n- 时间复杂度：O(n²)\n- 空间复杂度：O(1)\n\n### 方法二：哈希表（推荐）\n\n注意到我们寻找的是两个数，且答案唯一。可以遍历数组，对于每个 `nums[i]`：\n\n1. 在哈希表中查找 `target - nums[i]` 是否存在\n2. 若存在，说明找到了答案，返回两个下标\n3. 若不存在，将 `nums[i]` 及其下标存入哈希表，继续遍历\n\n这种方法只需一次遍历，且哈希表查找时间为 O(1)。\n\n### 代码实现\n\n```python\ndef twoSum(nums: list[int], target: int) -> list[int]:\n    # 哈希表：存储数值到索引的映射\n    num_to_index = {}\n    \n    for i, num in enumerate(nums):\n        complement = target - num  # 需要找的另一个数\n        if complement in num_to_index:\n            # 找到了，返回两个下标\n            return [num_to_index[complement], i]\n        # 将当前数存入哈希表\n        num_to_index[num] = i\n    \n    return []  # 根据题意，不会执行到这里\n```\n\n### 复杂度分析\n\n| 复杂度 | 分析 |\n|--------|------|\n| 时间复杂度 | O(n)，只需遍历数组一次，哈希表操作均为 O(1) |\n| 空间复杂度 | O(n)，最坏情况下需要存储 n-1 个元素到哈希表 |\n\n### 为什么先查找再存入？\n\n确保不会使用同一个元素。例如 `nums = [3,3], target = 6`：\n- 遍历到第一个 3 时，哈希表为空，将 `3→0` 存入\n- 遍历到第二个 3 时，查找 `6-3=3`，在哈希表中找到下标 0\n- 返回 `[0, 1]`，正确！\n\n如果先存入再查找，可能会错误地使用同一个元素。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\ndef twoSum(nums: List[int], target: int) -> List[int]:\n    \"\"\"\n    使用哈希表实现 O(n) 时间复杂度的两数之和\n    \"\"\"\n    hash_map = {}  # 数值 -> 下标的映射\n    \n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in hash_map:\n            return [hash_map[complement], i]\n        hash_map[num] = i\n    \n    return []  # 题目保证有解，不会执行到这里\n\n\n# 测试用例\nif __name__ == \"__main__\":\n    # 示例 1\n    print(twoSum([2, 7, 11, 15], 9))   # [0, 1]\n    # 示例 2\n    print(twoSum([3, 2, 4], 6))         # [1, 2]\n    # 示例 3\n    print(twoSum([3, 3], 6))            # [0, 1]"
+    }
+  ],
+  "common_errors": [
+    "先存入再查找导致错误：将当前元素先放入哈希表，再查找 complement，会导致同一个元素被重复使用，例如 nums=[3,3], target=6 时错误返回。",
+    "返回的是数值而非下标：题目要求返回数组下标，但初学者可能直接返回 [complement, num] 或搞混顺序。",
+    "忽略边界条件：未考虑数组长度为2的情况，或未处理负数、大数等情况导致溢出或错误（Python 中较少见，但其他语言需注意）。"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(n)"
+}

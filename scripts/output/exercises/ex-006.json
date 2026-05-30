@@ -1,0 +1,23 @@
+{
+  "description": "# 反转链表\n\n给你单链表的头节点 `head` ，请你反转链表，并返回反转后的链表。\n\n## 示例 1\n\n**输入：** head = [1,2,3,4,5]\n**输出：** [5,4,3,2,1]\n\n## 示例 2\n\n**输入：** head = [1,2]\n**输出：** [2,1]\n\n## 示例 3\n\n**输入：** head = []\n**输出：** []\n\n## 提示\n- 链表中节点的数目范围是 `[0, 5000]`\n- `-5000 <= Node.val <= 5000`",
+  "hints": [
+    "提示1：思路方向 - 考虑遍历链表时，如何改变每个节点的指向，让原本指向下一节点的指针改为指向前一节点",
+    "提示2：具体方法 - 使用三个指针（或变量）分别记录当前节点、前一个节点和后一个节点，逐步迭代完成反转",
+    "提示3：实现要点 - 注意在改变 `current.next` 指向之前，先保存 `current.next` 到临时变量，否则后续节点会丢失"
+  ],
+  "solution_outline": "采用迭代法，遍历链表的同时逐个翻转指针方向：用 `prev` 记录前一个节点，`curr` 记录当前节点，每次先将 `curr.next` 保存到 `next_temp`，然后将 `curr.next` 指向 `prev`，再依次后移 `prev` 和 `curr`。遍历结束后，`prev` 即为新链表的头节点。",
+  "solution_detail": "## 解题思路\n\n### 迭代法（推荐）\n\n反转链表的核心操作是**改变指针方向**：让每个节点从指向 `next` 变为指向 `prev`。\n\n具体步骤：\n1. 初始化 `prev = None`（反转后尾节点指向 `None`），`curr = head`\n2. 遍历链表，每次循环：\n   - 保存 `curr.next` 到 `next_temp`（防止断链）\n   - 将 `curr.next` 指向 `prev`（反转指针）\n   - `prev` 移动到 `curr`\n   - `curr` 移动到 `next_temp`\n3. 当 `curr` 为 `None` 时，`prev` 就是新的头节点\n\n### 代码实现\n\n```python\n# Definition for singly-linked list.\nclass ListNode:\n    def __init__(self, val=0, next=None):\n        self.val = val\n        self.next = next\n\nclass Solution:\n    def reverseList(self, head: ListNode) -> ListNode:\n        prev = None\n        curr = head\n        \n        while curr:\n            next_temp = curr.next   # 暂存下一个节点\n            curr.next = prev        # 反转指针方向\n            prev = curr             # prev 前移\n            curr = next_temp        # curr 前移\n        \n        return prev\n```\n\n### 复杂度分析\n\n- **时间复杂度**：`O(n)`，只需遍历链表一次，其中 `n` 为链表长度\n- **空间复杂度**：`O(1)`，仅使用常数个额外指针\n\n### 递归法（拓展）\n\n```python\nclass Solution:\n    def reverseList(self, head: ListNode) -> ListNode:\n        # 递归终止条件\n        if not head or not head.next:\n            return head\n        \n        # 递归反转后续链表\n        new_head = self.reverseList(head.next)\n        \n        # 反转当前节点与下一个节点的连接\n        head.next.next = head\n        head.next = None\n        \n        return new_head\n```\n\n递归法空间复杂度为 `O(n)`（递归栈空间），不如迭代法优。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "# Definition for singly-linked list.\nclass ListNode:\n    def __init__(self, val=0, next=None):\n        self.val = val\n        self.next = next\n\nclass Solution:\n    def reverseList(self, head: ListNode) -> ListNode:\n        prev = None\n        curr = head\n        \n        while curr:\n            next_temp = curr.next   # 暂存下一个节点，防止断链\n            curr.next = prev        # 反转指针方向\n            prev = curr             # prev 指针前移\n            curr = next_temp        # curr 指针前移\n        \n        return prev"
+    }
+  ],
+  "common_errors": [
+    "忘记保存 next 节点就直接反转指针，导致后续节点丢失，无法继续遍历（如直接写 `curr.next = prev` 而没有先保存 `curr.next`）",
+    "返回错误的节点：循环结束后 `curr` 为 `None`，应该返回 `prev` 而不是 `curr` 作为新的头节点",
+    "处理空链表时未做边界判断，虽然本题迭代法可以自然处理，但在递归法中忘记判断 `if not head or not head.next` 会导致空指针异常"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(1)"
+}

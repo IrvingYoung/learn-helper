@@ -1,0 +1,27 @@
+{
+  "content": "## 背包问题（Knapsack Problem）\n\n### 概念定义\n\n背包问题是一类经典的组合优化问题，描述为：给定一组物品，每个物品有重量和价值，在限定总重量的情况下，如何选择物品使得总价值最大。根据物品选择规则的不同，主要分为**0-1背包**（每个物品最多选一次）和**完全背包**（每个物品可选无限次）两种基本形式。\n\n### 核心原理\n\n**0-1背包**的状态转移方程为：`dp[i][j] = max(dp[i-1][j], dp[i-1][j-w[i]] + v[i])`，表示前i个物品、容量为j时的最大价值。使用**状态压缩**后，一维数组需**倒序遍历**：`for j in range(capacity, w[i]-1, -1)`，确保每个物品只被使用一次。\n\n**完全背包**与0-背包的区别仅在于遍历顺序——**正序遍历**：`for j in range(w[i], capacity+1)`，这样允许同一物品被重复选取。\n\n**初始化技巧**是解题关键：要求\"恰好装满\"时，`dp[0]=0`，其余初始化为`-inf`；不要求装满时，全部初始化为0。\n\n### 应用场景\n\n- 资源分配与调度优化\n- 投资组合选择（在预算约束下最大化收益）\n- 云计算中的虚拟机调度\n- 基因序列比对中的片段选择\n\n### 与其他算法的对比\n\n| 特性 | 背包DP | 贪心算法 | 回溯法 |\n|------|--------|---------|--------|\n| 最优性 | 保证最优 | 仅局部最优 | 保证最优 |\n| 时间复杂度 | O(nW) | O(nlogn) | O(2^n) |\n| 适用场景 | 有约束的组合优化 | 可贪心选择时 | 小规模问题 |\n\n背包DP以空间换时间，用状态记录避免重复计算，是动态规划\"无后效性\"与\"最优子结构\"的典型体现。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "def knapsack_01(weights, values, capacity):\n    \"\"\"0-1背包：状态压缩版本，倒序遍历保证每个物品只用一次\"\"\"\n    n = len(weights)\n    dp = [0] * (capacity + 1)\n    \n    for i in range(n):\n        # 关键：倒序遍历，防止重复选取\n        for j in range(capacity, weights[i] - 1, -1):\n            dp[j] = max(dp[j], dp[j - weights[i]] + values[i])\n    \n    return dp[capacity]\n\n# 示例\nw, v = [1, 3, 4], [15, 20, 30]\nprint(knapsack_01(w, v, 4))  # 输出: 35 (选重量1和3)",
+      "explanation": "0-1背包的核心代码，使用一维数组进行状态压缩。倒序遍历j是关键，确保在更新dp[j]时，dp[j-weights[i]]仍是上一轮（i-1个物品）的状态，从而实现每个物品最多选取一次。"
+    },
+    {
+      "lang": "Python",
+      "code": "def knapsack_complete(weights, values, capacity):\n    \"\"\"完全背包：正序遍历，允许无限次选取同一物品\"\"\"\n    dp = [0] * (capacity + 1)\n    \n    for i in range(len(weights)):\n        # 关键：正序遍历，允许重复选取\n        for j in range(weights[i], capacity + 1):\n            dp[j] = max(dp[j], dp[j - weights[i]] + values[i])\n    \n    return dp[capacity]\n\n# 恰好装满的初始化技巧\ndef knapsack_exact_fill(weights, values, capacity):\n    \"\"\"要求背包必须恰好装满时的初始化\"\"\"\n    dp = [float('-inf')] * (capacity + 1)\n    dp[0] = 0  # 容量为0时价值为0，是合法状态\n    \n    for i in range(len(weights)):\n        for j in range(capacity, weights[i] - 1, -1):\n            if dp[j - weights[i]] != float('-inf'):\n                dp[j] = max(dp[j], dp[j - weights[i]] + values[i])\n    \n    return dp[capacity] if dp[capacity] != float('-inf') else -1",
+      "explanation": "完全背包与0-1背包仅遍历顺序不同。第二部分展示了'恰好装满'的初始化技巧：dp[0]=0，其余为负无穷，这样只有恰好能组成的状态才会被更新，最终dp[capacity]若为-inf表示无法恰好装满。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 多维背包示例：二维费用背包\ndef knapsack_2d(weight, volume, values, W, V):\n    \"\"\"二维费用背包：同时受重量和体积限制\"\"\"\n    n = len(weight)\n    # dp[j][k] 表示重量不超过j、体积不超过k时的最大价值\n    dp = [[0] * (V + 1) for _ in range(W + 1)]\n    \n    for i in range(n):\n        # 两个维度都需要倒序\n        for j in range(W, weight[i] - 1, -1):\n            for k in range(V, volume[i] - 1, -1):\n                dp[j][k] = max(dp[j][k], \n                              dp[j - weight[i]][k - volume[i]] + values[i])\n    \n    return dp[W][V]",
+      "explanation": "多维背包是0-1背包的扩展，当物品有多个限制维度（如同时限制重量和体积）时，DP数组增加相应维度，每个维度都需倒序遍历，时间复杂度为O(n·W·V)。"
+    }
+  ],
+  "common_mistakes": [
+    "0-1背包使用正序遍历导致物品被重复选取，违背'每个物品最多选一次'的题意",
+    "完全背包使用倒序遍历导致退化为0-1背包，无法利用无限次选取的特性",
+    "恰好装满时未将dp数组初始化为负无穷，导致空背包状态被错误传播",
+    "状态压缩后仍使用二维DP思路，在遍历物品前错误地初始化dp数组为0",
+    "混淆价值与重量，将dp数组的大小设置为价值上限而非容量上限"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "content": "# 队列（Queue）\n\n## 概念定义\n\n队列是一种**线性数据结构**，遵循**先进先出（First In First Out, FIFO）**的原则。想象日常生活中的排队场景：先到的人先得到服务，新来的人排在队尾。队列只允许在**队尾（rear/tail）**进行入队（enqueue）操作，在**队首（front/head）**进行出队（dequeue）操作。\n\n## 核心原理\n\n队列的核心操作时间复杂度均为 **O(1)**：\n- **入队（enqueue）**：元素添加到队尾\n- **出队（dequeue）**：移除并返回队首元素\n- **查看队首（peek/front）**：获取队首元素但不移除\n\n**循环队列**通过取模运算解决\"假溢出\"问题；**双端队列（Deque）** 允许两端进行插入和删除，兼具队列和栈的特性；**优先队列**则按优先级而非入队顺序出队，通常用堆实现。\n\n## 应用场景\n\n- **BFS 广度优先搜索**：队列是层序遍历的核心，保证按层次扩展节点\n- **任务调度**：操作系统进程调度、线程池任务队列\n- **缓冲与异步处理**：消息队列（Kafka/RabbitMQ）、打印任务队列\n- **数据流处理**：滑动窗口、滑动平均值计算\n\n## 与其他数据结构的对比\n\n| 特性 | 队列 | 栈 | 数组/列表 |\n|------|------|-----|----------|\n| 访问原则 | FIFO 先进先出 | LIFO 后进先出 | 随机访问 |\n| 操作位置 | 队首/队尾 | 栈顶 | 任意位置 |\n| 典型应用 | BFS、任务调度 | DFS、递归、回溯 | 通用存储 |\n\n队列与栈的关键区别在于**元素处理顺序**：队列保持原始顺序，栈则反转顺序。优先队列虽名为\"队列\"，但底层通常基于**堆**实现，时间复杂度为 O(log n)，与传统队列有本质区别。\n\n## 拓展：Python 中的队列选择\n- `list`：不推荐，队首弹出 O(n)\n- `collections.deque`：双端队列，两端操作均为 O(1)，首选\n- `queue.Queue`：线程安全队列，用于多线程\n- `heapq`：优先队列实现",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "from collections import deque\n\n# 基础队列操作：BFS 层序遍历二叉树\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef level_order(root: TreeNode) -> list:\n    if not root:\n        return []\n    \n    result = []\n    queue = deque([root])  # 初始化队列，根节点入队\n    \n    while queue:\n        level_size = len(queue)\n        current_level = []\n        \n        for _ in range(level_size):\n            node = queue.popleft()  # O(1) 出队\n            current_level.append(node.val)\n            \n            # 子节点入队\n            if node.left:\n                queue.append(node.left)   # O(1) 入队\n            if node.right:\n                queue.append(node.right)\n        \n        result.append(current_level)\n    \n    return result",
+      "explanation": "使用 deque 实现二叉树的层序遍历。关键点：popleft() 实现 O(1) 队首弹出，append() 实现 O(1) 队尾入队。每层记录当前队列长度，实现按层分组。"
+    },
+    {
+      "lang": "Python",
+      "code": "from collections import deque\nfrom heapq import heappush, heappop\n\n# 双端队列：滑动窗口最大值（LeetCode 239）\ndef max_sliding_window(nums: list, k: int) -> list:\n    # deque 存储索引，保持递减；队首为窗口最大值\n    dq = deque()\n    result = []\n    \n    for i, num in enumerate(nums):\n        # 移除不在窗口内的元素\n        if dq and dq[0] < i - k + 1:\n            dq.popleft()\n        \n        # 移除所有小于当前元素的（它们不可能成为最大值）\n        while dq and nums[dq[-1]] <= num:\n            dq.pop()\n        \n        dq.append(i)\n        \n        # 窗口形成后开始记录结果\n        if i >= k - 1:\n            result.append(nums[dq[0]])\n    \n    return result\n\n# 优先队列：合并 K 个有序链表\nclass ListNode:\n    def __init__(self, val=0, next=None):\n        self.val = val\n        self.next = next\n    \n    def __lt__(self, other):\n        return self.val < other.val\n\ndef merge_k_lists(lists: list) -> ListNode:\n    # 最小堆，按节点值排序\n    heap = []\n    for l in lists:\n        if l:\n            heappush(heap, l)\n    \n    dummy = ListNode(0)\n    current = dummy\n    \n    while heap:\n        node = heappop(heap)  # 弹出最小值节点\n        current.next = node\n        current = current.next\n        \n        if node.next:\n            heappush(heap, node.next)  # 该链表的下一个节点入堆\n    \n    return dummy.next",
+      "explanation": "双端队列维护单调性解决滑动窗口问题，时间复杂度 O(n)；优先队列（最小堆）合并 K 个有序链表，每次取最小值的时间复杂度为 O(log K)，总复杂度 O(N log K)。"
+    }
+  ],
+  "common_mistakes": [
+    "使用 list 的 pop(0) 或 insert(0, x) 实现队列，导致 O(n) 时间复杂度",
+    "BFS 中忘记标记已访问节点，造成重复入队和无限循环",
+    "优先队列中直接存储对象却不定义比较方法，导致类型错误",
+    "双端队列场景中错误地使用单端操作，限制算法效率",
+    "循环队列中混淆队空（front == rear）与队满（(rear + 1) % size == front）的判断条件"
+  ]
+}

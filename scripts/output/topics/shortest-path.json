@@ -1,0 +1,27 @@
+{
+  "content": "## 最短路径算法\n\n### 概念定义\n\n最短路径问题是图论中的核心问题，旨在图中寻找两顶点之间权重之和最小的路径。根据问题约束的不同，衍生出多种经典算法。\n\n### 核心原理\n\n**Dijkstra算法**：基于贪心策略，维护一个距离数组`dist`，每次选择未访问顶点中`dist`最小的顶点进行松弛操作。利用优先队列（最小堆）可将时间复杂度优化至$O(E \\log V)$。**核心限制**：无法处理负权边，因为贪心选择的最小值在负权边出现后可能被推翻。\n\n**Bellman-Ford算法**：通过$V-1$轮对所有边的松弛操作，逐步逼近最优解。时间复杂度$O(VE)$，但**可以检测负权环**并处理负权边。若第$V$轮仍能松弛，则存在负权环。\n\n**Floyd算法**：动态规划思想，定义`dp[k][i][j]`为仅经过顶点$0\\sim k$时$i$到$j$的最短路径。通过状态压缩可优化至二维数组，三重循环实现全源最短路径，时间复杂度$O(V^3)$。适用于稠密图的多源查询场景。\n\n### 应用场景\n\n- **Dijkstra**：网络路由（OSPF协议）、地图导航（边权非负）\n- **Bellman-Ford**：金融套利检测（负权环识别）、距离向量路由协议（RIP）\n- **Floyd**：城市间所有配对最短距离（如航班中转）、图的中心性分析\n\n### 算法对比\n\n| 特性 | Dijkstra | Bellman-Ford | Floyd |\n|------|----------|--------------|-------|\n| 时间复杂度 | $O(E\\log V)$ | $O(VE)$ | $O(V^3)$ |\n| 负权边 | ❌ 不支持 | ✅ 支持 | ✅ 支持 |\n| 负权环检测 | 不能 | 能 | 能（对角线<0） |\n| 适用场景 | 单源、非负权 | 单源、含负权 | 全源最短路径 |\n\n**与BFS的关系**：当边权均为1时，Dijkstra退化为BFS；SPFA是Bellman-Ford的队列优化版本，但最坏复杂度仍为$O(VE)$。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "import heapq\n\n# Dijkstra算法（单源最短路径，非负权图）\ndef dijkstra(graph, start):\n    n = len(graph)\n    dist = [float('inf')] * n\n    dist[start] = 0\n    pq = [(0, start)]  # (当前距离, 顶点)\n    \n    while pq:\n        d, u = heapq.heappop(pq)\n        if d > dist[u]:  # 已处理过，跳过\n            continue\n        for v, w in graph[u]:\n            if dist[u] + w < dist[v]:\n                dist[v] = dist[u] + w\n                heapq.heappush(pq, (dist[v], v))\n    return dist\n\n# 邻接表表示：graph[i] = [(邻居, 权重), ...]\ngraph = [\n    [(1, 4), (2, 1)],\n    [(3, 1)],\n    [(1, 2), (3, 5)],\n    []\n]\nprint(dijkstra(graph, 0))  # [0, 3, 1, 4]",
+      "explanation": "使用优先队列优化的Dijkstra算法。关键点：当弹出堆顶元素时，若其距离大于已记录距离则跳过，避免重复处理。时间复杂度O(E log V)。"
+    },
+    {
+      "lang": "Python",
+      "code": "# Bellman-Ford算法（支持负权边，可检测负权环）\ndef bellman_ford(edges, n, start):\n    dist = [float('inf')] * n\n    dist[start] = 0\n    \n    # 松弛操作，最多进行n-1轮\n    for _ in range(n - 1):\n        updated = False\n        for u, v, w in edges:\n            if dist[u] != float('inf') and dist[u] + w < dist[v]:\n                dist[v] = dist[u] + w\n                updated = True\n        if not updated:  # 提前终止优化\n            break\n    \n    # 检测负权环\n    for u, v, w in edges:\n        if dist[u] != float('inf') and dist[u] + w < dist[v]:\n            raise ValueError(\"图中存在负权环\")\n    return dist\n\n# edges: [(u, v, w), ...] 表示u->v，权重w\nedges = [(0, 1, -1), (0, 2, 4), (1, 2, 3), (1, 3, 2), (3, 2, -5)]\nprint(bellman_ford(edges, 4, 0))",
+      "explanation": "Bellman-Ford通过V-1轮松弛确保找到最短路径。最后的循环用于检测负权环——若仍能松弛则存在负权环。时间复杂度O(VE)，适合稀疏图或含负权边场景。"
+    },
+    {
+      "lang": "Python",
+      "code": "# Floyd算法（全源最短路径，动态规划）\ndef floyd(graph):\n    n = len(graph)\n    # 初始化：直接使用输入的邻接矩阵\n    dist = [[graph[i][j] for j in range(n)] for i in range(n)]\n    \n    # k作为中间点，必须在最外层循环\n    for k in range(n):\n        for i in range(n):\n            for j in range(n):\n                if dist[i][k] + dist[k][j] < dist[i][j]:\n                    dist[i][j] = dist[i][k] + dist[k][j]\n    \n    # 检测负权环\n    for i in range(n):\n        if dist[i][i] < 0:\n            raise ValueError(\"图中存在负权环\")\n    return dist\n\n# 邻接矩阵，INF表示不可达\nINF = float('inf')\ngraph = [\n    [0, 5, INF, 10],\n    [INF, 0, 3, INF],\n    [INF, INF, 0, 1],\n    [INF, INF, INF, 0]\n]\nresult = floyd(graph)\nfor row in result:\n    print(row)",
+      "explanation": "Floyd算法的核心是三重的k-i-j循环，k必须放在最外层以保证状态转移的正确性。通过动态规划逐步允许更多顶点作为中转，最终得到任意两点间的最短距离。空间可优化至原地修改原矩阵。"
+    }
+  ],
+  "common_mistakes": [
+    "Dijkstra中未处理优先队列的过期条目，导致同一顶点被多次错误松弛，复杂度退化",
+    "Floyd算法将中间点k的循环放在内层，破坏动态规划的无后效性，导致结果错误",
+    "Bellman-Ford检测负权环时，未正确初始化dist数组或忽略不可达顶点的判断",
+    "遇到负权边时仍使用Dijkstra，因贪心策略失效而得到错误的最短路径",
+    "忽略图不连通的情况，将不可达顶点的距离错误输出为0而非无穷大"
+  ]
+}

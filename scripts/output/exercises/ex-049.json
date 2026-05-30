@@ -1,0 +1,22 @@
+{
+  "description": "# 只出现一次的数字\n\n给定一个**非空**整数数组，其中每个元素均出现两次，只有**一个元素**出现一次。\n\n请找出并返回那个只出现了一次的元素。\n\n## 示例\n\n**输入：** nums = [2, 2, 1]\n**输出：** 1\n\n**输入：** nums = [4, 1, 2, 1, 2]\n**输出：** 4\n\n**输入：** nums = [1]\n**输出：** 1\n\n## 约束\n- `1 <= nums.length <= 3 * 10^4`\n- `-3 * 10^4 <= nums[i] <= 3 * 10^4`\n- 数组中除了某个元素只出现一次以外，其余每个元素均出现两次\n\n## 进阶\n能否设计一个时间复杂度为 O(n)、空间复杂度为 O(1) 的算法？",
+  "hints": [
+    "提示1：思考如何在不使用额外空间（或常数额外空间）的情况下，区分出现两次和出现一次的数字",
+    "提示2：回顾异或运算的性质：a ^ a = 0，a ^ 0 = a，以及异或运算满足交换律和结合律",
+    "提示3：将所有数字进行异或运算，成对出现的数字会相互抵消为0，最终结果就是那个只出现一次的数字"
+  ],
+  "solution_outline": "利用异或运算的性质：任何数和自身异或为0，任何数和0异或为自身。将数组中所有数字进行异或，成对的数字会抵消，最终留下的就是只出现一次的数字。",
+  "solution_detail": "## 解题思路\n\n本题的核心在于利用**异或运算（XOR）**的数学性质：\n\n| 性质 | 公式 |\n|------|------|\n| 自反性 | `a ^ a = 0` |\n| 恒等性 | `a ^ 0 = a` |\n| 交换律 | `a ^ b = b ^ a` |\n| 结合律 | `(a ^ b) ^ c = a ^ (b ^ c)` |\n\n由于数组中除了一个元素外，其他元素都出现两次，我们可以将所有数字异或起来：\n- 出现两次的数字：`a ^ a = 0`\n- 最终：`0 ^ 目标数字 = 目标数字`\n\n## 代码实现\n\n```python\ndef singleNumber(nums):\n    result = 0\n    for num in nums:\n        result ^= num\n    return result\n```\n\n## 复杂度分析\n\n- **时间复杂度：** O(n)，只需遍历数组一次\n- **空间复杂度：** O(1)，仅使用一个变量存储结果\n\n## 示例验证\n\n以 `[4, 1, 2, 1, 2]` 为例：\n```\nresult = 0 ^ 4 ^ 1 ^ 2 ^ 1 ^ 2\n       = 0 ^ 4 ^ (1 ^ 1) ^ (2 ^ 2)   # 利用结合律分组\n       = 0 ^ 4 ^ 0 ^ 0\n       = 4\n```",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def singleNumber(self, nums: List[int]) -> int:\n        result = 0\n        for num in nums:\n            result ^= num\n        return result\n\n# 测试\nsol = Solution()\nprint(sol.singleNumber([2, 2, 1]))        # 输出: 1\nprint(sol.singleNumber([4, 1, 2, 1, 2]))   # 输出: 4\nprint(sol.singleNumber([1]))               # 输出: 1"
+    }
+  ],
+  "common_errors": [
+    "使用哈希表或集合记录出现次数，虽然可行但空间复杂度为 O(n)，不满足进阶要求",
+    "忽略异或运算的初始值应为0，错误地初始化为数组第一个元素或其他值，导致边界情况（如单元素数组）处理错误"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(1)"
+}

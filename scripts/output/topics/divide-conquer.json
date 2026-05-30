@@ -1,0 +1,27 @@
+{
+  "content": "## 分治算法（Divide and Conquer）\n\n### 概念定义\n\n分治算法是一种**递归式**的算法设计范式，核心思想是将一个复杂的大问题**分解**为若干个规模较小但结构相似的子问题，**递归地解决**这些子问题，最后将子问题的解**合并**为原问题的解。其经典描述为：分解（Divide）→ 解决（Conquer）→ 合并（Combine）。\n\n### 核心原理\n\n分治算法的有效性建立在三个关键步骤上：\n\n1. **分解**：将原问题划分为 $k$ 个规模更小的子问题\n2. **解决**：递归求解子问题；若子问题足够小，则直接求解\n3. **合并**：将子问题的解合并为原问题的解\n\n**主定理（Master Theorem）** 用于分析分治算法的时间复杂度。对于递归式 $T(n) = aT(n/b) + O(n^d)$，其中 $a$ 是子问题个数，$b$ 是问题缩小因子，$d$ 是合并步骤的复杂度指数：\n- 若 $a > b^d$，则 $T(n) = O(n^{\\log_b a})$\n- 若 $a = b^d$，则 $T(n) = O(n^d \\log n)$\n- 若 $a < b^d$，则 $T(n) = O(n^d)$\n\n### 应用场景\n\n- **排序算法**：归并排序、快速排序\n- **几何计算**：最近点对、凸包问题\n- **数学运算**：大整数乘法（Karatsuba算法）、矩阵乘法（Strassen算法）、快速幂\n- **经典问题**：汉诺塔、二分查找（退化形式）\n\n### 与其他算法的对比\n\n| 特性 | 分治算法 | 动态规划 | 贪心算法 |\n|------|---------|---------|---------|\n| 子问题关系 | 独立，无重叠 | 重叠子问题 | 无显式子问题 |\n| 最优性保证 | 取决于问题 | 总能得到最优解 | 局部最优，全局不一定 |\n| 典型应用 | 排序、几何 | 背包、最短路径 | 活动选择、霍夫曼编码 |\n\n分治与动态规划的关键区别在于：**分治的子问题相互独立，而动态规划的子问题存在重叠**。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "def merge_sort(arr):\n    \"\"\"归并排序：经典分治算法，时间复杂度 O(n log n)\"\"\"\n    # 基准情况：数组长度为 1 时已有序\n    if len(arr) <= 1:\n        return arr\n    \n    # 分解：将数组从中点分为两半\n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid])   # 递归排序左半部分\n    right = merge_sort(arr[mid:])   # 递归排序右半部分\n    \n    # 合并：将两个有序数组合并为一个有序数组\n    return merge(left, right)\n\ndef merge(left, right):\n    \"\"\"合并两个有序数组\"\"\"\n    result = []\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            result.append(left[i])\n            i += 1\n        else:\n            result.append(right[j])\n            j += 1\n    # 添加剩余元素\n    result.extend(left[i:])\n    result.extend(right[j:])\n    return result\n\n# 测试\narr = [38, 27, 43, 3, 9, 82, 10]\nprint(merge_sort(arr))  # [3, 9, 10, 27, 38, 43, 82]",
+      "explanation": "归并排序是分治算法的典型代表。首先将数组不断二分直到长度为1（分解），然后逐层合并两个有序子数组（合并）。主定理分析：a=2, b=2, d=1，满足 a=b^d，故复杂度为 O(n log n)。"
+    },
+    {
+      "lang": "Python",
+      "code": "def fast_power(base, exponent):\n    \"\"\"快速幂：分治思想计算 base^exponent，时间复杂度 O(log n)\"\"\"\n    # 基准情况\n    if exponent == 0:\n        return 1\n    if exponent == 1:\n        return base\n    \n    # 分解：将指数折半\n    half = fast_power(base, exponent // 2)\n    \n    # 合并：利用 half * half 或 half * half * base\n    if exponent % 2 == 0:\n        return half * half  # 偶数次幂\n    else:\n        return half * half * base  # 奇数次幂，额外乘一个 base\n\n# 扩展：带模数的快速幂（常用于大数计算）\ndef fast_power_mod(base, exponent, mod):\n    \"\"\"快速幂取模，防止数值溢出\"\"\"\n    result = 1\n    base = base % mod\n    while exponent > 0:\n        if exponent % 2 == 1:  # 如果指数为奇数\n            result = (result * base) % mod\n        base = (base * base) % mod  # 底数平方\n        exponent //= 2  # 指数折半\n    return result\n\n# 测试\nprint(fast_power(2, 10))           # 1024\nprint(fast_power_mod(2, 100, 1000))  # 376",
+      "explanation": "快速幂利用分治将 O(n) 的线性计算优化为 O(log n)。关键洞察：a^n = (a^(n/2))^2（n为偶数）或 a * (a^((n-1)/2))^2（n为奇数）。带模版本使用迭代避免递归深度问题，是竞赛编程常用技巧。"
+    },
+    {
+      "lang": "Python",
+      "code": "def find_max_crossing_subarray(arr, low, mid, high):\n    \"\"\"寻找跨越中点的最大子数组\"\"\"\n    # 从中点向左扫描\n    left_sum = float('-inf')\n    total = 0\n    max_left = mid\n    for i in range(mid, low - 1, -1):\n        total += arr[i]\n        if total > left_sum:\n            left_sum = total\n            max_left = i\n    \n    # 从中点向右扫描\n    right_sum = float('-inf')\n    total = 0\n    max_right = mid + 1\n    for j in range(mid + 1, high + 1):\n        total += arr[j]\n        if total > right_sum:\n            right_sum = total\n            max_right = j\n    \n    return max_left, max_right, left_sum + right_sum\n\ndef find_maximum_subarray(arr, low, high):\n    \"\"\"分治法求解最大子数组问题，时间复杂度 O(n log n)\"\"\"\n    # 基准情况：只有一个元素\n    if low == high:\n        return low, high, arr[low]\n    \n    mid = (low + high) // 2\n    \n    # 递归求解三种情况\n    left_low, left_high, left_sum = find_maximum_subarray(arr, low, mid)\n    right_low, right_high, right_sum = find_maximum_subarray(arr, mid + 1, high)\n    cross_low, cross_high, cross_sum = find_max_crossing_subarray(arr, low, mid, high)\n    \n    # 返回三者中的最大值\n    if left_sum >= right_sum and left_sum >= cross_sum:\n        return left_low, left_high, left_sum\n    elif right_sum >= left_sum and right_sum >= cross_sum:\n        return right_low, right_high, right_sum\n    else:\n        return cross_low, cross_high, cross_sum\n\n# 测试\narr = [-2, 1, -3, 4, -1, 2, 1, -5, 4]\nleft, right, max_sum = find_maximum_subarray(arr, 0, len(arr) - 1)\nprint(f\"最大子数组: arr[{left}:{right+1}] = {arr[left:right+1]}, 和 = {max_sum}\")\n# 输出: 最大子数组: arr[3:7] = [4, -1, 2, 1], 和 = 6",
+      "explanation": "最大子数组问题展示了分治处理'跨越边界'情况的技巧。数组被分为左、右两部分，最大子数组可能完全在左、完全在右，或跨越中点。该算法复杂度 O(n log n)，虽然不如 Kadane 算法的 O(n)，但完美体现了分治的设计思想。"
+    }
+  ],
+  "common_mistakes": [
+    "递归终止条件设置错误，如忘记处理长度为 1 或 0 的基础情况导致无限递归或栈溢出",
+    "合并步骤的实现复杂度失控，使得整体复杂度退化，如错误地选择 O(n²) 合并导致整体变为 O(n² log n)",
+    "忽略子问题的独立性假设，对存在重叠子问题的情况盲目使用分治而不采用动态规划优化",
+    "递归深度过大时未考虑栈空间限制，对于大规模数据应改用迭代实现或增加尾递归优化",
+    "边界索引处理不当，特别是在涉及数组切片 arr[:mid] 和 arr[mid:] 时造成元素遗漏或重复计算"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "# N皇后\n\n**n 皇后问题** 研究的是如何将 n 个皇后放置在 n×n 的棋盘上，并且使皇后彼此之间不能相互攻击。\n\n给你一个整数 `n` ，返回所有不同的 **n 皇后问题** 的解决方案。\n\n每一种解法包含一个不同的棋盘布局，其中 `'Q'` 表示皇后，`.` 表示空位。\n\n## 示例 1：\n\n```\n输入：n = 4\n输出：[\"[.Q..\",\"...Q\",\"Q...\",\"..Q.]\",[\"..Q.\",\"Q...\",\"...Q\",\".Q..\"]]\n解释：4 皇后问题存在两个不同的解法。\n```\n\n## 示例 2：\n\n```\n输入：n = 1\n输出：[[\"Q\"]]\n```\n\n## 提示：\n- `1 <= n <= 9`\n",
+  "hints": [
+    "提示1：使用回溯算法，逐行放置皇后，确保每行每列以及两条对角线上都只有一个皇后。",
+    "提示2：用三个集合分别记录列、主对角线（row-col 为常数）、副对角线（row+col 为常数）的占用情况，实现 O(1) 冲突判断。",
+    "提示3：注意对角线的表示方式，主对角线可用 row-col 标识但需加偏移量避免负数，副对角线直接用 row+col 即可。"
+  ],
+  "solution_outline": "使用回溯法逐行尝试放置皇后，通过维护列和两个对角线的占用状态来剪枝。当成功放置 n 个皇后时，将当前棋盘布局加入结果集。",
+  "solution_detail": "## 解题思路\n\nN皇后是经典的回溯算法问题。核心思路是逐行放置皇后，对于每一行，尝试在每一列放置，检查是否与已放置的皇后冲突。\n\n### 冲突检测优化\n\n- **同一列**：用集合 `cols` 记录已占用的列\n- **主对角线**（左上到右下）：`row - col` 为常数，用 `diagonals1` 记录\n- **副对角线**（右上到左下）：`row + col` 为常数，用 `diagonals2` 记录\n\n### 算法流程\n\n1. 从第 0 行开始，尝试在每一列放置皇后\n2. 检查当前位置 `(row, col)` 的列和两个对角线是否被占用\n3. 若不冲突，放置皇后并递归到下一行\n4. 回溯时撤销当前选择，继续尝试其他列\n\n### 代码实现\n\n```python\nclass Solution:\n    def solveNQueens(self, n: int) -> List[List[str]]:\n        def backtrack(row):\n            if row == n:\n                # 所有皇后放置完毕，生成结果\n                res.append([\"\".join(row) for row in board])\n                return\n            \n            for col in range(n):\n                # 检查冲突：列、主对角线、副对角线\n                if col in cols or (row - col) in diag1 or (row + col) in diag2:\n                    continue\n                \n                # 放置皇后\n                board[row][col] = 'Q'\n                cols.add(col)\n                diag1.add(row - col)\n                diag2.add(row + col)\n                \n                # 递归下一行\n                backtrack(row + 1)\n                \n                # 回溯\n                board[row][col] = '.'\n                cols.remove(col)\n                diag1.remove(row - col)\n                diag2.remove(row + col)\n        \n        res = []\n        board = [['.' for _ in range(n)] for _ in range(n)]\n        cols = set()      # 记录已占用的列\n        diag1 = set()     # 主对角线：row - col\n        diag2 = set()     # 副对角线：row + col\n        \n        backtrack(0)\n        return res\n```\n\n### 复杂度分析\n\n- **时间复杂度**：`O(N!)`。第一行有 N 种选择，第二行最多 N-1 种，...，但实际通过剪枝会少很多。最坏情况下界为 `O(N!)`。\n- **空间复杂度**：`O(N)`。递归栈深度为 N，以及记录状态的数据结构。\n",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def solveNQueens(self, n: int) -> List[List[str]]:\n        def backtrack(row):\n            if row == n:\n                res.append([\"\".join(r) for r in board])\n                return\n            \n            for col in range(n):\n                if col in cols or (row - col) in diag1 or (row + col) in diag2:\n                    continue\n                \n                # 放置皇后\n                board[row][col] = 'Q'\n                cols.add(col)\n                diag1.add(row - col)\n                diag2.add(row + col)\n                \n                backtrack(row + 1)\n                \n                # 回溯\n                board[row][col] = '.'\n                cols.remove(col)\n                diag1.remove(row - col)\n                diag2.remove(row + col)\n        \n        res = []\n        board = [['.' for _ in range(n)] for _ in range(n)]\n        cols, diag1, diag2 = set(), set(), set()\n        \n        backtrack(0)\n        return res\n"
+    }
+  ],
+  "common_errors": [
+    "对角线判断错误：误用 row == col 或混淆主副对角线的判断条件，正确应是主对角线 row-col 相等、副对角线 row+col 相等。",
+    "回溯时忘记恢复状态：放置皇后后修改了 board 和集合，回溯时只恢复了部分状态导致后续搜索错误。",
+    "结果格式错误：题目要求返回字符串列表的列表，直接用二维数组导致输出格式不符合要求。"
+  ],
+  "time_complexity_expected": "O(N!)",
+  "space_complexity_expected": "O(N)"
+}

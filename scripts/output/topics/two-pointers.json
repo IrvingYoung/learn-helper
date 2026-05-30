@@ -1,0 +1,27 @@
+{
+  "content": "## 双指针（Two Pointers）\n\n### 概念定义\n\n双指针是一种通过维护两个指针来遍历数据结构的算法技巧。根据指针移动方式的不同，可分为**对撞指针**（两个指针从两端向中间移动）和**快慢指针**（两个指针以不同速度同向移动）。\n\n### 核心原理\n\n**对撞指针**：初始化时，一个指针指向数组起始位置（`left = 0`），另一个指向末尾（`right = n-1`）。根据条件判断移动哪个指针，直到两者相遇。其核心逻辑通常为：若 `sum > target` 则 `right--`，否则 `left++`。\n\n**快慢指针**：快指针每次移动多步，慢指针每次移动一步。常用于检测链表环、寻找中点等问题。快慢指针的\"速度差\"决定了问题的求解方式。\\n\n### 应用场景\n\n| 类型 | 典型问题 | 时间复杂度优化 |\n|------|---------|------------|\n| 对撞指针 | 两数之和、三数之和、盛最多水的容器 | O(n²) → O(n) |\n| 快慢指针 | 链表环检测、寻找中点、删除倒数第N个节点 | 空间 O(n) → O(1) |\n\n### 与其他技巧对比\n\n- **暴力枚举**：双指针利用有序性或特定结构避免冗余计算\n- **哈希表**：双指针空间复杂度更优（O(1) vs O(n)），但通常要求数据有序\n- **滑动窗口**：滑动窗口是双指针的特例，强调窗口的扩张与收缩",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "# 对撞指针：两数之和（有序数组）\ndef two_sum(numbers, target):\n    left, right = 0, len(numbers) - 1\n    while left < right:\n        current = numbers[left] + numbers[right]\n        if current == target:\n            return [left + 1, right + 1]  # 返回1-based索引\n        elif current < target:\n            left += 1  # 和太小，左指针右移增大数值\n        else:\n            right -= 1  # 和太大，右指针左移减小数值\n    return [-1, -1]",
+      "explanation": "经典对撞指针应用。数组已排序，通过左右指针向中间逼近，将O(n²)的枚举优化到O(n)。关键：利用有序性决定移动方向。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 快慢指针：检测链表是否有环\nclass ListNode:\n    def __init__(self, val=0):\n        self.val = val\n        self.next = None\n\ndef has_cycle(head):\n    if not head or not head.next:\n        return False\n    slow = head  # 慢指针，每次走一步\n    fast = head.next  # 快指针，每次走两步\n    while slow != fast:\n        if not fast or not fast.next:\n            return False  # 快指针到达末尾，无环\n        slow = slow.next\n        fast = fast.next.next\n    return True  # 相遇则存在环",
+      "explanation": "Floyd判圈算法。快指针速度是慢指针2倍，若有环必相遇；若无环快指针先到末尾。空间O(1)解决环检测问题。"
+    },
+    {
+      "lang": "Python",
+      "code": "# 快慢指针：寻找链表的中点（用于归并排序等）\ndef find_middle(head):\n    slow = fast = head\n    while fast and fast.next:\n        slow = slow.next      # 慢指针：1步\n        fast = fast.next.next # 快指针：2步\n    return slow  # 当fast到达末尾，slow正好在中点",
+      "explanation": "快指针到达链表末尾时，慢指针恰好位于中点。这是归并排序、链表重排等算法的基础子程序。"
+    }
+  ],
+  "common_mistakes": [
+    "对撞指针初始化时两个指针都从左端开始，导致无法正确收敛",
+    "快慢指针初始位置错误（如都指向head.next），导致中点位置偏移",
+    "在移动指针前未判断指针是否越界，引发数组越界或空指针异常",
+    "对撞指针循环条件写成`left <= right`，对于寻找特定元素可能导致重复计算",
+    "快慢指针速度差选择不当（如3倍速），导致无法正确检测环或中点"
+  ]
+}

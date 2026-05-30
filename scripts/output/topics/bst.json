@@ -1,0 +1,22 @@
+{
+  "content": "## 二叉搜索树（Binary Search Tree, BST）\n\n### 概念定义\n\n二叉搜索树是一种特殊的二叉树结构，其核心特征在于**有序性**：对于树中任意节点，其左子树所有节点的值均小于该节点值，右子树所有节点的值均大于该节点值。这一性质使得BST在逻辑上呈现有序的层次结构。\n\n### 核心原理\n\nBST的高效性能源于其有序性带来的**二分查找**思想：\n\n- **查找操作**：从根节点出发，目标值小于当前节点则向左，大于则向右，平均时间复杂度为 $O(h)$（$h$ 为树高度）\n- **插入操作**：遵循查找路径找到合适的空位置插入，保持BST性质不变\n- **删除操作**：分三种情况处理——叶子节点直接删除；仅有一棵子树则用子树替代；有两棵子树时，用**后继节点**（右子树最小值）或**前驱节点**（左子树最大值）替代\n- **中序遍历**：按照「左-根-右」的顺序遍历BST，可得到**升序排列**的结果，这是BST最重要的性质之一\n\n### 应用场景\n\nBST广泛应用于需要**动态维护有序数据**的场景：数据库索引、内存中的有序映射（如C++的`map`）、表达式解析、以及作为更高级数据结构（如AVL树、红黑树）的基础。\n\n### 与其他数据结构的对比\n\n| 特性 | BST | 哈希表 | 数组（有序） |\n|------|-----|--------|-----------|\n| 查找 | $O(h)$ | $O(1)$ | $O(\\log n)$ |\n| 插入删除 | $O(h)$ | $O(1)$ | $O(n)$ |\n| 有序遍历 | $O(n)$ | $O(n\\log n)$ | $O(n)$ |\n| 最坏情况 | $O(n)$（退化为链表）| $O(n)$ | — |\n\nBST的核心优势在于**兼顾动态操作与有序性**，但需通过平衡手段（如AVL、红黑树）避免退化。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "class TreeNode:\n    def __init__(self, val=0):\n        self.val = val\n        self.left = None\n        self.right = None\n\nclass BST:\n    def __init__(self):\n        self.root = None\n    \n    def insert(self, val):\n        \"\"\"插入节点：按照BST性质找到合适位置\"\"\"\n        if not self.root:\n            self.root = TreeNode(val)\n            return\n        \n        node = self.root\n        while True:\n            if val < node.val:\n                if node.left is None:\n                    node.left = TreeNode(val)\n                    return\n                node = node.left\n            else:  # 允许重复值放右子树\n                if node.right is None:\n                    node.right = TreeNode(val)\n                    return\n                node = node.right\n    \n    def search(self, val):\n        \"\"\"查找节点：利用有序性二分查找\"\"\"\n        node = self.root\n        while node:\n            if val == node.val:\n                return node\n            node = node.left if val < node.val else node.right\n        return None\n    \n    def inorder(self, node=None, result=None):\n        \"\"\"中序遍历：返回升序序列\"\"\"\n        if result is None:\n            result = []\n        if node is None:\n            node = self.root\n        if node:\n            self.inorder(node.left, result)\n            result.append(node.val)\n            self.inorder(node.right, result)\n        return result",
+      "explanation": "实现BST的基础框架，包含插入、查找和中序遍历。插入和查找均利用BST的有序性进行路径选择，中序遍历递归地按「左-根-右」顺序访问节点。"
+    },
+    {
+      "lang": "Python",
+      "code": "    def delete(self, val):\n        \"\"\"删除节点：处理三种情况\"\"\"\n        self.root = self._delete_node(self.root, val)\n    \n    def _delete_node(self, root, val):\n        if not root:\n            return None\n        \n        # 定位待删除节点\n        if val < root.val:\n            root.left = self._delete_node(root.left, val)\n        elif val > root.val:\n            root.right = self._delete_node(root.right, val)\n        else:\n            # 情况1: 叶子节点或只有一个子节点\n            if not root.left:\n                return root.right\n            if not root.right:\n                return root.left\n            \n            # 情况2: 两个子节点，找后继节点（右子树最小值）\n            successor = self._find_min(root.right)\n            root.val = successor.val\n            root.right = self._delete_node(root.right, successor.val)\n        \n        return root\n    \n    def _find_min(self, node):\n        \"\"\"找到子树中的最小值节点\"\"\"\n        while node.left:\n            node = node.left\n        return node",
+      "explanation": "删除操作是BST最复杂的操作。核心思路是：叶子直接删；单个子节点用子节点替代；两个子节点时，用右子树的最小值（后继）替代当前节点，然后在右子树中递归删除该后继。"
+    }
+  ],
+  "common_mistakes": [
+    "插入时未处理重复值，导致逻辑混乱或无限循环",
+    "删除有两个子节点的节点时，错误地直接删除而未用后继/前驱节点替代",
+    "忘记更新删除操作后的父节点指针，导致树结构断裂",
+    "在空树或单节点树上进行删除操作时未做边界检查，引发AttributeError",
+    "误将BST当作平衡树使用，忽略最坏情况下退化为链表导致O(n)性能问题"
+  ]
+}

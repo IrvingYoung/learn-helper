@@ -1,0 +1,22 @@
+{
+  "content": "## 概念定义\n\n二分查找（Binary Search）是一种在**有序数组**中查找目标元素的高效算法。其核心思想是：每次将搜索区间缩小一半，通过比较中间元素与目标值的大小关系，快速排除不可能包含目标的区间，直至找到目标或确定目标不存在。\n\n## 核心原理\n\n二分查找的精髓在于**中点划分**与**区间收缩**的协同作用：\n\n1. **有序性前提**：数组必须单调递增或递减，这是二分查找的根本前提\n2. **中点计算**：取区间中点 `mid = left + (right - left) // 2`，避免 `(left + right) // 2` 的整数溢出问题\n3. **边界收缩**：根据 `target` 与 `nums[mid]` 的大小关系，舍弃左半或右半区间\n4. **终止条件**：当 `left > right` 时结束搜索\n\n时间复杂度为 **O(log n)**，空间复杂度 **O(1)**。相比线性查找的 O(n)，效率呈指数级提升。\n\n## 应用场景\n\n- 数据库索引的 B+ 树节点查找\n- 有序数组中的元素定位\n- 求解单调函数的零点（如浮点数精度问题）\n- **变体问题**：查找第一个/最后一个等于 target 的元素、查找大于 target 的最小元素等\n\n## 与其他算法的对比\n\n| 算法 | 时间复杂度 | 前提条件 | 适用场景 |\n|------|-----------|---------|---------|\n| 线性查找 | O(n) | 无 | 无序数据 |\n| 二分查找 | O(log n) | 有序数组 | 静态有序数据 |\n| 哈希查找 | O(1) | 额外空间 | 频繁查询的动态数据 |\n| 二叉搜索树 | O(h) | 树结构 | 动态增删场景 |\n\n二分查找虽不如哈希查找快，但无需额外空间；虽不如 BST 灵活，但常数更优且实现简单。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "def binary_search(nums: list[int], target: int) -> int:\n    \"\"\"\n    标准二分查找：返回 target 的索引，不存在返回 -1\n    区间定义：左闭右闭 [left, right]\n    \"\"\"\n    left, right = 0, len(nums) - 1\n    \n    while left <= right:  # 闭区间，left == right 时仍有效\n        mid = left + (right - left) // 2  # 防止溢出的中点计算\n        if nums[mid] == target:\n            return mid\n        elif nums[mid] < target:\n            left = mid + 1  # target 在右半区间\n        else:\n            right = mid - 1  # target 在左半区间\n    \n    return -1  # 未找到目标",
+      "explanation": "最经典的二分查找实现，采用左闭右闭区间。关键点：循环条件 `left <= right` 对应闭区间；更新边界时 `mid ± 1` 避免死循环。"
+    },
+    {
+      "lang": "Python",
+      "code": "def lower_bound(nums: list[int], target: int) -> int:\n    \"\"\"\n    二分查找变体：查找第一个 >= target 的位置（下界）\n    常用于：插入位置、范围查询\n    \"\"\"\n    left, right = 0, len(nums)  # 右开区间 [left, right)\n    \n    while left < right:  # 左闭右开，left == right 时结束\n        mid = left + (right - left) // 2\n        if nums[mid] < target:\n            left = mid + 1   # mid 及左侧均不可能\n        else:\n            right = mid      # mid 可能是答案，保留\n    \n    return left  # 返回插入位置，可能等于 len(nums)\n\n\ndef find_first_and_last(nums: list[int], target: int) -> list[int]:\n    \"\"\"\n    查找 target 在数组中的起始和结束位置\n    \"\"\"\n    def find_bound(nums, target, is_first):\n        # is_first=True 找第一个 >= target 的位置\n        # is_first=False 找第一个 > target 的位置，再减一\n        left, right = 0, len(nums)\n        while left < right:\n            mid = left + (right - left) // 2\n            if (is_first and nums[mid] < target) or (not is_first and nums[mid] <= target):\n                left = mid + 1\n            else:\n                right = mid\n        return left\n    \n    first = find_bound(nums, target, True)\n    last = find_bound(nums, target, False) - 1\n    \n    if first <= last and first < len(nums) and nums[first] == target:\n        return [first, last]\n    return [-1, -1]",
+      "explanation": "展示二分查找的两个重要变体：下界查找（常用于插入位置）和范围查找。通过调整比较条件中的等号位置，可以灵活控制查找方向。"
+    }
+  ],
+  "common_mistakes": [
+    "循环条件写错：闭区间用 `left < right` 会漏判最后一个元素，开区间用 `left <= right` 会导致越界",
+    "中点计算溢出：直接写 `(left + right) // 2`，在极大整数时可能溢出（Python虽无此问题，但其他语言需注意）",
+    "边界更新错误：找到目标后仍写 `right = mid - 1` 或 `left = mid + 1`，导致遗漏答案或死循环",
+    "未处理数组为空或长度为1的边界情况，导致数组越界异常",
+    "在不是绝对有序的数组上直接使用二分查找，如 `[3,1,2]` 这种旋转数组未做特殊处理就套用标准模板"
+  ]
+}

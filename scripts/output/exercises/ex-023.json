@@ -1,0 +1,23 @@
+{
+  "description": "# 合并K个升序链表\n\n给你一个链表数组，每个链表都已经按升序排列。\n\n请你将所有链表合并到一个升序链表中，返回合并后的链表。\n\n## 示例 1\n\n**输入：** lists = [[1,4,5],[1,3,4],[2,6]]\n**输出：** [1,1,2,3,4,4,5,6]\n**解释：**\n链表 1：1 -> 4 -> 5\n链表 2：1 -> 3 -> 4\n链表 3：2 -> 6\n合并后：1 -> 1 -> 2 -> 3 -> 4 -> 4 -> 5 -> 6\n\n## 示例 2\n\n**输入：** lists = []\n**输出：** []\n\n## 示例 3\n\n**输入：** lists = [[]]\n**输出：** []\n\n## 提示\n- `k == lists.length`\n- `0 <= k <= 10^4`\n- `0 <= lists[i].length <= 500`\n- `-10^4 <= lists[i][j] <= 10^4`\n- `lists[i]` 按 **升序** 排列\n- `lists[i]` 的所有元素之和不超过 `10^4`",
+  "hints": [
+    "提示1：思路方向 - 考虑如何高效地从k个链表的头节点中找到最小值，每次都需要比较k个元素，如何优化这个过程？",
+    "提示2：具体方法 - 使用最小堆（优先队列）来维护当前每个链表的头节点，堆顶即为最小元素；取出最小元素后，将该元素所在链表的下一个节点加入堆中。",
+    "提示3：实现要点 - Python中可以使用heapq模块，但需要注意自定义比较（或通过元组规避）；另外要注意处理空链表的情况，以及所有链表都为空时的边界条件。"
+  ],
+  "solution_outline": "使用最小堆维护k个链表的当前头节点，每次取出堆顶最小元素接到结果链表，并将该节点所在链表的下一个节点加入堆中。重复此过程直到堆为空，即可得到合并后的升序链表。",
+  "solution_detail": "## 解题思路\n\n### 方法一：最小堆（优先队列）⭐推荐\n\n核心思想：维护一个最小堆，堆中存放每个链表的当前头节点。每次从堆中取出最小节点，接到结果链表尾部，然后将该节点的下一个节点加入堆中。\n\n**为什么用堆？**\n- 每次从k个元素中找最小值，如果用暴力遍历，时间复杂度为O(k)\n- 使用最小堆可以将复杂度降为O(log k)\n\n### 具体步骤\n\n1. 创建一个虚拟头节点 `dummy`，用于简化链表操作\n2. 将所有非空链表的头节点加入最小堆\n3. 循环直到堆为空：\n   - 取出堆顶节点（当前最小值）\n   - 将该节点接到结果链表尾部\n   - 如果该节点有下一个节点，将下一个节点加入堆\n4. 返回 `dummy.next`\n\n### Python实现注意点\n\nPython的 `heapq` 模块默认比较元组的第一个元素，如果第一个元素相同则比较第二个。由于链表节点的 `val` 可能相同，直接比较节点对象会报错，因此需要给每个节点加一个唯一id作为第二比较元素。\n\n```python\nimport heapq\n\n# 技巧：使用计数器作为第二比较元素，避免val相同时比较节点对象\ncounter = 0\nheapq.heappush(heap, (node.val, counter, node))\ncounter += 1\n```\n\n### 复杂度分析\n\n- **时间复杂度**：O(N log k)，其中 N 是所有链表的节点总数，k 是链表个数。每个节点恰好被加入和弹出堆一次，堆操作的时间复杂度为 O(log k)。\n- **空间复杂度**：O(k)，堆的大小最多为 k（每个链表一个节点在堆中）。\n\n### 方法二：分治法（两两合并）\n\n也可以采用归并排序的思想，两两合并链表。合并两个链表的时间复杂度为 O(n)，总共需要合并 O(log k) 轮，总时间复杂度也是 O(N log k)。但堆方法更加直观且不需要递归栈空间。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "import heapq\nfrom typing import List, Optional\n\n# Definition for singly-linked list.\nclass ListNode:\n    def __init__(self, val=0, next=None):\n        self.val = val\n        self.next = next\n\nclass Solution:\n    def mergeKLists(self, lists: List[Optional[ListNode]]) -> Optional[ListNode]:\n        # 最小堆方法\n        # 堆元素: (节点值, 唯一标识, 节点本身)\n        # 唯一标识用于避免节点值相同时比较ListNode对象\n        \n        dummy = ListNode(0)  # 虚拟头节点\n        tail = dummy  # 结果链表的尾指针\n        \n        # 初始化最小堆\n        min_heap = []\n        counter = 0  # 唯一标识计数器\n        \n        for head in lists:\n            if head:  # 只加入非空链表的头节点\n                heapq.heappush(min_heap, (head.val, counter, head))\n                counter += 1\n        \n        # 不断从堆中取出最小元素\n        while min_heap:\n            val, idx, node = heapq.heappop(min_heap)\n            \n            # 接到结果链表尾部\n            tail.next = node\n            tail = tail.next\n            \n            # 将该节点所在链表的下一个节点加入堆\n            if node.next:\n                heapq.heappush(min_heap, (node.next.val, counter, node.next))\n                counter += 1\n        \n        return dummy.next\n\n\n# 更简洁的写法（Python 3.9+ 可以使用 functools.total_ordering 或 dataclass，\n# 但上述方法最通用且面试常用）\n\n# 另一种写法：使用自定义包装器避免counter\nclass SolutionV2:\n    def mergeKLists(self, lists: List[Optional[ListNode]]) -> Optional[ListNode]:\n        # 使用节点自身的id作为第二比较元素（利用id的唯一性）\n        # 但id大小顺序不确定，只是保证唯一性以避免比较ListNode\n        \n        dummy = ListNode(0)\n        tail = dummy\n        \n        # 初始化堆\n        h = []\n        for i, node in enumerate(lists):\n            if node:\n                # (值, 列表索引, 节点) —— 列表索引i保证唯一性\n                heapq.heappush(h, (node.val, i, node))\n        \n        # 注意：这里有个问题，如果后续加入的节点用相同的i会冲突\n        # 所以还是用counter更可靠，或者使用递增的node_id\n        \n        # 正确的V2版本：使用递增id\n        h = []\n        node_id = 0\n        for node in lists:\n            if node:\n                heapq.heappush(h, (node.val, node_id, node))\n                node_id += 1\n        \n        while h:\n            val, _, node = heapq.heappop(h)\n            tail.next = node\n            tail = tail.next\n            if node.next:\n                heapq.heappush(h, (node.next.val, node_id, node.next))\n                node_id += 1\n        \n        return dummy.next"
+    }
+  ],
+  "common_errors": [
+    "错误1：忘记处理空链表数组或全空链表的情况，导致未正确返回空结果；另外在使用heapq时，如果直接用ListNode对象作为比较元素，当节点val相同时会尝试比较ListNode对象，导致TypeError。",
+    "错误2：将节点加入堆后，没有正确维护指针关系，例如直接将node.next加入堆但忘记移动当前指针；或者错误地修改了原链表的next指针导致链表断裂。",
+    "错误3：时间或空间复杂度分析错误，例如认为堆方法的时间复杂度是O(N*k)或O(N*k)，实际上每次堆操作是O(log k)，总复杂度为O(N log k)。"
+  ],
+  "time_complexity_expected": "O(N log k)，其中 N 是所有链表的节点总数，k 是链表个数",
+  "space_complexity_expected": "O(k)，堆的最大大小为k，不包括输出链表的空间"
+}

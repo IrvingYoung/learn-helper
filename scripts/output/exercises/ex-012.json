@@ -1,0 +1,23 @@
+{
+  "description": "# 最近的请求次数\n\n写一个 `RecentCounter` 类来计算特定时间范围内最近的请求次数。\n\n请你实现 `RecentCounter` 类：\n- `RecentCounter()` 初始化计数器，请求数为 0。\n- `int ping(int t)` 在时间 `t` 添加一个新请求，其中 `t` 表示以毫秒为单位的某个时间，并返回过去 3000 毫秒内发生的所有请求数（包括新请求）。确切地说，返回在 `[t-3000, t]` 内发生的请求数。\n\n## 示例\n\n**输入：**\n```\n[\"RecentCounter\", \"ping\", \"ping\", \"ping\", \"ping\"]\n[[], [1], [100], [3001], [3002]]\n```\n\n**输出：**\n```\n[null, 1, 2, 3, 3]\n```\n\n**解释：**\n```\nRecentCounter recentCounter = new RecentCounter();\nrecentCounter.ping(1);     // requests = [1]，范围 [-2999,1]，返回 1\nrecentCounter.ping(100);   // requests = [1, 100]，范围 [-2900,100]，返回 2\nrecentCounter.ping(3001);  // requests = [1, 100, 3001]，范围 [1,3001]，返回 3\nrecentCounter.ping(3002);  // requests = [100, 3001, 3002]，范围 [2,3002]，返回 3\n```\n\n## 提示\n- `1 <= t <= 10^9`\n- 保证每次对 `ping` 的调用所使用的 `t` 值都 **严格递增**\n- 最多调用 `ping` 方法 `10^4` 次",
+  "hints": [
+    "提示1：注意到每次调用 ping 的时间 t 是严格递增的，这提示我们可以用一个数据结构按顺序存储所有请求时间",
+    "提示2：由于窗口大小固定为3000，较早的请求如果已经超出窗口范围，就再也不可能被用到，可以考虑使用队列维护",
+    "提示3：每次 ping 时，将新时间入队，然后从队首移除所有小于 t-3000 的元素，最后返回队列长度即可"
+  ],
+  "solution_outline": "使用队列维护最近的请求时间。每次 ping 时，先将当前时间 t 入队，然后移除队首所有超出 [t-3000, t] 范围的元素，队列的剩余长度即为答案。由于时间严格递增，队首元素一旦超出范围就永久移除，保证了高效性。",
+  "solution_detail": "## 解题思路\n\n由于题目保证每次调用 `ping` 的 `t` 值严格递增，我们可以利用这一性质：\n\n1. **队列存储时间戳**：用一个队列保存所有在有效期内的请求时间\n2. **维护窗口**：每次新请求来时，将 `t` 入队，然后检查队首元素是否 `< t - 3000`，如果是则出队\n3. **返回结果**：队列的长度就是 `[t-3000, t]` 范围内的请求数\n\n### 为什么用队列？\n\n因为时间严格递增，所以队首一定是最早的请求。如果队首已经 `< t - 3000`，那么它后面的元素虽然可能还在范围内，但队首元素已经确定过期，可以安全移除。这样每个元素最多入队和出队各一次。\n\n### 代码实现\n\n```python\nfrom collections import deque\n\nclass RecentCounter:\n    def __init__(self):\n        self.q = deque()\n\n    def ping(self, t: int) -> int:\n        self.q.append(t)           # 新请求入队\n        while self.q[0] < t - 3000:  # 移除过期请求\n            self.q.popleft()\n        return len(self.q)         # 返回有效请求数\n```\n\n### 复杂度分析\n\n- **时间复杂度**：均摊 O(1)。每个元素最多入队一次、出队一次，虽然单次 ping 可能有循环，但总体均摊为常数。\n- **空间复杂度**：O(W)，其中 W 为窗口内最大请求数，最坏情况下为 3000ms 内的所有请求数，即 O(3000) = O(1)（常数级别）。\n\n### 另一种写法（更清晰）\n\n```python\nfrom collections import deque\n\nclass RecentCounter:\n    def __init__(self):\n        self.q = deque()\n\n    def ping(self, t: int) -> int:\n        self.q.append(t)\n        # 移除所有不在 [t-3000, t] 范围内的请求\n        while self.q and self.q[0] < t - 3000:\n            self.q.popleft()\n        return len(self.q)\n```",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from collections import deque\n\nclass RecentCounter:\n    def __init__(self):\n        self.q = deque()\n\n    def ping(self, t: int) -> int:\n        self.q.append(t)\n        # 移除窗口 [t-3000, t] 之外的旧请求\n        while self.q[0] < t - 3000:\n            self.q.popleft()\n        return len(self.q)\n\n\n# 测试\nif __name__ == \"__main__\":\n    rc = RecentCounter()\n    print(rc.ping(1))     # 1\n    print(rc.ping(100))   # 2\n    print(rc.ping(3001))  # 3\n    print(rc.ping(3002))  # 3"
+    }
+  ],
+  "common_errors": [
+    "使用列表代替队列并用 pop(0) 移除元素，导致 O(n) 的时间复杂度，超时",
+    "忘记利用 't 严格递增' 的条件，试图用二分查找或排序，导致实现复杂且没有必要",
+    "边界条件错误：使用 `<=` 或 `<` 混淆，如写成 `self.q[0] <= t - 3000` 会错误地移除恰好等于 t-3000 的请求"
+  ],
+  "time_complexity_expected": "均摊 O(1) 每次 ping",
+  "space_complexity_expected": "O(W)，W 为 3000ms 窗口内的最大请求数，即 O(1)"
+}

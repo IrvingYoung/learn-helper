@@ -1,0 +1,23 @@
+{
+  "description": "## 跳跃游戏\n\n给定一个非负整数数组 `nums`，你最初位于数组的第一个下标。\n\n数组中的每个元素代表你在该位置可以跳跃的最大长度。\n\n判断你是否能够到达最后一个下标。\n\n### 示例 1\n\n```\n输入：nums = [2,3,1,1,4]\n输出：true\n解释：可以先跳 1 步，从下标 0 到达下标 1，然后再从下标 1 跳 3 步到达最后一个下标。\n```\n\n### 示例 2\n\n```\n输入：nums = [3,2,1,0,4]\n输出：false\n解释：无论怎样，你总会到达下标为 3 的位置。但该下标的最大跳跃长度是 0 ，所以你永远不可能到达最后一个下标。\n```\n\n### 约束条件\n- `1 <= nums.length <= 10^4`\n- `0 <= nums[i] <= 10^5`",
+  "hints": [
+    "提示1：不要陷入从每个位置枚举所有跳跃步数的递归/回溯思路，考虑换个角度——维护当前能到达的最远位置",
+    "提示2：遍历数组时，用贪心策略不断更新最远可达距离 `max_reach`，如果当前位置已经超过这个距离则无法继续前进",
+    "提示3：遍历时注意边界条件，如果最远可达距离已经大于等于最后一个下标，可以提前返回 true"
+  ],
+  "solution_outline": "使用贪心算法，维护一个变量记录当前能到达的最远位置。遍历数组时，如果当前位置在这个最远位置范围内，就更新最远位置；如果当前位置超出范围，说明无法到达。",
+  "solution_detail": "## 解题思路\n\n本题的关键在于**不关注具体怎么跳，只关注最远能到达哪里**。\n\n### 贪心策略\n- 设 `max_reach` 为当前能到达的最远位置下标\n- 遍历数组，对于每个位置 `i`：\n  - 如果 `i > max_reach`，说明当前位置不可达，返回 `false`\n  - 否则，更新 `max_reach = max(max_reach, i + nums[i])`\n  - 如果 `max_reach >= n - 1`，提前返回 `true`\n\n### 正确性证明\n\n为什么贪心有效？因为如果能到达位置 `i`，那么 `i` 之前的所有位置都可达。而从 `i` 能到达的范围是连续的 `[i+1, i+nums[i]]`，所以我们只需要记录最远点即可。\n\n### 代码实现\n\n```python\ndef canJump(nums):\n    n = len(nums)\n    max_reach = 0  # 当前能到达的最远位置\n    \n    for i in range(n):\n        if i > max_reach:\n            # 当前位置不可达\n            return False\n        # 更新最远可达位置\n        max_reach = max(max_reach, i + nums[i])\n        # 提前终止\n        if max_reach >= n - 1:\n            return True\n    \n    return True\n```\n\n### 复杂度分析\n\n- **时间复杂度**：$O(n)$，只需要遍历数组一次\n- **空间复杂度**：$O(1)$，只使用了常数额外空间\n\n### 变体思考\n\n如果题目改为求**到达最后位置的最小跳跃次数**，则需要使用动态规划或更巧妙的贪心（维护当前跳跃的边界）。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\ndef canJump(nums: List[int]) -> bool:\n    n = len(nums)\n    max_reach = 0  # 当前能到达的最远位置\n    \n    for i in range(n):\n        # 当前位置不可达，直接返回 false\n        if i > max_reach:\n            return False\n        \n        # 更新最远可达位置\n        max_reach = max(max_reach, i + nums[i])\n        \n        # 优化：已经可以到达终点，提前返回\n        if max_reach >= n - 1:\n            return True\n    \n    return True\n\n\n# 测试用例\nif __name__ == \"__main__\":\n    print(canJump([2, 3, 1, 1, 4]))  # True\n    print(canJump([3, 2, 1, 0, 4]))  # False\n    print(canJump([0]))              # True\n    print(canJump([1, 0, 1]))        # False"
+    }
+  ],
+  "common_errors": [
+    "使用动态规划或回溯导致超时：试图计算所有可能的跳跃路径，时间复杂度达到 O(2^n) 或 O(n^2)，没有利用贪心性质",
+    "边界判断错误：将 `i > max_reach` 写成 `i >= max_reach`，或者忘记处理数组长度为 1 的情况",
+    "更新最远位置前未判断可达性：先更新 `max_reach` 再判断 `i > max_reach`，导致逻辑错误"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(1)"
+}

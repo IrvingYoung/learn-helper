@@ -1,0 +1,23 @@
+{
+  "description": "# 有效的括号\n\n给定一个只包括 `'('`，`')'`，`'{'`，`'}'`，`'['`，`']'` 的字符串 `s`，判断字符串是否有效。\n\n有效字符串需满足：\n1. 左括号必须用相同类型的右括号闭合。\n2. 左括号必须以正确的顺序闭合。\n3. 每个右括号都有一个对应的相同类型的左括号。\n\n## 示例\n\n**示例 1：**\n```\n输入：s = \"()\"\n输出：true\n```\n\n**示例 2：**\n```\n输入：s = \"()[]{}\")\n输出：true\n```\n\n**示例 3：**\n```\n输入：s = \"(]\"\n输出：false\n```\n\n**示例 4：**\n```\n输入：s = \"([)]\"\n输出：false\n```\n\n**示例 5：**\n```\n输入：s = \"{[]}\"\n输出：true\n```",
+  "hints": [
+    "提示1：思路方向 - 括号匹配具有'最近嵌套'的特性，后出现的左括号需要先被闭合",
+    "提示2：具体方法 - 使用栈来保存未匹配的左括号，遇到右括号时与栈顶元素匹配",
+    "提示3：实现要点 - 用哈希表存储右括号到左括号的映射，遍历结束时栈必须为空才有效"
+  ],
+  "solution_outline": "遍历字符串，遇到左括号入栈，遇到右括号则检查栈顶是否为匹配的左括号。若匹配则出栈继续，不匹配或栈空则无效。最终栈为空说明全部匹配。",
+  "solution_detail": "## 解题思路\n\n括号匹配是典型的栈应用场景。核心观察：每个右括号都必须与**最近**的未匹配左括号配对。\n\n### 算法步骤\n1. 初始化空栈和括号映射表（右括号 → 对应左括号）\n2. 遍历字符串每个字符：\n   - 左括号：压入栈中\n   - 右括号：检查栈顶是否是对应左括号\n     - 是则弹出栈顶，继续\n     - 否则字符串无效\n3. 遍历结束后，栈为空则有效，否则无效\n\n### 代码实现\n\n```python\ndef isValid(s: str) -> bool:\n    stack = []\n    mapping = {')': '(', '}': '{', ']': '['}\n    \n    for char in s:\n        if char in mapping:           # 遇到右括号\n            if not stack:              # 栈空，无匹配左括号\n                return False\n            top = stack.pop()          # 取出栈顶（最近的左括号）\n            if top != mapping[char]:   # 不匹配\n                return False\n        else:                          # 遇到左括号\n            stack.append(char)\n    \n    return not stack                   # 栈空则全部匹配\n```\n\n### 复杂度分析\n\n- **时间复杂度**：O(n)，其中 n 为字符串长度，只需遍历一次\n- **空间复杂度**：O(n)，最坏情况下栈需要存储所有左括号（如 `\"(((((\"`）",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "def isValid(s: str) -> bool:\n    stack = []\n    mapping = {')': '(', '}': '{', ']': '['}\n    \n    for char in s:\n        if char in mapping:           # 遇到右括号\n            if not stack:             # 栈空，无匹配左括号\n                return False\n            top = stack.pop()         # 取出栈顶（最近的左括号）\n            if top != mapping[char]:  # 不匹配\n                return False\n        else:                         # 遇到左括号\n            stack.append(char)\n    \n    return not stack                  # 栈空则全部匹配\n\n# 测试\nprint(isValid(\"()\"))       # True\nprint(isValid(\"()[]{}\")    # True\nprint(isValid(\"(]\")        # False\nprint(isValid(\"([)]\")      # False\nprint(isValid(\"{[]}\")      # True"
+    }
+  ],
+  "common_errors": [
+    "栈空时直接 pop() 导致 IndexError，应先判断栈是否为空",
+    "遍历结束后忘记检查栈是否为空，如输入 \"((\" 时错误返回 True",
+    "混淆左右括号的映射关系，将 mapping 定义为左括号→右括号导致逻辑错误"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(n)"
+}

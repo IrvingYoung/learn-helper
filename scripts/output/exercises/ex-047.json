@@ -1,0 +1,23 @@
+{
+  "description": "# 盛最多水的容器\n\n给定一个长度为 `n` 的整数数组 `height`，数组中的每个元素代表坐标轴上的一条垂直线的高度。在坐标轴上，第 `i` 条线的位置为 `(i, 0)` 到 `(i, height[i])`。\n\n请找出其中的两条线，使得它们与 x 轴共同构成的容器可以容纳最多的水。\n\n返回容器可以储存的最大水量。\n\n**注意：** 容器不能倾斜，即容器的高度由两条线中较短的那条决定。\n\n## 示例\n\n**输入：**\n```\nheight = [1,8,6,2,5,4,8,3,7]\n```\n\n**输出：**\n```\n49\n```\n\n**解释：**\n选择第 1 条线（高度为 8）和第 8 条线（高度为 7），它们之间的距离为 7，容器高度为 min(8, 7) = 7，所以面积为 7 × 7 = 49。\n\n## 约束条件\n- `n == height.length`\n- `2 <= n <= 10^5`\n- `0 <= height[i] <= 10^4`",
+  "hints": [
+    "提示1：思路方向 - 暴力枚举所有两条线的组合时间复杂度为 O(n²)，考虑使用双指针从两端向中间移动来优化",
+    "提示2：具体方法 - 设置左右指针分别指向数组两端，每次移动高度较小的那个指针，因为移动较高的指针不可能使面积增大",
+    "提示3：实现要点 - 面积 = min(height[left], height[right]) × (right - left)，每次更新最大面积，直到两指针相遇"
+  ],
+  "solution_outline": "使用双指针法，初始化时左指针指向数组开头，右指针指向数组末尾。每次计算当前两指针构成的容器面积，并更新最大面积。然后移动高度较小的指针向中间靠拢，因为这样可以有机会找到更高的边从而使面积增大。重复此过程直到两指针相遇。",
+  "solution_detail": "## 解题思路\n\n### 核心思想：双指针\n\n这道题的关键在于理解**为什么移动高度较小的指针**。\n\n假设当前左指针在位置 `i`，右指针在位置 `j`，且 `height[i] < height[j]`。\n\n- 面积 = `min(height[i], height[j]) × (j - i)` = `height[i] × (j - i)`\n- 如果移动右指针 `j` 到 `j-1`：\n  - 宽度 `(j-1) - i` 变小了\n  - 高度仍然 `<= height[i]`（因为 `height[i]` 已经是短板）\n  - 所以面积**一定变小或不变**\n- 如果移动左指针 `i` 到 `i+1`：\n  - 宽度虽然变小，但高度可能增大\n  - 所以**有可能**找到更大的面积\n\n因此，每次移动高度较小的指针，才有可能找到更大的面积。\n\n### 算法步骤\n\n1. 初始化 `left = 0`, `right = n - 1`, `max_area = 0`\n2. 当 `left < right` 时：\n   - 计算当前面积：`area = min(height[left], height[right]) × (right - left)`\n   - 更新最大面积：`max_area = max(max_area, area)`\n   - 如果 `height[left] < height[right]`，则 `left++`\n   - 否则 `right--`\n3. 返回 `max_area`\n\n### 代码实现\n\n```python\ndef maxArea(height):\n    left, right = 0, len(height) - 1\n    max_area = 0\n    \n    while left < right:\n        # 计算当前面积\n        h = min(height[left], height[right])\n        w = right - left\n        max_area = max(max_area, h * w)\n        \n        # 移动高度较小的指针\n        if height[left] < height[right]:\n            left += 1\n        else:\n            right -= 1\n    \n    return max_area\n```\n\n### 复杂度分析\n\n- **时间复杂度：O(n)** — 双指针最多遍历整个数组一次\n- **空间复杂度：O(1)** — 只使用了常数个额外变量\n\n### 为什么这个算法是正确的？\n\n双指针法实际上**不会错过最优解**。因为：\n- 我们每次排除了一个绝不可能产生更大面积的指针位置\n- 对于被排除的位置，任何包含它的其他组合，宽度更小，高度也不会更高\n- 因此可以安全地跳过，保证不会漏掉最优解",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "from typing import List\n\nclass Solution:\n    def maxArea(self, height: List[int]) -> int:\n        left, right = 0, len(height) - 1\n        max_area = 0\n        \n        while left < right:\n            # 计算当前容器面积\n            h = min(height[left], height[right])\n            w = right - left\n            max_area = max(max_area, h * w)\n            \n            # 移动高度较小的指针\n            if height[left] < height[right]:\n                left += 1\n            else:\n                right -= 1\n        \n        return max_area\n\n# 测试\nif __name__ == \"__main__\":\n    sol = Solution()\n    print(sol.maxArea([1,8,6,2,5,4,8,3,7]))  # 输出: 49\n    print(sol.maxArea([1,1]))  # 输出: 1\n    print(sol.maxArea([4,3,2,1,4]))  # 输出: 16"
+    }
+  ],
+  "common_errors": [
+    "常见错误1：移动高度较大的指针 — 这样会导致错过可能的最大面积，因为移动大指针只会使宽度减小且高度不可能增加",
+    "常见错误2：在高度相等时只移动其中一个指针 — 虽然不影响正确性，但更好的做法是同时移动两个指针或任意移动一个，因为两个相等高度的位置都不可能再与其他位置构成更大面积",
+    "常见错误3：计算面积时使用 height[left] + height[right] 或忘记取 min — 容器高度由较短的边决定，必须使用 min(height[left], height[right])"
+  ],
+  "time_complexity_expected": "O(n)",
+  "space_complexity_expected": "O(1)"
+}

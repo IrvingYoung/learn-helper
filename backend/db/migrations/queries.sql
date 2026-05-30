@@ -53,20 +53,6 @@ SELECT id, conversation_id, role, content, model_provider, token_count, created_
 -- name: CreateMessage :one
 INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, ?, ?, ?, ?) RETURNING id, conversation_id, role, content, model_provider, token_count, created_at;
 
--- name: GetActiveAIConfig :one
-SELECT id, provider, model_name, api_key, is_active, config, created_at, updated_at FROM ai_configs WHERE is_active = 1;
-
--- name: UpsertAIConfig :exec
-INSERT INTO ai_configs (provider, model_name, api_key, is_active, config)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-    provider = excluded.provider,
-    model_name = excluded.model_name,
-    api_key = excluded.api_key,
-    is_active = excluded.is_active,
-    config = excluded.config,
-    updated_at = CURRENT_TIMESTAMP;
-
 -- name: UpdateTopicContent :exec
 UPDATE topics SET content = ?, code_examples = ?, common_mistakes = ?, updated_at = CURRENT_TIMESTAMP WHERE slug = ?;
 
@@ -124,9 +110,7 @@ FROM wiki_pages
 WHERE slug = ?;
 
 -- name: GetWikiPageByID :one
-SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
-FROM wiki_pages
-WHERE id = ?;
+SELECT * FROM wiki_pages WHERE id = ?;
 
 -- name: GetOverviewPage :one
 SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
@@ -149,6 +133,31 @@ WHERE id = ?;
 
 -- name: DeleteWikiPage :exec
 DELETE FROM wiki_pages WHERE id = ?;
+
+-- name: GetRecentlyUpdatedWikiPages :many
+SELECT id, title, slug, page_type, content_status, updated_at
+FROM wiki_pages
+WHERE page_type != 'overview'
+ORDER BY updated_at DESC
+LIMIT 10;
+
+-- name: GetActiveAIConfig :one
+SELECT * FROM ai_configs WHERE is_active = 1 LIMIT 1;
+
+-- name: GetAIConfigByProvider :one
+SELECT * FROM ai_configs WHERE provider = ? LIMIT 1;
+
+-- name: DeactivateAllConfigs :exec
+UPDATE ai_configs SET is_active = 0 WHERE is_active = 1;
+
+-- name: CreateAIConfig :execresult
+INSERT INTO ai_configs (provider, model_name, api_key, is_active)
+VALUES (?, ?, ?, ?);
+
+-- name: UpdateAIConfig :exec
+UPDATE ai_configs
+SET provider = ?, model_name = ?, api_key = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
 
 -- name: GetWikiPageChildren :many
 SELECT id, title, slug, page_type, content_status, sort_order

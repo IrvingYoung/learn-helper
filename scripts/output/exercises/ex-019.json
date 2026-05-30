@@ -1,0 +1,23 @@
+{
+  "description": "# 翻转二叉树\n\n给你一棵二叉树的根节点 `root`，请你将这棵二叉树翻转（也叫镜像），并返回其根节点。\n\n翻转一棵二叉树意味着：每个节点的左右子节点交换位置。\n\n## 示例\n\n**输入：**\n```\n     4\n   /   \\\n  2     7\n / \\   / \\\n1   3 6   9\n```\n\n**输出：**\n```\n     4\n   /   \\\n  7     2\n / \\   / \\\n9   6 3   1\n```\n\n**解释：** 每个节点的左右子树都进行了交换。",
+  "hints": [
+    "提示1：思路方向 - 考虑使用递归或迭代的方式，对每个节点执行相同的操作。",
+    "提示2：具体方法 - 递归思路：先翻转左子树，再翻转右子树，最后交换当前节点的左右孩子。",
+    "提示3：实现要点 - 注意处理空节点的情况，递归终止条件是节点为空；迭代时可以使用队列辅助层序遍历。"
+  ],
+  "solution_outline": "使用递归（DFS）方法，对每个节点递归翻转其左右子树，然后交换当前节点的左右孩子。也可以用BFS层序遍历，逐层交换每个节点的左右孩子。",
+  "solution_detail": "## 解题思路\n\n本题是经典的二叉树递归问题。核心思想是：**对每个节点，先翻转其左子树，再翻转其右子树，最后交换左右孩子**。\n\n递归的终止条件：当前节点为空，直接返回。\n\n## 递归解法（DFS）\n\n```python\nclass Solution:\n    def invertTree(self, root: TreeNode) -> TreeNode:\n        if not root:\n            return None\n        \n        # 递归翻转左右子树\n        left = self.invertTree(root.left)\n        right = self.invertTree(root.right)\n        \n        # 交换左右孩子\n        root.left = right\n        root.right = left\n        \n        return root\n```\n\n## 迭代解法（BFS）\n\n```python\nfrom collections import deque\n\nclass Solution:\n    def invertTree(self, root: TreeNode) -> TreeNode:\n        if not root:\n            return None\n        \n        queue = deque([root])\n        while queue:\n            node = queue.popleft()\n            # 交换当前节点的左右孩子\n            node.left, node.right = node.right, node.left\n            \n            if node.left:\n                queue.append(node.left)\n            if node.right:\n                queue.append(node.right)\n        \n        return root\n```\n\n## 复杂度分析\n\n- **时间复杂度**：O(N)，每个节点访问一次\n- **空间复杂度**：O(H)，递归栈空间，H为树的高度；最坏情况下（退化为链表）为O(N)，平均为O(logN)\n\n迭代法的空间复杂度为O(N)，队列的最大长度。",
+  "sample_code": [
+    {
+      "lang": "Python",
+      "code": "# Definition for a binary tree node.\n# class TreeNode:\n#     def __init__(self, val=0, left=None, right=None):\n#         self.val = val\n#         self.left = left\n#         self.right = right\n\nclass Solution:\n    def invertTree(self, root: TreeNode) -> TreeNode:\n        if not root:\n            return None\n        \n        # 递归翻转左右子树\n        left = self.invertTree(root.left)\n        right = self.invertTree(root.right)\n        \n        # 交换左右孩子\n        root.left = right\n        root.right = left\n        \n        return root"
+    }
+  ],
+  "common_errors": [
+    "常见错误1：忘记处理空节点，导致递归时访问 None 的属性而报错。",
+    "常见错误2：先交换了左右孩子，再递归翻转，结果导致重复交换或遗漏。正确做法是先递归翻转，再交换，或者先交换再递归（但需确保递归的是交换后的子树）。",
+    "常见错误3：递归后忘记返回根节点，或者返回了错误的节点。"
+  ],
+  "time_complexity_expected": "O(N)",
+  "space_complexity_expected": "O(H)，其中 H 为树的高度，最坏 O(N)"
+}

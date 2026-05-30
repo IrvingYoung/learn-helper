@@ -1,0 +1,22 @@
+{
+  "content": "## 图的表示与遍历\n\n### 概念定义\n\n图（Graph）是由顶点集合和边集合组成的非线性数据结构，记为 G = (V, E)。与树不同，图中任意两个顶点之间都可能存在边，且不存在层次关系。图的表示与遍历是图论算法的基石，直接影响后续最短路径、最小生成树等高级算法的实现效率。\\n\n### 核心原理\n\n**邻接矩阵（Adjacency Matrix）**：使用二维数组 `matrix[i][j]` 表示顶点 i 到顶点 j 的边关系。对于无权图，0/1 表示有无边；对于带权图，存储权重值。空间复杂度为 O(V²)，适合稠密图。\n\n**邻接表（Adjacency List）**：为每个顶点维护一个链表或动态数组，存储其所有邻接顶点。空间复杂度为 O(V + E)，适合稀疏图，是实际应用中的首选表示方法。\n\n**深度优先搜索（DFS）**：从起始顶点出发，递归地访问未访问的邻接顶点，直到无法继续再回溯。利用栈结构（递归隐式使用系统栈），时间复杂度 O(V + E)。\n\n**广度优先搜索（BFS）**：从起始顶点出发，逐层访问所有邻接顶点。利用队列结构，保证首次到达某顶点时路径最短（无权图），时间复杂度 O(V + E)。\n\n### 应用场景\n\n- **社交网络分析**：BFS 计算两人之间的最短关系链，DFS 挖掘社区结构\n- **迷宫求解**：DFS 用于探索所有可能路径，BFS 用于寻找最短出口\n- **编译器优化**：DFS 检测代码中的循环依赖，BFS 进行层级优化\n- **网络爬虫**：BFS 保证页面按深度优先抓取，DFS 用于特定子树遍历\n\n### 与其他数据结构/算法的对比\n\n| 特性 | 邻接矩阵 | 邻接表 | DFS | BFS |\n|------|---------|--------|-----|-----|\n| 空间复杂度 | O(V²) | O(V+E) | O(V)栈空间 | O(V)队列空间 |\n| 查询边是否存在 | O(1) | O(degree(v)) | - | - |\n| 遍历全图 | O(V²) | O(V+E) | O(V+E) | O(V+E) |\n| 最短路径 | 不适用 | 不适用 | 不保证 | 无权图保证 |\n\n邻接矩阵 vs 邻接表：矩阵适合快速判断边存在性和频繁修改的场景；邻接表适合稀疏图和遍历为主的场景。DFS vs BFS：DFS 代码简洁、空间常数小，适合全遍历和回溯问题；BFS 适合最短路径和层级相关的问题。",
+  "code_examples": [
+    {
+      "lang": "Python",
+      "code": "from collections import deque, defaultdict\n\nclass Graph:\n    def __init__(self):\n        self.adj_list = defaultdict(list)  # 邻接表表示\n    \n    def add_edge(self, u, v):\n        self.adj_list[u].append(v)\n        self.adj_list[v].append(u)  # 无向图\n    \n    def dfs(self, start):\n        \"\"\"深度优先搜索：递归实现\"\"\"\n        visited = set()\n        result = []\n        \n        def _dfs(vertex):\n            visited.add(vertex)\n            result.append(vertex)\n            for neighbor in self.adj_list[vertex]:\n                if neighbor not in visited:\n                    _dfs(neighbor)\n        \n        _dfs(start)\n        return result\n    \n    def bfs(self, start):\n        \"\"\"广度优先搜索：队列实现\"\"\"\n        visited = {start}\n        queue = deque([start])\n        result = []\n        \n        while queue:\n            vertex = queue.popleft()\n            result.append(vertex)\n            for neighbor in self.adj_list[vertex]:\n                if neighbor not in visited:\n                    visited.add(neighbor)\n                    queue.append(neighbor)\n        \n        return result\n\n# 使用示例\ng = Graph()\nfor u, v in [(0,1), (0,2), (1,3), (2,4)]:\n    g.add_edge(u, v)\n\nprint(g.dfs(0))  # [0, 1, 3, 2, 4] 或类似（取决于插入顺序）\nprint(g.bfs(0))  # [0, 1, 2, 3, 4] 或类似",
+      "explanation": "使用邻接表实现无向图，包含DFS递归实现和BFS队列实现。DFS利用递归隐式栈深入探索，BFS利用显式队列逐层扩展。visited集合避免重复访问，防止无限循环。"
+    },
+    {
+      "lang": "Python",
+      "code": "def build_adj_matrix(edges, n):\n    \"\"\"构建邻接矩阵并遍历\"\"\"\n    # 初始化 n×n 矩阵\n    matrix = [[0] * n for _ in range(n)]\n    \n    for u, v in edges:\n        matrix[u][v] = 1\n        matrix[v][u] = 1  # 无向图对称\n    \n    # 基于邻接矩阵的DFS（非递归）\n    def dfs_matrix(start):\n        visited = [False] * n\n        stack = [start]\n        result = []\n        \n        while stack:\n            vertex = stack.pop()\n            if visited[vertex]:\n                continue\n            visited[vertex] = True\n            result.append(vertex)\n            \n            # 逆序遍历保证输出顺序稳定\n            for neighbor in range(n - 1, -1, -1):\n                if matrix[vertex][neighbor] and not visited[neighbor]:\n                    stack.append(neighbor)\n        \n        return result\n    \n    return matrix, dfs_matrix\n\n# 测试\nedges = [(0, 1), (0, 2), (1, 3)]\nmatrix, dfs_func = build_adj_matrix(edges, 4)\nprint(dfs_func(0))  # [0, 1, 3, 2]",
+      "explanation": "展示邻接矩阵的构建和非递归DFS实现。邻接矩阵通过二维数组直接索引判断边，O(1)查询但空间开销大。非递归DFS使用显式栈，需注意入栈顺序以保证遍历顺序可控。"
+    }
+  ],
+  "common_mistakes": [
+    "DFS递归实现时忘记标记visited导致无限递归和栈溢出",
+    "BFS中将邻居加入队列后忘记立即标记visited，导致同一顶点重复入队",
+    "混淆有向图和无向图的边添加逻辑，只添加单向边造成图结构错误",
+    "邻接矩阵实现时顶点编号从1开始但矩阵大小按n-1分配，引发索引越界",
+    "遍历完成后未检查所有顶点是否都被访问，导致非连通图的部分顶点遗漏"
+  ]
+}
