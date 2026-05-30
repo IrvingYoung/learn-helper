@@ -275,37 +275,53 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	var convRole string
 	h.db.QueryRowContext(ctx, `SELECT role FROM conversations WHERE id = ?`, req.ConversationID).Scan(&convRole)
 
-	// Execute confirmed actions and return confirmation — no new AI call
+	// Execute confirmed actions and inject results, OR save user message
 	if len(req.ConfirmedActions) > 0 {
 		h.executeConfirmedActions(ctx, req.ConfirmedActions)
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		flusher, canFlush := w.(http.Flusher)
-
-		confirmMsg := "✅ 操作已执行完成"
-		sseWrite(w, "content", confirmMsg, canFlush, flusher)
-
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-			req.ConversationID, confirmMsg, config.Provider)
-		h.db.ExecContext(ctx, `UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, req.ConversationID)
-
-		if convRole == ai.RoleWikiMaintainer {
-			go h.updateOverviewPage()
+		// Build a readable execution result
+		var resultBuilder strings.Builder
+		resultBuilder.WriteString("[系统] 以下操作已执行完成：\n")
+		for _, action := range req.ConfirmedActions {
+			details, ok := action.Details.(map[string]any)
+			if !ok {
+				continue
+			}
+			switch action.Type {
+			case "create":
+				if title, _ := details["title"].(string); title != "" {
+					resultBuilder.WriteString(fmt.Sprintf("- 创建页面「%s」\n", title))
+				}
+			case "update":
+				if title, _ := details["title"].(string); title != "" {
+					resultBuilder.WriteString(fmt.Sprintf("- 更新页面「%s」\n", title))
+				} else if pid, _ := details["page_id"].(float64); pid > 0 {
+					resultBuilder.WriteString(fmt.Sprintf("- 更新页面 #%d\n", int(pid)))
+				}
+			case "delete":
+				resultBuilder.WriteString("- 删除页面\n")
+			}
 		}
-		return
+		resultContent := resultBuilder.String()
+
+		// Save execution result as user message so the AI can continue reasoning
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
+			req.ConversationID, resultContent, config.Provider)
 	}
+
+	// Save user message (only when there's actual text)
+	if req.Message != "" {
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
+			req.ConversationID, req.Message, config.Provider)
+	}
+
+	// --- Common path: provider, load history, context, streaming ---
 
 	provider, err := ai.NewProvider(ai.ProviderType(config.Provider), config.ApiKey, config.ModelName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid provider: %v", err), http.StatusBadRequest)
 		return
 	}
-
-	// Save user message
-	h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
-		req.ConversationID, req.Message, config.Provider)
 
 	// Load history
 	rows, err := h.db.QueryContext(ctx, `SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at`, req.ConversationID)
@@ -323,6 +339,13 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// SSE setup
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, canFlush := w.(http.Flusher)
+
 	// Build context and prompt
 	wikiContext := h.buildWikiContext(ctx, nil)
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
@@ -337,13 +360,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		chatReq.Tools = ai.WikiTools()
 	}
 
-	// SSE setup
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	flusher, canFlush := w.(http.Flusher)
-
 	// First: non-streaming call to detect lookup_page (read-only) tool calls
 	resp, err := provider.Chat(ctx, chatReq)
 	if err != nil {
@@ -351,18 +367,20 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if the AI called lookup_page (read-only tool that doesn't need user confirmation)
-	hasLookup := false
+	// Check if the AI called read-only tools (lookup_page, search_pages, read_page)
+	// that don't need user confirmation
+	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true}
+	hasAutoTool := false
 	var otherToolCalls []ai.ToolCall
 	for _, tc := range resp.ToolCalls {
-		if tc.Name == "lookup_page" {
-			hasLookup = true
+		if autoTools[tc.Name] {
+			hasAutoTool = true
 		} else {
 			otherToolCalls = append(otherToolCalls, tc)
 		}
 	}
 
-	if hasLookup && convRole == ai.RoleWikiMaintainer {
+	if hasAutoTool && convRole == ai.RoleWikiMaintainer {
 		// Add the first assistant response to conversation history
 		var firstContentBuf strings.Builder
 		firstContentBuf.WriteString(resp.Content)
@@ -376,12 +394,23 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: firstContentBuf.String()})
 		}
 
-		// Execute each lookup_page call and inject result as a user message
+		// Execute each read-only tool call and inject result as a user message
 		for _, tc := range resp.ToolCalls {
-			if tc.Name != "lookup_page" {
+			if !autoTools[tc.Name] {
 				continue
 			}
-			aiMessages = append(aiMessages, ai.Message{Role: "user", Content: h.executeLookupPage(ctx, tc)})
+			var result string
+			switch tc.Name {
+			case "lookup_page":
+				result = h.executeLookupPage(ctx, tc)
+			case "search_pages":
+				result = h.executeSearchPages(ctx, tc)
+			case "read_page":
+				result = h.executeReadPage(ctx, tc)
+			}
+			if result != "" {
+				aiMessages = append(aiMessages, ai.Message{Role: "user", Content: result})
+			}
 		}
 
 		// Streaming follow-up call with lookup results injected
@@ -427,48 +456,48 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 				req.ConversationID, savedContent, config.Provider)
 		}
 	} else {
-			// No lookup_page — stream the response normally
-			ch, err := provider.StreamChat(ctx, chatReq)
-			if err != nil {
-				sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
-				return
+		// No lookup_page — stream the response normally
+		ch, err := provider.StreamChat(ctx, chatReq)
+		if err != nil {
+			sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
+			return
+		}
+
+		var fullContent strings.Builder
+		var toolCalls []*ai.ToolCall
+
+		for chunk := range ch {
+			if chunk.Content != "" {
+				fullContent.WriteString(chunk.Content)
+				sseWrite(w, "content", chunk.Content, canFlush, flusher)
 			}
-
-			var fullContent strings.Builder
-			var toolCalls []*ai.ToolCall
-
-			for chunk := range ch {
-				if chunk.Content != "" {
-					fullContent.WriteString(chunk.Content)
-					sseWrite(w, "content", chunk.Content, canFlush, flusher)
-				}
-				if chunk.ToolCall != nil {
-					toolCalls = append(toolCalls, chunk.ToolCall)
-				}
-				if chunk.Done {
-					if len(toolCalls) > 0 {
-						pendingActions := h.toolCallsToPendingActions(toolCalls)
-						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
-						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
-					}
-					sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
-				}
+			if chunk.ToolCall != nil {
+				toolCalls = append(toolCalls, chunk.ToolCall)
 			}
-
-			// Save assistant message
-			content := fullContent.String()
-			if content != "" || len(toolCalls) > 0 {
-				savedContent := content
+			if chunk.Done {
 				if len(toolCalls) > 0 {
-					savedContent += "\n[操作建议]\n"
-					for _, tc := range toolCalls {
-						savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
-					}
+					pendingActions := h.toolCallsToPendingActions(toolCalls)
+					metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
+					sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
 				}
-				h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-					req.ConversationID, savedContent, config.Provider)
+				sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
 			}
 		}
+
+		// Save assistant message
+		content := fullContent.String()
+		if content != "" || len(toolCalls) > 0 {
+			savedContent := content
+			if len(toolCalls) > 0 {
+				savedContent += "\n[操作建议]\n"
+				for _, tc := range toolCalls {
+					savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+				}
+			}
+			h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
+				req.ConversationID, savedContent, config.Provider)
+		}
+	}
 
 	h.db.ExecContext(ctx, `UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, req.ConversationID)
 
@@ -606,8 +635,15 @@ func (h *AIHandler) buildWikiContext(ctx context.Context, targetPageID *int64) s
 }
 
 func (h *AIHandler) toolCallsToPendingActions(toolCalls []*ai.ToolCall) []PendingAction {
+	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true}
 	var actions []PendingAction
+
 	for _, tc := range toolCalls {
+		// Skip read-only tools — they should be auto-executed, not pending confirmation
+		if autoTools[tc.Name] {
+			continue
+		}
+
 		var details map[string]any
 		if err := json.Unmarshal([]byte(tc.Input), &details); err != nil {
 			details = map[string]any{"raw": tc.Input}
@@ -738,6 +774,68 @@ func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) strin
 	return fmt.Sprintf(
 		"[系统] 工具 lookup_page 已执行完毕，查询「%s」结果：%s\n\n%s",
 		details.Title, string(result), subtreeContext,
+	)
+}
+
+func (h *AIHandler) executeSearchPages(ctx context.Context, tc ai.ToolCall) string {
+	var details struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal([]byte(tc.Input), &details); err != nil || details.Query == "" {
+		return "[系统] search_pages 执行失败：参数无效"
+	}
+
+	pages, err := h.queries.SearchWikiPages(ctx, details.Query)
+	if err != nil {
+		return fmt.Sprintf("[系统] search_pages 执行失败：%v", err)
+	}
+
+	if len(pages) == 0 {
+		return fmt.Sprintf("[系统] search_pages 未找到匹配「%s」的页面", details.Query)
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("[系统] 搜索「%s」找到 %d 个匹配页面：\n\n", details.Query, len(pages)))
+	for _, p := range pages {
+		status := "空"
+		if p.ContentStatus == "published" {
+			status = "有内容"
+		}
+		// Show a preview of the content (first 100 chars)
+		preview := ""
+		if p.Content != "" {
+			runes := []rune(p.Content)
+			if len(runes) > 100 {
+				preview = string(runes[:100]) + "..."
+			} else {
+				preview = p.Content
+			}
+		}
+		b.WriteString(fmt.Sprintf("- [ID=%d] %s (%s)\n", p.ID, p.Title, status))
+		if preview != "" {
+			b.WriteString(fmt.Sprintf("  %s\n\n", preview))
+		}
+	}
+
+	return b.String()
+}
+
+func (h *AIHandler) executeReadPage(ctx context.Context, tc ai.ToolCall) string {
+	var details struct {
+		PageID float64 `json:"page_id"`
+	}
+	if err := json.Unmarshal([]byte(tc.Input), &details); err != nil || details.PageID == 0 {
+		return "[系统] read_page 执行失败：参数无效"
+	}
+
+	page, err := h.queries.GetWikiPageByID(ctx, int64(details.PageID))
+	if err != nil {
+		return fmt.Sprintf("[系统] read_page 未找到页面 #%d", int(details.PageID))
+	}
+
+	return fmt.Sprintf(
+		"[系统] 工具 read_page 已执行完毕，读取页面「%s」(ID=%d) 内容：\n\n%s",
+		page.Title, page.ID, page.Content,
 	)
 }
 
