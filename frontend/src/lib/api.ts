@@ -1,4 +1,4 @@
-import type { WikiPage, WikiTreeNode, Conversation, ConversationMessage, PendingAction } from "../types";
+import type { WikiPage, WikiTreeNode, Conversation, ConversationMessage, PendingAction, Plan, ExecutionReport } from "../types";
 
 const BASE = "/api";
 
@@ -76,6 +76,8 @@ export interface ChatRequest {
   role?: string;
   context_type?: string;
   confirmed_actions?: PendingAction[];
+  plan_id?: string;
+  focus_page_id?: number | null;
 }
 
 export async function streamChat(
@@ -170,4 +172,31 @@ export async function streamChat(
 
   // Final dispatch in case stream ends without trailing empty line
   dispatchEvent();
+}
+
+// Plan API
+
+export async function confirmPlan(planId: string): Promise<ExecutionReport> {
+  const res = await fetch(`${BASE}/plans/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan_id: planId }),
+  });
+  if (!res.ok) throw new Error("Failed to confirm plan");
+  return res.json();
+}
+
+export async function rejectPlan(planId: string): Promise<void> {
+  const res = await fetch(`${BASE}/plans/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan_id: planId }),
+  });
+  if (!res.ok) throw new Error("Failed to reject plan");
+}
+
+export async function getPlan(planId: string): Promise<Plan> {
+  const res = await fetch(`${BASE}/plans?id=${encodeURIComponent(planId)}`);
+  if (!res.ok) throw new Error("Failed to get plan");
+  return res.json();
 }

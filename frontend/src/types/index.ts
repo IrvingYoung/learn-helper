@@ -8,6 +8,8 @@ export interface WikiPage {
   parent_id: number | null;
   content_status: 'empty' | 'draft' | 'published';
   sort_order: number;
+  links: number[];
+  backlinks: number[];
   created_at: string;
   updated_at: string;
 }
@@ -54,4 +56,43 @@ export interface ConversationMessage {
   created_at: string;
   pending_actions?: PendingAction[];
   confirmed?: boolean;
+  plan?: Plan;
+}
+
+export type PlanStatus = 'pending' | 'confirmed' | 'executing' | 'completed' | 'rejected' | 'completed_with_failures';
+export type ActionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+export type ActionType = 'create_page' | 'update_page' | 'delete_page' | 'link_pages' | 'move_page';
+
+export interface PlanAction {
+  id: string;
+  plan_id: string;
+  type: ActionType;
+  params: Record<string, unknown>;
+  depends_on: string[];
+  status: ActionStatus;
+  result?: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface Plan {
+  id: string;
+  conversation_id: number;
+  reasoning: string;
+  status: PlanStatus;
+  actions: PlanAction[];
+  created_at: string;
+  executed_at?: string;
+}
+
+export interface ExecutionReport {
+  plan_id: string;
+  status: PlanStatus;
+  actions: {
+    id: string;
+    type: ActionType;
+    status: ActionStatus;
+    result?: Record<string, unknown>;
+    error?: string;
+  }[];
 }
