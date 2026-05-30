@@ -25,20 +25,20 @@ import (
 type AIHandler struct {
 	db      *sql.DB
 	queries *model.Queries
-}
+			}
 
 func NewAIHandler(db *sql.DB) *AIHandler {
 	return &AIHandler{
 		db:      db,
 		queries: model.New(db),
 	}
-}
+			}
 
 type PendingAction struct {
 	Type    string `json:"type"`
 	Preview string `json:"preview"`
 	Details any    `json:"details"`
-}
+			}
 
 // --- Conversation handlers (direct SQL, schema has role column) ---
 
@@ -71,7 +71,7 @@ func (h *AIHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"conversations": result})
-}
+			}
 
 func (h *AIHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -99,7 +99,7 @@ func (h *AIHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{"id": id})
-}
+			}
 
 func (h *AIHandler) UpdateConversationTitle(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -121,7 +121,7 @@ func (h *AIHandler) UpdateConversationTitle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-}
+			}
 
 func (h *AIHandler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -136,7 +136,7 @@ func (h *AIHandler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
+			}
 
 func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -174,7 +174,7 @@ func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"messages": result})
-}
+			}
 
 // --- AI Config handlers ---
 
@@ -213,7 +213,7 @@ func (h *AIHandler) GetAIConfigs(w http.ResponseWriter, r *http.Request) {
 			"tavily_api_key":  tavilyKey,
 		}},
 	})
-}
+			}
 
 func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -281,7 +281,7 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-}
+			}
 
 // --- AI Chat (SSE streaming) ---
 
@@ -292,6 +292,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		ConfirmedActions []PendingAction `json:"confirmed_actions"`
 		PlanID           string          `json:"plan_id"`
 		FocusPageID      *int64          `json:"focus_page_id"`
+		CurrentSlug      string          `json:"current_slug"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -411,6 +412,20 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	// Build context and prompt
 	wikiContext := h.buildWikiContext(ctx, req.FocusPageID)
+	if req.CurrentSlug != "" {
+		pages, err := h.queries.GetWikiPageTree(ctx)
+		if err == nil {
+			for _, p := range pages {
+				if p.Slug == req.CurrentSlug && p.PageType != "overview" {
+					wikiContext += fmt.Sprintf(
+						"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n",
+						p.Title, p.Slug, p.ID,
+					)
+					break
+				}
+			}
+		}
+	}
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
 	if len(req.ConfirmedActions) > 0 {
 		systemPrompt += "\n\n【本次请求特别说明】以上对话中已经包含 tool（tool_result）返回结果，表明对应操作已被用户确认执行完毕。请直接回复告知用户结果即可，不要再次调用相同的工具。"
@@ -427,10 +442,12 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 reactLoop:
 	for iteration := 0; iteration < maxIterations; iteration++ {
+		log.Printf("[ReAct] iteration=%d messages=%d", iteration, len(aiMessages))
+
 		chatReq := ai.ChatRequest{
 			Messages:     aiMessages,
 			SystemPrompt: systemPrompt,
-			MaxTokens:    4096,
+			MaxTokens:    8192,
 		}
 		if convRole == ai.RoleWikiMaintainer {
 			chatReq.Tools = ai.WikiTools()
@@ -438,6 +455,7 @@ reactLoop:
 
 		streamCh, err := provider.StreamChat(ctx, chatReq)
 		if err != nil {
+			log.Printf("[ReAct] StreamChat error: %v", err)
 			sseWrite(w, "error", fmt.Sprintf("AI stream error: %v", err), canFlush, flusher)
 			return
 		}
@@ -460,6 +478,10 @@ reactLoop:
 		}
 
 		respContent := textBuilder.String()
+		log.Printf("[ReAct] iteration=%d content_len=%d tool_calls=%d", iteration, len(respContent), len(respToolCalls))
+		for i, tc := range respToolCalls {
+			log.Printf("[ReAct]   tool_call[%d]: name=%s input_len=%d", i, tc.Name, len(tc.Input))
+		}
 
 		// Accumulate streamed content
 		if respContent != "" {
@@ -477,6 +499,7 @@ reactLoop:
 
 		// No tool calls → AI is done reasoning
 		if len(toolCalls) == 0 {
+			log.Printf("[ReAct] iteration=%d no tool calls, done", iteration)
 			break reactLoop
 		}
 
@@ -490,6 +513,7 @@ reactLoop:
 				autoCalls = append(autoCalls, tc)
 			}
 		}
+		log.Printf("[ReAct] iteration=%d auto_calls=%d plan_call=%v", iteration, len(autoCalls), planCall != nil)
 
 		// Build structured content for this assistant turn
 		var blocks []ai.ContentBlock
@@ -523,7 +547,9 @@ reactLoop:
 
 			// Execute auto tools, stream results in real-time
 			for _, tc := range autoCalls {
+				log.Printf("[ReAct] executing auto tool: %s", tc.Name)
 				result := h.executeAutoTool(ctx, tc)
+				log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
 				sseWrite(w, "content", "\n\n"+result+"\n\n", canFlush, flusher)
 				fullContent.WriteString(result)
 				fullContent.WriteString("\n\n")
@@ -531,11 +557,14 @@ reactLoop:
 			}
 
 			// Create Plan from propose_plan call
+			log.Printf("[ReAct] creating plan from propose_plan, input_len=%d", len(planCall.Input))
 			plan, err := h.createPlanFromToolCall(req.ConversationID, planCall.Input)
 			if err != nil {
+				log.Printf("[ReAct] createPlanFromToolCall FAILED: %v", err)
 				sseWrite(w, "error", fmt.Sprintf("create plan failed: %v", err), canFlush, flusher)
 				break reactLoop
 			}
+			log.Printf("[ReAct] plan created: id=%s actions=%d", plan.ID, len(plan.Actions))
 
 			// Save assistant message with plan info
 			planSummary := fmt.Sprintf("[操作计划] %s\n共 %d 个操作待确认。", plan.Reasoning, len(plan.Actions))
@@ -568,12 +597,16 @@ reactLoop:
 		}
 
 		for _, tc := range autoCalls {
+			log.Printf("[ReAct] executing auto tool: %s", tc.Name)
 			result := h.executeAutoTool(ctx, tc)
+			log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
 			sseWrite(w, "content", "\n\n"+result+"\n\n", canFlush, flusher)
 			fullContent.WriteString(result)
 			fullContent.WriteString("\n\n")
 			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
 		}
+
+		log.Printf("[ReAct] iteration=%d auto tools done, looping for AI to reason further", iteration)
 
 		// Loop continues → AI sees tool results and can reason further
 		if iteration == maxIterations-1 {
@@ -608,7 +641,7 @@ reactLoop:
 	if convRole == ai.RoleWikiMaintainer {
 		go h.updateOverviewPage()
 	}
-}
+			}
 
 // --- File Upload ---
 
@@ -646,7 +679,7 @@ func (h *AIHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		"filename": header.Filename,
 		"size":     len(content),
 	})
-}
+			}
 
 // --- Helpers ---
 
@@ -695,7 +728,7 @@ func (h *AIHandler) renderTreeContext(pages []model.GetWikiPageTreeRow, header s
 	}
 	render(roots, "")
 	return b.String()
-}
+			}
 
 func (h *AIHandler) buildWikiContext(ctx context.Context, focusPageID *int64) string {
 	var b strings.Builder
@@ -845,17 +878,23 @@ func (h *AIHandler) buildWikiContext(ctx context.Context, focusPageID *int64) st
 	}
 
 	return b.String()
-}
+			}
 
 // createPlanFromToolCall creates a Plan from a propose_plan tool call input.
+// Supports both old format (single "params" field) and new format (type-specific "*_params" fields).
 func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (*model.Plan, error) {
 	var proposal struct {
 		Reasoning string `json:"reasoning"`
 		Actions   []struct {
-			ID        string         `json:"id"`
-			Type      string         `json:"type"`
-			Params    map[string]any `json:"params"`
-			DependsOn []string       `json:"depends_on"`
+			ID               string         `json:"id"`
+			Type             string         `json:"type"`
+			Params           map[string]any `json:"params"`
+			CreatePageParams map[string]any `json:"create_page_params"`
+			UpdatePageParams map[string]any `json:"update_page_params"`
+			DeletePageParams map[string]any `json:"delete_page_params"`
+			LinkPagesParams  map[string]any `json:"link_pages_params"`
+			MovePageParams   map[string]any `json:"move_page_params"`
+			DependsOn        []string       `json:"depends_on"`
 		} `json:"actions"`
 	}
 	if err := json.Unmarshal([]byte(input), &proposal); err != nil {
@@ -873,18 +912,69 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 	}
 
 	for i, a := range proposal.Actions {
-		paramsJSON, _ := json.Marshal(a.Params)
-		dependsOnJSON, _ := json.Marshal(a.DependsOn)
-		plan.Actions = append(plan.Actions, model.PlanAction{
-			ID:        a.ID,
-			PlanID:    planID,
-			Type:      a.Type,
-			Params:    string(paramsJSON),
-			DependsOn: string(dependsOnJSON),
-			Status:    "pending",
-			SortOrder: int64(i),
-			CreatedAt: now,
-		})
+		// Resolve params: prefer type-specific params, fall back to generic "params"
+		params := a.Params
+		switch a.Type {
+		case "create_page":
+			if len(a.CreatePageParams) > 0 {
+				params = a.CreatePageParams
+			}
+		case "update_page":
+			if len(a.UpdatePageParams) > 0 {
+				params = a.UpdatePageParams
+			}
+		case "delete_page":
+			if len(a.DeletePageParams) > 0 {
+				params = a.DeletePageParams
+			}
+		case "link_pages":
+			if len(a.LinkPagesParams) > 0 {
+				params = a.LinkPagesParams
+			}
+		case "move_page":
+			if len(a.MovePageParams) > 0 {
+				params = a.MovePageParams
+			}
+		}
+		if params == nil {
+			params = map[string]any{}
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+			// Replace {{action:a1.page_id}} → {{action:planID-a1.page_id}} in params
+			// so the engine can resolve placeholders against the prefixed action IDs
+			paramsStr := string(paramsJSON)
+			for _, a2 := range proposal.Actions {
+				if a2.ID != "" {
+					paramsStr = strings.ReplaceAll(paramsStr,
+						fmt.Sprintf("{{action:%s.", a2.ID),
+						fmt.Sprintf("{{action:%s-%s.", planID, a2.ID))
+				}
+			}
+
+			// Make depends_on IDs globally unique by prefixing with planID
+			var dependsOn []string
+			for _, dep := range a.DependsOn {
+				dependsOn = append(dependsOn, planID+"-"+dep)
+			}
+			// json.Marshal(nil) returns "null", column expects valid JSON array
+			dependsOnJSON := []byte("[]")
+			if len(dependsOn) > 0 {
+				dependsOnJSON, _ = json.Marshal(dependsOn)
+			}
+
+			// Use planID prefix to make action ID globally unique (avoids UNIQUE constraint collision)
+			actionID := planID + "-" + a.ID
+			plan.Actions = append(plan.Actions, model.PlanAction{
+				ID:        actionID,
+				PlanID:    planID,
+				Type:      a.Type,
+				Params:    json.RawMessage(paramsStr),
+				DependsOn: json.RawMessage(dependsOnJSON),
+				Status:    "pending",
+				SortOrder: int64(i),
+				CreatedAt: now,
+			})
 	}
 
 	// Save to database using PlanHandler
@@ -894,7 +984,7 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 	}
 
 	return plan, nil
-}
+			}
 
 func (h *AIHandler) toolCallsToPendingActions(toolCalls []ai.ToolCall) []PendingAction {
 	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true, "websearch": true, "webfetch": true}
@@ -949,7 +1039,7 @@ func (h *AIHandler) toolCallsToPendingActions(toolCalls []ai.ToolCall) []Pending
 		actions = append(actions, action)
 	}
 	return actions
-}
+			}
 
 func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []PendingAction) string {
 	var results []string
@@ -1042,7 +1132,7 @@ func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []Pendi
 		b.WriteString(r + "\n")
 	}
 	return b.String()
-}
+			}
 
 func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string {
 	switch tc.Name {
@@ -1059,7 +1149,7 @@ func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string 
 	default:
 		return fmt.Sprintf("[系统] 未知工具: %s", tc.Name)
 	}
-}
+			}
 
 func injectToolResults(messages []ai.Message, actions []PendingAction) []ai.Message {
 	// Find the last assistant message with [操作建议]
@@ -1154,7 +1244,7 @@ func injectToolResults(messages []ai.Message, actions []PendingAction) []ai.Mess
 	}
 
 	return newMessages
-}
+			}
 
 func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1183,7 +1273,7 @@ func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) strin
 		"[系统] 工具 lookup_page 已执行完毕，查询「%s」结果：%s\n\n%s",
 		details.Title, string(result), subtreeContext,
 	)
-}
+			}
 
 func (h *AIHandler) executeSearchPages(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1226,7 +1316,7 @@ func (h *AIHandler) executeSearchPages(ctx context.Context, tc ai.ToolCall) stri
 	}
 
 	return b.String()
-}
+			}
 
 func (h *AIHandler) executeReadPage(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1245,7 +1335,7 @@ func (h *AIHandler) executeReadPage(ctx context.Context, tc ai.ToolCall) string 
 		"[系统] 工具 read_page 已执行完毕，读取页面「%s」(ID=%d) 内容：\n\n%s",
 		page.Title, page.ID, page.Content,
 	)
-}
+			}
 
 func (h *AIHandler) getTavilyAPIKey(ctx context.Context) string {
 	// Check env var first (for quick dev setup)
@@ -1264,7 +1354,7 @@ func (h *AIHandler) getTavilyAPIKey(ctx context.Context) string {
 		return ""
 	}
 	return cfg.TavilyAPIKey
-}
+			}
 
 func (h *AIHandler) executeWebSearch(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1331,7 +1421,7 @@ func (h *AIHandler) executeWebSearch(ctx context.Context, tc ai.ToolCall) string
 	}
 
 	return b.String()
-}
+			}
 
 func (h *AIHandler) executeWebFetch(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1371,7 +1461,7 @@ func (h *AIHandler) executeWebFetch(ctx context.Context, tc ai.ToolCall) string 
 	}
 
 	return fmt.Sprintf("[系统] 成功获取页面「%s」内容（共 %d 字符）：\n\n%s", details.URL, len(runes), text)
-}
+			}
 
 func extractHTMLText(htmlContent string) string {
 	doc, err := html.Parse(strings.NewReader(htmlContent))
@@ -1418,7 +1508,7 @@ func extractHTMLText(htmlContent string) string {
 		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
 	}
 	return result
-}
+			}
 
 
 func (h *AIHandler) updateOverviewPage() {
@@ -1477,7 +1567,7 @@ func (h *AIHandler) updateOverviewPage() {
 		Content: b.String(), Tags: overview.Tags, ParentID: overview.ParentID,
 		ContentStatus: "published", SortOrder: overview.SortOrder, ID: overview.ID,
 	})
-}
+			}
 
 func sseWrite(w http.ResponseWriter, eventType, data string, canFlush bool, flusher http.Flusher) {
 	fmt.Fprintf(w, "event: %s\n", eventType)
@@ -1488,11 +1578,11 @@ func sseWrite(w http.ResponseWriter, eventType, data string, canFlush bool, flus
 	if canFlush {
 		flusher.Flush()
 	}
-}
+			}
 
 func boolToInt64(b bool) int64 {
 	if b {
 		return 1
 	}
 	return 0
-}
+			}
