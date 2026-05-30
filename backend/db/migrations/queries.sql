@@ -151,12 +151,12 @@ SELECT * FROM ai_configs WHERE provider = ? LIMIT 1;
 UPDATE ai_configs SET is_active = 0 WHERE is_active = 1;
 
 -- name: CreateAIConfig :execresult
-INSERT INTO ai_configs (provider, model_name, api_key, is_active)
-VALUES (?, ?, ?, ?);
+INSERT INTO ai_configs (provider, model_name, api_key, is_active, config)
+VALUES (?, ?, ?, ?, ?);
 
 -- name: UpdateAIConfig :exec
 UPDATE ai_configs
-SET provider = ?, model_name = ?, api_key = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+SET provider = ?, model_name = ?, api_key = ?, is_active = ?, config = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
 -- name: GetWikiPageChildren :many

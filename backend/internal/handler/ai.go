@@ -2,17 +2,21 @@ package handler
 
 import (
 	"context"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"log"
 	"fmt"
 	"io"
+	"os"
+	"regexp"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/net/html"
 	"learn-helper/internal/ai"
 	"learn-helper/internal/model"
 )
@@ -186,23 +190,37 @@ func (h *AIHandler) GetAIConfigs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse tavily_api_key from config JSON
+	tavilyKey := ""
+	if config.Config.Valid && config.Config.String != "" {
+		var cfg struct {
+			TavilyAPIKey string `json:"tavily_api_key"`
+		}
+		if json.Unmarshal([]byte(config.Config.String), &cfg) == nil {
+			tavilyKey = cfg.TavilyAPIKey
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"configs": []map[string]any{{
-			"id":         config.ID,
-			"provider":   config.Provider,
-			"model_name": config.ModelName,
-			"is_active":  config.IsActive.Int64 == 1,
+			"id":              config.ID,
+			"provider":        config.Provider,
+			"model_name":      config.ModelName,
+			"is_active":       config.IsActive.Int64 == 1,
+			"api_key":         config.ApiKey,
+			"tavily_api_key":  tavilyKey,
 		}},
 	})
 }
 
 func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Provider  string `json:"provider"`
-		ModelName string `json:"model_name"`
-		ApiKey    string `json:"api_key"`
-		IsActive  bool   `json:"is_active"`
+		Provider     string `json:"provider"`
+		ModelName    string `json:"model_name"`
+		ApiKey       string `json:"api_key"`
+		IsActive     bool   `json:"is_active"`
+		TavilyAPIKey string `json:"tavily_api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -226,12 +244,24 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	existing, err := h.queries.GetAIConfigByProvider(ctx, req.Provider)
+
+	// Build config JSON for Tavily API key
+	var configJSON sql.NullString
+	if req.TavilyAPIKey != "" {
+		cfgMap := map[string]string{"tavily_api_key": req.TavilyAPIKey}
+		cfgBytes, _ := json.Marshal(cfgMap)
+		configJSON = sql.NullString{String: string(cfgBytes), Valid: true}
+	} else if err == nil && existing.Config.Valid {
+		// Preserve existing config when tavily key not provided
+		configJSON = existing.Config
+	}
 	if err == sql.ErrNoRows {
 		_, err = h.queries.CreateAIConfig(ctx, model.CreateAIConfigParams{
 			Provider:  req.Provider,
 			ModelName: req.ModelName,
 			ApiKey:    req.ApiKey,
 			IsActive:  sql.NullInt64{Int64: 1, Valid: true},
+			Config:    configJSON,
 		})
 	} else if err == nil {
 		err = h.queries.UpdateAIConfig(ctx, model.UpdateAIConfigParams{
@@ -239,6 +269,7 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 			ModelName: req.ModelName,
 			ApiKey:    req.ApiKey,
 			IsActive:  sql.NullInt64{Int64: boolToInt64(req.IsActive), Valid: true},
+			Config:    configJSON,
 			ID:        existing.ID,
 		})
 	}
@@ -316,7 +347,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// When confirmed actions were executed, transform the conversation so the AI
-	// sees native tool_use -> tool_result pairing instead of [操作建议] text.
+	// sees native tool_use -> tool_result pairing.
 	if len(req.ConfirmedActions) > 0 {
 		aiMessages = injectToolResults(aiMessages, req.ConfirmedActions)
 	}
@@ -354,236 +385,177 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		systemPrompt += "\n\n【本次请求特别说明】以上对话中已经包含 tool（tool_result）返回结果，表明对应操作已被用户确认执行完毕。请直接回复告知用户结果即可，不要再次调用相同的工具。"
 	}
 
-	chatReq := ai.ChatRequest{
-		Messages:     aiMessages,
-		SystemPrompt: systemPrompt,
-		MaxTokens:    4096,
-	}
+		// ====== ReAct Loop ======
+	// Uses token-by-token streaming Chat(), auto-executes read-only tools,
+	// injects results, then lets the AI see them and reason further,
+	// until it stops calling tools, requests user confirmation, or hits max iterations.
 
-	if convRole == ai.RoleWikiMaintainer {
-		chatReq.Tools = ai.WikiTools()
-	}
+	fullContent := &strings.Builder{}
+	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true, "websearch": true, "webfetch": true}
+	const maxIterations = 10
+	var pendingActions []PendingAction
 
-	// First: non-streaming call to detect lookup_page (read-only) tool calls
-	resp, err := provider.Chat(ctx, chatReq)
-	if err != nil {
-		sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
-		return
-	}
-
-	// Check if the AI called read-only tools (lookup_page, search_pages, read_page)
-	// that don't need user confirmation
-	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true}
-	hasAutoTool := false
-	var otherToolCalls []ai.ToolCall
-	for _, tc := range resp.ToolCalls {
-		if autoTools[tc.Name] {
-			hasAutoTool = true
-		} else {
-			otherToolCalls = append(otherToolCalls, tc)
+reactLoop:
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		chatReq := ai.ChatRequest{
+			Messages:     aiMessages,
+			SystemPrompt: systemPrompt,
+			MaxTokens:    4096,
 		}
-	}
-
-	if hasAutoTool && convRole == ai.RoleWikiMaintainer {
-		// Build the first assistant response as structured content with proper tool_use blocks.
-		// This ensures Claude/DeepSeek see tool_use → tool_result pairing in the follow-up call.
-		var contentBlocks []ai.ContentBlock
-
-		// Text content from the AI (if any)
-		if resp.Content != "" {
-			contentBlocks = append(contentBlocks, ai.ContentBlock{
-				Type: ai.ContentTypeText,
-				Text: resp.Content,
-			})
+		if convRole == ai.RoleWikiMaintainer {
+			chatReq.Tools = ai.WikiTools()
 		}
 
-		// tool_use blocks for auto-executed read-only tools
-		for _, tc := range resp.ToolCalls {
-			if !autoTools[tc.Name] {
-				continue
+		streamCh, err := provider.StreamChat(ctx, chatReq)
+		if err != nil {
+			sseWrite(w, "error", fmt.Sprintf("AI stream error: %v", err), canFlush, flusher)
+			return
+		}
+
+		var textBuilder strings.Builder
+		var respToolCalls []ai.ToolCall
+
+	streamLoop:
+		for chunk := range streamCh {
+			if chunk.Content != "" {
+				sseWrite(w, "content", chunk.Content, canFlush, flusher)
+				textBuilder.WriteString(chunk.Content)
 			}
+			if chunk.ToolCall != nil {
+				respToolCalls = append(respToolCalls, *chunk.ToolCall)
+			}
+			if chunk.Done {
+				break streamLoop
+			}
+		}
+
+		respContent := textBuilder.String()
+
+		// Accumulate streamed content
+		if respContent != "" {
+			fullContent.WriteString(respContent)
+			fullContent.WriteString("\n\n")
+		}
+
+		// Filter out already-confirmed tool calls
+		var toolCalls []ai.ToolCall
+		for _, tc := range respToolCalls {
+			if !confirmedFingerprints[tc.Name+":"+tc.Input] {
+				toolCalls = append(toolCalls, tc)
+			}
+		}
+
+		// No tool calls → AI is done reasoning
+		if len(toolCalls) == 0 {
+			break reactLoop
+		}
+
+		// Separate auto-executed (read-only) tools from user-confirmation (write) tools
+		var autoCalls, writeCalls []ai.ToolCall
+		for _, tc := range toolCalls {
+			if autoTools[tc.Name] {
+				autoCalls = append(autoCalls, tc)
+			} else {
+				writeCalls = append(writeCalls, tc)
+			}
+		}
+
+		// Build structured content for this assistant turn
+		var blocks []ai.ContentBlock
+		if respContent != "" {
+			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeText, Text: respContent})
+		}
+
+		// If write tools are present, this is the terminal iteration
+		if len(writeCalls) > 0 {
+			for _, tc := range autoCalls {
+				var input json.RawMessage
+				if tc.Input != "" {
+					input = json.RawMessage(tc.Input)
+				}
+				blocks = append(blocks, ai.ContentBlock{
+					Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input,
+				})
+			}
+			for _, tc := range writeCalls {
+				var input json.RawMessage
+				if tc.Input != "" {
+					input = json.RawMessage(tc.Input)
+				}
+				blocks = append(blocks, ai.ContentBlock{
+					Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input,
+				})
+			}
+
+			if assistantContent, err := ai.ContentBlocksToJSON(blocks); err == nil {
+				aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: assistantContent})
+			}
+
+			// Execute auto tools, stream results in real-time
+			for _, tc := range autoCalls {
+				result := h.executeAutoTool(ctx, tc)
+				sseWrite(w, "content", "\n\n"+result+"\n\n", canFlush, flusher)
+				fullContent.WriteString(result)
+				fullContent.WriteString("\n\n")
+				aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
+			}
+
+			pendingActions = h.toolCallsToPendingActions(writeCalls)
+			break reactLoop
+		}
+
+		// Only auto tools: add tool_use blocks, execute, stream results, and loop
+		for _, tc := range autoCalls {
 			var input json.RawMessage
 			if tc.Input != "" {
 				input = json.RawMessage(tc.Input)
 			}
-			contentBlocks = append(contentBlocks, ai.ContentBlock{
-				Type:  ai.ContentTypeToolUse,
-				ID:    tc.ID,
-				Name:  tc.Name,
-				Input: input,
+			blocks = append(blocks, ai.ContentBlock{
+				Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input,
 			})
 		}
 
-		// Text block for write tool suggestions (pending confirmation)
-		if len(otherToolCalls) > 0 {
-			var otherBuf strings.Builder
-			otherBuf.WriteString("\n[操作建议]\n")
-			for _, tc := range otherToolCalls {
-				otherBuf.WriteString(fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input))
-			}
-			contentBlocks = append(contentBlocks, ai.ContentBlock{
-				Type: ai.ContentTypeText,
-				Text: otherBuf.String(),
-			})
+		if assistantContent, err := ai.ContentBlocksToJSON(blocks); err == nil {
+			aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: assistantContent})
 		}
 
-		if len(contentBlocks) > 0 {
-			firstContentJSON, err := ai.ContentBlocksToJSON(contentBlocks)
-			if err == nil {
-				aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: firstContentJSON})
-			}
+		for _, tc := range autoCalls {
+			result := h.executeAutoTool(ctx, tc)
+			sseWrite(w, "content", "\n\n"+result+"\n\n", canFlush, flusher)
+			fullContent.WriteString(result)
+			fullContent.WriteString("\n\n")
+			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
 		}
 
-		// Execute each read-only tool call and inject result as a proper tool_result message
-		for _, tc := range resp.ToolCalls {
-			if !autoTools[tc.Name] {
-				continue
-			}
-			var result string
-			switch tc.Name {
-			case "lookup_page":
-				result = h.executeLookupPage(ctx, tc)
-			case "search_pages":
-				result = h.executeSearchPages(ctx, tc)
-			case "read_page":
-				result = h.executeReadPage(ctx, tc)
-			}
-			if result != "" {
-				aiMessages = append(aiMessages, ai.Message{
-					Role:       "tool",
-					Content:    result,
-					ToolCallID: tc.ID,
-				})
-			}
-		}
-
-		// Streaming follow-up call with proper tool_use → tool_result history
-		chatReq.Messages = aiMessages
-		ch, err := provider.StreamChat(ctx, chatReq)
-		if err != nil {
-			sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
-			return
-		}
-
-		var fullContent strings.Builder
-		var toolCalls []*ai.ToolCall
-
-		for chunk := range ch {
-			if chunk.Content != "" {
-				fullContent.WriteString(chunk.Content)
-				sseWrite(w, "content", chunk.Content, canFlush, flusher)
-			}
-			if chunk.ToolCall != nil {
-				toolCalls = append(toolCalls, chunk.ToolCall)
-			}
-			if chunk.Done {
-				if len(toolCalls) > 0 {
-					// Filter out tool calls that were just confirmed to prevent loops
-					if len(confirmedFingerprints) > 0 {
-						var filtered []*ai.ToolCall
-						for _, tc := range toolCalls {
-							if !confirmedFingerprints[tc.Name+":"+tc.Input] {
-								filtered = append(filtered, tc)
-							}
-						}
-						toolCalls = filtered
-					}
-					if pendingActions := h.toolCallsToPendingActions(toolCalls); len(pendingActions) > 0 {
-						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
-						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
-					}
-				}
-				sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
-			}
-		}
-
-		// Save assistant message (only non-auto tool calls)
-		content := fullContent.String()
-		if content != "" || len(toolCalls) > 0 {
-			savedContent := content
-			var hasWriteTool bool
-			for _, tc := range toolCalls {
-				if !autoTools[tc.Name] {
-					hasWriteTool = true
-					break
-				}
-			}
-			if hasWriteTool {
-				savedContent += "\n[操作建议]\n"
-				for _, tc := range toolCalls {
-					if !autoTools[tc.Name] {
-						savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
-					}
-				}
-			}
-			h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-				req.ConversationID, savedContent, config.Provider)
-		}
-	} else {
-		// No lookup_page — stream the response normally
-		ch, err := provider.StreamChat(ctx, chatReq)
-		if err != nil {
-			sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
-			return
-		}
-
-		var fullContent strings.Builder
-		var toolCalls []*ai.ToolCall
-
-		for chunk := range ch {
-			if chunk.Content != "" {
-				fullContent.WriteString(chunk.Content)
-				sseWrite(w, "content", chunk.Content, canFlush, flusher)
-			}
-			if chunk.ToolCall != nil {
-				toolCalls = append(toolCalls, chunk.ToolCall)
-			}
-			if chunk.Done {
-				if len(toolCalls) > 0 {
-					// Filter out tool calls that were just confirmed to prevent loops
-					if len(confirmedFingerprints) > 0 {
-						var filtered []*ai.ToolCall
-						for _, tc := range toolCalls {
-							if !confirmedFingerprints[tc.Name+":"+tc.Input] {
-								filtered = append(filtered, tc)
-							}
-						}
-						toolCalls = filtered
-					}
-					if pendingActions := h.toolCallsToPendingActions(toolCalls); len(pendingActions) > 0 {
-						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
-						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
-					}
-				}
-				sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
-			}
-		}
-
-		// Save assistant message (only non-auto tool calls)
-		content := fullContent.String()
-		if content != "" || len(toolCalls) > 0 {
-			savedContent := content
-			var hasWriteTool bool
-			for _, tc := range toolCalls {
-				if !autoTools[tc.Name] {
-					hasWriteTool = true
-					break
-				}
-			}
-			if hasWriteTool {
-				savedContent += "\n[操作建议]\n"
-				for _, tc := range toolCalls {
-					if !autoTools[tc.Name] {
-						savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
-					}
-				}
-			}
-			h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-				req.ConversationID, savedContent, config.Provider)
+		// Loop continues → AI sees tool results and can reason further
+		if iteration == maxIterations-1 {
+			msg := "抱歉，我还没有得出结论，请重新描述您的问题。"
+			sseWrite(w, "content", msg, canFlush, flusher)
+			fullContent.WriteString(msg)
 		}
 	}
 
-	h.db.ExecContext(ctx, `UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, req.ConversationID)
+	// ====== Save assistant message ======
+	assistantText := strings.TrimSpace(fullContent.String())
+	if assistantText != "" || len(pendingActions) > 0 {
+		savedContent := assistantText
+		if len(pendingActions) > 0 {
+			savedContent += "\n[操作建议]\n"
+			for _, pa := range pendingActions {
+				detailsJSON, _ := json.Marshal(pa.Details)
+				savedContent += fmt.Sprintf("- %s: %s\n", pa.Type, string(detailsJSON))
+			}
+		}
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
+			req.ConversationID, savedContent, config.Provider)
+	}
+
+	// ====== Send pending_actions (text already streamed during loop) ======
+	if len(pendingActions) > 0 {
+		metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
+		sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+	}
+	sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
 
 	if convRole == ai.RoleWikiMaintainer {
 		go h.updateOverviewPage()
@@ -593,11 +565,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 // --- File Upload ---
 
 func (h *AIHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 5*1024*1024)
-	if err := r.ParseMultipartForm(5 * 1024 * 1024); err != nil {
-		http.Error(w, "File too large (max 5MB)", http.StatusBadRequest)
-		return
-	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -718,8 +685,8 @@ func (h *AIHandler) buildWikiContext(ctx context.Context, targetPageID *int64) s
 	return h.renderTreeContext(pages, "")
 }
 
-func (h *AIHandler) toolCallsToPendingActions(toolCalls []*ai.ToolCall) []PendingAction {
-	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true}
+func (h *AIHandler) toolCallsToPendingActions(toolCalls []ai.ToolCall) []PendingAction {
+	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true, "websearch": true, "webfetch": true}
 	var actions []PendingAction
 
 	for _, tc := range toolCalls {
@@ -864,6 +831,23 @@ func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []Pendi
 		b.WriteString(r + "\n")
 	}
 	return b.String()
+}
+
+func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string {
+	switch tc.Name {
+	case "lookup_page":
+		return h.executeLookupPage(ctx, tc)
+	case "search_pages":
+		return h.executeSearchPages(ctx, tc)
+	case "read_page":
+		return h.executeReadPage(ctx, tc)
+	case "websearch":
+		return h.executeWebSearch(ctx, tc)
+	case "webfetch":
+		return h.executeWebFetch(ctx, tc)
+	default:
+		return fmt.Sprintf("[系统] 未知工具: %s", tc.Name)
+	}
 }
 
 func injectToolResults(messages []ai.Message, actions []PendingAction) []ai.Message {
@@ -1052,6 +1036,180 @@ func (h *AIHandler) executeReadPage(ctx context.Context, tc ai.ToolCall) string 
 	)
 }
 
+func (h *AIHandler) getTavilyAPIKey(ctx context.Context) string {
+	// Check env var first (for quick dev setup)
+	if key := os.Getenv("TAVILY_API_KEY"); key != "" {
+		return key
+	}
+	// Fall back to DB config JSON column
+	config, err := h.queries.GetActiveAIConfig(ctx)
+	if err != nil || !config.Config.Valid || config.Config.String == "" {
+		return ""
+	}
+	var cfg struct {
+		TavilyAPIKey string `json:"tavily_api_key"`
+	}
+	if json.Unmarshal([]byte(config.Config.String), &cfg) != nil || cfg.TavilyAPIKey == "" {
+		return ""
+	}
+	return cfg.TavilyAPIKey
+}
+
+func (h *AIHandler) executeWebSearch(ctx context.Context, tc ai.ToolCall) string {
+	var details struct {
+		Query      string `json:"query"`
+		MaxResults int    `json:"max_results"`
+	}
+	if err := json.Unmarshal([]byte(tc.Input), &details); err != nil || details.Query == "" {
+		return "[系统] websearch 执行失败：参数无效"
+	}
+
+	apiKey := h.getTavilyAPIKey(ctx)
+	if apiKey == "" {
+		return "[系统] websearch 执行失败：未配置 Tavily API Key，请在设置页中配置"
+	}
+
+	if details.MaxResults <= 0 || details.MaxResults > 10 {
+		details.MaxResults = 5
+	}
+
+	body := map[string]any{
+		"api_key":      apiKey,
+		"query":        details.Query,
+		"search_depth": "basic",
+		"max_results":  details.MaxResults,
+	}
+	bodyJSON, _ := json.Marshal(body)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.tavily.com/search", bytes.NewReader(bodyJSON))
+	if err != nil {
+		return fmt.Sprintf("[系统] websearch 执行失败：%v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("[系统] websearch 搜索失败：%v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Sprintf("[系统] websearch 搜索失败 (HTTP %d)：%s", resp.StatusCode, string(respBody))
+	}
+
+	var tavilyResp struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tavilyResp); err != nil {
+		return fmt.Sprintf("[系统] websearch 解析结果失败：%v", err)
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("[系统] 网络搜索「%s」结果：\n\n", details.Query))
+	for i, r := range tavilyResp.Results {
+		b.WriteString(fmt.Sprintf("%d. **%s**\n   URL: %s\n   摘要：%s\n\n", i+1, r.Title, r.URL, r.Content))
+	}
+	if len(tavilyResp.Results) == 0 {
+		b.WriteString("（无搜索结果）")
+	}
+
+	return b.String()
+}
+
+func (h *AIHandler) executeWebFetch(ctx context.Context, tc ai.ToolCall) string {
+	var details struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(tc.Input), &details); err != nil || details.URL == "" {
+		return "[系统] webfetch 执行失败：参数无效"
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", details.URL, nil)
+	if err != nil {
+		return fmt.Sprintf("[系统] webfetch 执行失败：%v", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; LLMWiki/1.0)")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("[系统] webfetch 获取页面失败：%v", err)
+	}
+	defer resp.Body.Close()
+
+	// Limit to 500KB
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 500*1024))
+	if err != nil {
+		return fmt.Sprintf("[系统] webfetch 读取页面失败：%v", err)
+	}
+
+	// Extract text from HTML
+	text := extractHTMLText(string(body))
+
+	// Limit output to 3000 chars
+	runes := []rune(text)
+	if len(runes) > 3000 {
+		text = string(runes[:3000]) + "\n\n...（内容过长，已截断）"
+	}
+
+	return fmt.Sprintf("[系统] 成功获取页面「%s」内容（共 %d 字符）：\n\n%s", details.URL, len(runes), text)
+}
+
+func extractHTMLText(htmlContent string) string {
+	doc, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		// Fallback: strip tags
+		re := regexp.MustCompile("<[^>]*>")
+		text := re.ReplaceAllString(htmlContent, "")
+		return strings.TrimSpace(text)
+	}
+
+	var b strings.Builder
+	var extract func(*html.Node)
+	extract = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			text := strings.TrimSpace(n.Data)
+			if text != "" {
+				if b.Len() > 0 {
+					b.WriteString(" ")
+				}
+				b.WriteString(text)
+			}
+		}
+		if n.Type == html.ElementNode {
+			tag := strings.ToLower(n.Data)
+			// Skip script, style, noscript
+			if tag == "script" || tag == "style" || tag == "noscript" {
+				return
+			}
+			// Add newline for block-level elements
+			if tag == "p" || tag == "br" || tag == "div" || tag == "h1" || tag == "h2" || tag == "h3" ||
+				tag == "h4" || tag == "h5" || tag == "h6" || tag == "li" || tag == "tr" {
+				b.WriteString("\n")
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			extract(c)
+		}
+	}
+	extract(doc)
+
+	// Clean up multiple newlines
+	result := strings.TrimSpace(b.String())
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+	return result
+}
+
+
 func (h *AIHandler) updateOverviewPage() {
 	ctx := context.Background()
 
@@ -1111,7 +1269,11 @@ func (h *AIHandler) updateOverviewPage() {
 }
 
 func sseWrite(w http.ResponseWriter, eventType, data string, canFlush bool, flusher http.Flusher) {
-	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, data)
+	fmt.Fprintf(w, "event: %s\n", eventType)
+	for _, line := range strings.Split(data, "\n") {
+		fmt.Fprintf(w, "data: %s\n", line)
+	}
+	fmt.Fprint(w, "\n")
 	if canFlush {
 		flusher.Flush()
 	}

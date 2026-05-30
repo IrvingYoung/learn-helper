@@ -134,6 +134,29 @@ func WikiTools() []Tool {
 				"required": []string{"query"},
 			},
 		},
+		{
+			Name:        "websearch",
+			Description: "搜索网络获取相关信息，返回结构化结果列表（标题、URL、摘要）。可自动执行，无需用户确认。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query":       map[string]any{"type": "string", "description": "搜索关键词"},
+					"max_results": map[string]any{"type": "integer", "description": "返回结果数量（默认 5）"},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "webfetch",
+			Description: "获取指定 URL 的网页内容，提取正文文本返回。可自动执行，无需用户确认。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"url": map[string]any{"type": "string", "description": "要获取内容的网页 URL"},
+				},
+				"required": []string{"url"},
+			},
+		},
 	}
 }
 

@@ -35,7 +35,7 @@ type WikiTreeNode struct {
 	ParentID      *int64         `json:"parent_id"`
 	Path          string         `json:"path"`
 	SortOrder     int64          `json:"sort_order"`
-	Children      []WikiTreeNode `json:"children,omitempty"`
+	Children      []*WikiTreeNode `json:"children,omitempty"`
 }
 
 type WikiPageResponse struct {
@@ -81,7 +81,7 @@ func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
 			ParentID:      nullInt64ToPtr(p.ParentID),
 			Path:          p.Path,
 			SortOrder:     p.SortOrder,
-			Children:      []WikiTreeNode{},
+			Children:      []*WikiTreeNode{},
 		}
 		nodeMap[p.ID] = node
 	}
@@ -91,7 +91,7 @@ func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
 		if !p.ParentID.Valid || p.ParentID.Int64 == 0 {
 			roots = append(roots, nodeMap[p.ID])
 		} else if parent, ok := nodeMap[p.ParentID.Int64]; ok {
-			parent.Children = append(parent.Children, *nodeMap[p.ID])
+			parent.Children = append(parent.Children, nodeMap[p.ID])
 		}
 	}
 

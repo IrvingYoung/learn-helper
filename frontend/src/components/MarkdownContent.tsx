@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -26,7 +27,7 @@ interface MarkdownContentProps {
   className?: string
 }
 
-export function MarkdownContent({ content, className = '' }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({ content, className = '' }: MarkdownContentProps) {
   const { theme } = useTheme()
   const syntaxStyle = theme === 'dark' ? oneDark : oneLight
 
@@ -96,4 +97,4 @@ export function MarkdownContent({ content, className = '' }: MarkdownContentProp
       </ReactMarkdown>
     </div>
   )
-}
+});

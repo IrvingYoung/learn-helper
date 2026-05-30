@@ -70,7 +70,7 @@ func (q *Queries) CountWikiPagesByStatus(ctx context.Context, contentStatus stri
 }
 
 const createAIConfig = `-- name: CreateAIConfig :execresult
-INSERT INTO ai_configs (provider, model_name, api_key, is_active)
+INSERT INTO ai_configs (provider, model_name, api_key, is_active, config)
 VALUES (?, ?, ?, ?)
 `
 
@@ -79,6 +79,7 @@ type CreateAIConfigParams struct {
 	ModelName string
 	ApiKey    string
 	IsActive  sql.NullInt64
+	Config    sql.NullString
 }
 
 func (q *Queries) CreateAIConfig(ctx context.Context, arg CreateAIConfigParams) (sql.Result, error) {
@@ -87,6 +88,7 @@ func (q *Queries) CreateAIConfig(ctx context.Context, arg CreateAIConfigParams) 
 		arg.ModelName,
 		arg.ApiKey,
 		arg.IsActive,
+		arg.Config,
 	)
 }
 
@@ -1258,7 +1260,7 @@ func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, er
 
 const updateAIConfig = `-- name: UpdateAIConfig :exec
 UPDATE ai_configs
-SET provider = ?, model_name = ?, api_key = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+SET provider = ?, model_name = ?, api_key = ?, is_active = ?, config = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 `
 
@@ -1267,6 +1269,7 @@ type UpdateAIConfigParams struct {
 	ModelName string
 	ApiKey    string
 	IsActive  sql.NullInt64
+	Config    sql.NullString
 	ID        int64
 }
 
@@ -1276,6 +1279,7 @@ func (q *Queries) UpdateAIConfig(ctx context.Context, arg UpdateAIConfigParams) 
 		arg.ModelName,
 		arg.ApiKey,
 		arg.IsActive,
+		arg.Config,
 		arg.ID,
 	)
 	return err

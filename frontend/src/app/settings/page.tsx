@@ -1,10 +1,28 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function SettingsPage() {
   const [provider, setProvider] = useState('claude')
   const [model, setModel] = useState('claude-sonnet-4-7-20250514')
   const [apiKey, setApiKey] = useState('')
+  const [tavilyApiKey, setTavilyApiKey] = useState('')
   const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/ai/configs')
+      .then(r => r.json())
+      .then(data => {
+        if (data.configs?.length > 0) {
+          const cfg = data.configs[0]
+          setProvider(cfg.provider)
+          setModel(cfg.model_name)
+          setApiKey(cfg.api_key || '')
+          if (cfg.tavily_api_key) {
+            setTavilyApiKey(cfg.tavily_api_key)
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const handleSave = async () => {
     const resp = await fetch('/api/ai/configs', {
@@ -14,6 +32,7 @@ export default function SettingsPage() {
         provider,
         model_name: model,
         api_key: apiKey,
+        tavily_api_key: tavilyApiKey,
         is_active: true,
       }),
     })
@@ -78,6 +97,17 @@ export default function SettingsPage() {
                 placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-ant-...'}
                 className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-th-text-secondary mb-1">Tavily API Key</label>
+              <input
+                type="password"
+                value={tavilyApiKey}
+                onChange={(e) => setTavilyApiKey(e.target.value)}
+                placeholder="sk-..."
+                className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
+              />
+              <p className="text-xs text-th-text-muted mt-1">用于 websearch 联网搜索功能</p>
             </div>
             <button
               onClick={handleSave}

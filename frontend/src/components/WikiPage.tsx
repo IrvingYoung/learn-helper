@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { fetchWikiTree, fetchWikiPage, fetchOverviewPage } from '../lib/api';
@@ -33,11 +33,30 @@ export function WikiPageLayout() {
   const [showSettings, setShowSettings] = useState(false);
   const [provider, setProvider] = useState('claude');
   const [model, setModel] = useState('claude-sonnet-4-7-20250514');
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState('')
+  const [tavilyApiKey, setTavilyApiKey] = useState('');
   const [saved, setSaved] = useState(false);
-  const { theme, toggleTheme } = useTheme();
 
-  const { data: tree, mutate: mutateTree } = useSWR('wiki-tree', fetchWikiTree);
+  useEffect(() => {
+    fetch('/api/ai/configs')
+      .then(r => r.json())
+      .then(data => {
+        if (data.configs?.length > 0) {
+          const cfg = data.configs[0];
+          setProvider(cfg.provider);
+          setModel(cfg.model_name);
+          setApiKey(cfg.api_key || '');
+          if (cfg.tavily_api_key) {
+            setTavilyApiKey(cfg.tavily_api_key);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+  const { theme, toggleTheme } = useTheme();
+  const [treeVersion, setTreeVersion] = useState(0);
+
+  const { data: tree, mutate: mutateTree } = useSWR(['wiki-tree', treeVersion], fetchWikiTree);
   const { data: page } = useSWR(
     selectedSlug ? `wiki-page-${selectedSlug}` : null,
     () => selectedSlug ? fetchWikiPage(selectedSlug) : null
@@ -51,18 +70,17 @@ export function WikiPageLayout() {
   const displayPage: WikiPage | null = page || overviewPage || null;
 
   const handlePageChanged = useCallback(() => {
-    mutateTree();
-  }, [mutateTree]);
+    setTreeVersion(v => v + 1);
+  }, []);
 
   const handleSaveConfig = async () => {
     const resp = await fetch('/api/ai/configs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, model_name: model, api_key: apiKey, is_active: true }),
+      body: JSON.stringify({ provider, model_name: model, api_key: apiKey, tavily_api_key: tavilyApiKey, is_active: true }),
     });
     if (resp.ok) {
       setSaved(true);
-      setApiKey('');
       setTimeout(() => setSaved(false), 3000);
     }
   };
@@ -250,6 +268,17 @@ export function WikiPageLayout() {
                   placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-ant-...'}
                   className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-th-text-secondary mb-1">Tavily API Key</label>
+                <input
+                  type="password"
+                  value={tavilyApiKey}
+                  onChange={(e) => setTavilyApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
+                />
+                <p className="text-xs text-th-text-muted mt-1">用于 websearch 联网搜索功能</p>
               </div>
               <button
                 onClick={handleSaveConfig}

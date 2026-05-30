@@ -100,6 +100,40 @@ export async function streamChat(
   const decoder = new TextDecoder();
   let buffer = "";
   let currentEvent = "";
+  let currentData = "";
+
+  const dispatchEvent = () => {
+    if (!currentEvent || !currentData) {
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    if (currentEvent === "agent_status" && onStatus) {
+      try { onStatus(JSON.parse(currentData)); } catch { /* ignore */ }
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    if (currentEvent === "meta") {
+      try { onMeta(JSON.parse(currentData)); } catch { /* ignore */ }
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    if (currentEvent === "content") {
+      onChunk(currentData);
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    // Unknown events (done, error, etc.) — ignore
+    currentEvent = "";
+    currentData = "";
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -111,35 +145,29 @@ export async function streamChat(
 
     for (const line of lines) {
       if (line.startsWith("event: ")) {
+        dispatchEvent();
         currentEvent = line.slice(7);
+        currentData = "";
         continue;
       }
       if (line.startsWith("data: ")) {
         const data = line.slice(6);
         if (data === "[DONE]") continue;
-
-        if (currentEvent === "agent_status" && onStatus) {
-          try {
-            const parsed = JSON.parse(data);
-            onStatus(parsed);
-          } catch { /* ignore */ }
-          currentEvent = "";
-          continue;
+        if (currentData !== "") {
+          currentData += "\n";
         }
-
-        try {
-          const parsed = JSON.parse(data);
-          if (typeof parsed.conversation_id === "number" || parsed.pending_actions) {
-            onMeta(parsed);
-            currentEvent = "";
-            continue;
-          }
-        } catch {
-          // Not JSON — plain content
-        }
-
-        onChunk(data);
+        currentData += data;
+        continue;
+      }
+      // Empty line — dispatch pending event
+      if (line === "") {
+        dispatchEvent();
+        currentEvent = "";
+        currentData = "";
       }
     }
   }
+
+  // Final dispatch in case stream ends without trailing empty line
+  dispatchEvent();
 }

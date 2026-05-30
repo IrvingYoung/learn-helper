@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { Conversation, ConversationMessage, PendingAction } from "../types";
 import {
   listConversations,
@@ -244,6 +244,44 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
     handleSend(actions);
   }
 
+  const renderedMessages = useMemo(() =>
+    messages.map((msg, i) => (
+      <div key={msg.id || i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+        <div
+          className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
+            msg.role === "user"
+              ? "bg-th-user-bubble text-th-user-bubble-text rounded-tr-md"
+              : "bg-th-assistant-bubble text-th-assistant-bubble-text rounded-tl-md"
+          }`}
+        >
+          {msg.role === "assistant" ? (
+            <MarkdownContent content={msg.content} />
+          ) : (
+            <span className="whitespace-pre-wrap">{msg.content}</span>
+          )}
+          {msg.pending_actions && msg.pending_actions.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-th-border space-y-1">
+              <div className="text-xs text-th-text-muted font-medium">{msg.pending_actions.length} 个待确认操作</div>
+              {msg.pending_actions.map((action, j) => (
+                <div key={j} className="text-xs bg-th-accent-bg border border-th-accent p-2 rounded">
+                  {action.preview}
+                </div>
+              ))}
+              <button
+                onClick={() => handleConfirm(msg.pending_actions!)}
+                className="mt-1 text-xs bg-th-success text-white px-3 py-1 rounded hover:opacity-90"
+              >
+                确认执行全部
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )),
+    [messages, loading]
+  );
+
+
   return (
     <div className="flex flex-col h-full bg-th-bg-secondary">
       {/* Header - conversation picker */}
@@ -453,39 +491,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             <p className="text-sm opacity-60">点击 + 新建一个 AI 对话</p>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <div key={msg.id || i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
-                msg.role === "user"
-                  ? "bg-th-user-bubble text-th-user-bubble-text rounded-tr-md"
-                  : "bg-th-assistant-bubble text-th-assistant-bubble-text rounded-tl-md"
-              }`}
-            >
-              {msg.role === "assistant" ? (
-                <MarkdownContent content={msg.content} />
-              ) : (
-                <span className="whitespace-pre-wrap">{msg.content}</span>
-              )}
-              {msg.pending_actions && msg.pending_actions.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-th-border space-y-1">
-                  <div className="text-xs text-th-text-muted font-medium">{msg.pending_actions.length} 个待确认操作</div>
-                  {msg.pending_actions.map((action, j) => (
-                    <div key={j} className="text-xs bg-th-accent-bg border border-th-accent p-2 rounded">
-                      {action.preview}
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => handleConfirm(msg.pending_actions!)}
-                    className="mt-1 text-xs bg-th-success text-white px-3 py-1 rounded hover:opacity-90"
-                  >
-                    确认执行全部
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
+        {renderedMessages}
         <div ref={messagesEndRef} />
       </div>
 
@@ -509,9 +515,18 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
           <button
             onClick={() => handleSend()}
             disabled={!activeConv || loading || !input.trim()}
-            className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150"
+            className="px-3 rounded-xl text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150 flex items-center justify-center"
           >
-            发送
+            {loading ? (
+              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            )}
           </button>
         </div>
       </div>
