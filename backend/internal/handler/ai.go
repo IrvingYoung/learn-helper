@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"learn-helper/internal/ai"
@@ -312,6 +313,12 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		if rows.Scan(&role, &content) == nil {
 			aiMessages = append(aiMessages, ai.Message{Role: role, Content: content})
 		}
+	}
+
+	// When confirmed actions were executed, transform the conversation so the AI
+	// sees native tool_use -> tool_result pairing instead of [操作建议] text.
+	if len(req.ConfirmedActions) > 0 {
+		aiMessages = injectToolResults(aiMessages, req.ConfirmedActions)
 	}
 
 	// SSE setup
@@ -815,6 +822,101 @@ func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []Pendi
 		b.WriteString(r + "\n")
 	}
 	return b.String()
+}
+
+func injectToolResults(messages []ai.Message, actions []PendingAction) []ai.Message {
+	// Find the last assistant message with [操作建议]
+	lastAIIdx := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" && strings.Contains(messages[i].Content, "[操作建议]") {
+			lastAIIdx = i
+			break
+		}
+	}
+	if lastAIIdx < 0 {
+		return messages
+	}
+
+	msg := messages[lastAIIdx]
+
+	// Parse: split at [操作建议]
+	textParts := strings.SplitN(msg.Content, "\n[操作建议]\n", 2)
+	aiText := strings.TrimSuffix(textParts[0], "\n")
+
+	typeToToolName := map[string]string{
+		"create": "create_page",
+		"update": "update_page",
+		"delete": "delete_page",
+	}
+
+	// Build structured content: AI's text + tool_use blocks
+	var blocks []ai.ContentBlock
+	var toolUseIDs []string
+	if aiText != "" {
+		blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeText, Text: aiText})
+	}
+
+	counter := 0
+	for _, action := range actions {
+		toolName, ok := typeToToolName[action.Type]
+		if !ok {
+			continue
+		}
+		detailsJSON, err := json.Marshal(action.Details)
+		if err != nil {
+			continue
+		}
+		toolUseID := fmt.Sprintf("toolu_%d_%d", time.Now().UnixNano(), counter)
+		blocks = append(blocks, ai.ContentBlock{
+			Type:  ai.ContentTypeToolUse,
+			ID:    toolUseID,
+			Name:  toolName,
+			Input: json.RawMessage(detailsJSON),
+		})
+		toolUseIDs = append(toolUseIDs, toolUseID)
+		counter++
+	}
+
+	if len(blocks) == 0 {
+		return messages
+	}
+
+	assistantContent, err := ai.ContentBlocksToJSON(blocks)
+	if err != nil {
+		return messages
+	}
+
+	// Rebuild message list: replace the assistant message and add tool_result messages
+	var newMessages []ai.Message
+	for i, m := range messages {
+		if i == lastAIIdx {
+			newMessages = append(newMessages, ai.Message{
+				Role:    "assistant",
+				Content: assistantContent,
+			})
+			// Add tool_result messages right after the transformed assistant
+			for j, action := range actions {
+				if j >= len(toolUseIDs) {
+					break
+				}
+				toolName, _ := typeToToolName[action.Type]
+				resultContent := "操作已成功执行"
+				if action.Preview != "" {
+					resultContent = fmt.Sprintf("[系统] %s 成功", action.Preview)
+				}
+				newMessages = append(newMessages, ai.Message{
+					Role:       "tool",
+					Content:    resultContent,
+					ToolCallID: toolUseIDs[j],
+					ToolName:   toolName,
+				})
+			}
+		} else {
+			newMessages = append(newMessages, m)
+		}
+	}
+
+	return newMessages
 }
 
 func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) string {
