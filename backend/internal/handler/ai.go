@@ -300,6 +300,9 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[AIChat] request: convID=%d msg=%q current_slug=%q selected_text=%q focusPageID=%v planID=%q",
+		req.ConversationID, req.Message, req.CurrentSlug, req.SelectedText, req.FocusPageID, req.PlanID)
+
 	ctx := r.Context()
 
 	// Get AI config
@@ -420,6 +423,9 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 				"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n",
 				page.Title, page.Slug, page.ID,
 			)
+			log.Printf("[AIChat] injected current page context: %s (slug=%s)", page.Title, page.Slug)
+		} else {
+			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
 		}
 	}
 	if req.SelectedText != "" {
