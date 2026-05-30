@@ -63,42 +63,45 @@ type Tool struct {
 func WikiTools() []Tool {
 	return []Tool{
 		{
-			Name:        "create_page",
-			Description: "创建新的 Wiki 页面。用户确认后才会执行。如果只想创建页面占位符，内容可为空。",
+			Name:        "propose_plan",
+			Description: "提出对知识库的操作计划。当你需要创建、更新、删除页面或建立链接时，使用此工具一次性提出所有操作。系统会按依赖顺序执行。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"title":     map[string]any{"type": "string", "description": "页面标题"},
-					"slug":      map[string]any{"type": "string", "description": "URL 标识符，英文短横线格式如 job-hunting"},
-					"parent_id": map[string]any{"type": "integer", "description": "父页面 ID，从知识库结构中获取对应的页面 ID"},
-					"content":   map[string]any{"type": "string", "description": "页面内容，Markdown 格式（可为空）"},
-					"page_type": map[string]any{"type": "string", "description": "页面类型：entity(实体) 或 concept(概念)"},
+					"reasoning": map[string]any{
+						"type":        "string",
+						"description": "为什么建议这些操作，向用户解释你的思路",
+					},
+					"actions": map[string]any{
+						"type":        "array",
+						"description": "要执行的操作列表",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"id": map[string]any{
+									"type":        "string",
+									"description": "操作的唯一标识符，用于依赖引用。例如 'a1', 'a2'",
+								},
+								"type": map[string]any{
+									"type":        "string",
+									"enum":        []string{"create_page", "update_page", "delete_page", "link_pages", "move_page"},
+									"description": "操作类型",
+								},
+								"params": map[string]any{
+									"type":        "object",
+									"description": "操作参数。create_page: {title, slug?, parent_id, content?, page_type?}; update_page: {page_id, content, title?}; delete_page: {page_id}; link_pages: {source_page_id, target_page_id, link_text?}; move_page: {page_id, new_parent_id}",
+								},
+								"depends_on": map[string]any{
+									"type":        "array",
+									"items":       map[string]any{"type": "string"},
+									"description": "依赖的操作ID列表。例如创建子页面依赖父页面的创建。依赖的操作中生成的page_id可通过 {{action:ID.page_id}} 在params中引用",
+								},
+							},
+							"required": []string{"id", "type", "params"},
+						},
+					},
 				},
-				"required": []string{"title", "slug"},
-			},
-		},
-		{
-			Name:        "update_page",
-			Description: "更新已有 Wiki 页面的内容。用户确认后才会执行。",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"page_id": map[string]any{"type": "integer", "description": "要更新的页面 ID"},
-					"title":   map[string]any{"type": "string", "description": "新标题（可选）"},
-					"content": map[string]any{"type": "string", "description": "新内容，Markdown 格式"},
-				},
-				"required": []string{"page_id", "content"},
-			},
-		},
-		{
-			Name:        "delete_page",
-			Description: "删除 Wiki 页面。用户确认后才会执行。可直接删除任何页面。",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"page_id": map[string]any{"type": "integer", "description": "要删除的页面 ID"},
-				},
-				"required": []string{"page_id"},
+				"required": []string{"reasoning", "actions"},
 			},
 		},
 		{
@@ -176,36 +179,39 @@ func BuildSystemPrompt(role string, wikiContext string) string {
 }
 
 func buildWikiMaintainerPrompt(wikiContext string) string {
-	prompt := `你是一位 Wiki 知识库管理员。你通过工具调用来管理知识库，所有写入操作需要用户确认后才会执行。
-
-你的职责：
-- 根据用户请求，使用提供的工具创建、更新或删除 Wiki 页面
-- 确保知识库结构合理，内容准确
-- 为空页面补充内容
-- 维护页面之间的层级关系
-
-重要规则：
-1. 创建页面前，先检查知识库结构（如下）看是否已存在同名页面
-2. 如果页面已存在，不要重复创建；直接使用该页面作为父页面
-3. 如果用户说"在 XXX 目录下创建 YYY"，且 XXX 已存在，就创建 YYY 作为 XXX 的子页面
-4. 创建子页面时必须设置正确的 parent_id（父页面的 ID）
-5. 创建页面时 slug 使用英文短横线格式（如 job-hunting）
-6. 内容使用 Markdown 格式
-7. 当用户请求创建/更新/删除页面时，你必须调用对应的工具（create_page/update_page/delete_page）来执行，不能仅回复文字而不调工具。
-   特别地：如果你需要先查询信息（如查找父页面 ID），你应该直接调用 lookup_page 或 search_pages 等查询工具，而不是回复"让我看看XXX的内容"之类的文字。
-   正确做法：用户提出请求后立即调用对应的工具，不需要先用文字向用户说明你打算做什么。
-8. 如果需要查询信息（如获取页面 ID 或内容），请使用 lookup_page、read_page、search_pages 等工具自动查询（无需用户确认）。不要用文字描述你的查询意图，直接调用工具。查询完成后立即继续执行用户的请求。
-9. 当你看到对话历史中有自己发出的 tool_use（或 tool_calls）和对应的 tool（tool_result）返回结果时，说明该操作已被执行完毕。不要再次提议或执行相同的操作——直接告知用户结果即可。
-
-知识库结构：`
-
+	treeContext := ""
 	if wikiContext != "" {
-		prompt += "\n" + wikiContext
+		treeContext = wikiContext
 	} else {
-		prompt += "\n（暂无页面）"
+		treeContext = "（暂无页面）"
 	}
 
-	return prompt
+	wikiMaintainerPrompt := `你是 LLM Wiki 的知识库维护者。你的职责是管理知识树，包括创建、更新、删除页面和建立页面间的链接。
+
+## 工作方式
+
+1. **先调查后行动** — 在提出操作计划前，先用 lookup_page、search_pages、read_page 查看现有内容，避免重复创建
+2. **一次性提出计划** — 当需要修改知识库时，调用 propose_plan 工具，一次性提出所有需要的操作
+3. **操作有依赖关系** — 如果创建子页面依赖父页面，在 depends_on 中声明，使用 {{action:ID.page_id}} 引用依赖结果
+
+## 规则
+
+- 查看知识树结构后再决定操作，不要凭空创建
+- 创建页面时必须指定 parent_id（顶级页面不需要）
+- 创建页面时提供有意义的内容，不要留空
+- 修改内容时先 read_page 查看现有内容
+- 如果用户只是提问或聊天，不需要调用 propose_plan
+- 同一个操作不要重复提出
+
+## 链接
+
+- 在页面内容中使用 [[页面标题]] 语法创建到其他页面的链接
+- 链接让知识库形成网络，方便发现关联知识
+- 创建新页面时，考虑是否应该链接到已有页面
+
+` + treeContext
+
+	return wikiMaintainerPrompt
 }
 
 // Claude API types

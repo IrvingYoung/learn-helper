@@ -1,16 +1,16 @@
 package handler
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
-	"log"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
 	"os"
 	"regexp"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/net/html"
 	"learn-helper/internal/ai"
+	"learn-helper/internal/engine"
 	"learn-helper/internal/model"
 )
 
@@ -289,6 +290,8 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		ConversationID   int64           `json:"conversation_id"`
 		Message          string          `json:"message"`
 		ConfirmedActions []PendingAction `json:"confirmed_actions"`
+		PlanID           string          `json:"plan_id"`
+		FocusPageID      *int64          `json:"focus_page_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -320,6 +323,20 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	if req.Message != "" {
 		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
 			req.ConversationID, req.Message, config.Provider)
+	}
+
+	// Handle plan confirmation
+	if req.PlanID != "" {
+		eng := engine.NewExecutionEngine(h.db, h.queries)
+		report, err := eng.ExecutePlan(ctx, req.PlanID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("plan execution failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		reportJSON, _ := json.Marshal(report)
+		confirmContent := fmt.Sprintf("操作计划已执行完成：\n%s", string(reportJSON))
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
+			req.ConversationID, confirmContent, config.Provider)
 	}
 
 	// --- Common path: provider, load history, context, streaming ---
@@ -391,7 +408,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	// until it stops calling tools, requests user confirmation, or hits max iterations.
 
 	fullContent := &strings.Builder{}
-	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true, "websearch": true, "webfetch": true}
 	const maxIterations = 10
 	var pendingActions []PendingAction
 
@@ -450,13 +466,14 @@ reactLoop:
 			break reactLoop
 		}
 
-		// Separate auto-executed (read-only) tools from user-confirmation (write) tools
-		var autoCalls, writeCalls []ai.ToolCall
+		// Separate auto-executed tools from propose_plan
+		var autoCalls []ai.ToolCall
+		var planCall *ai.ToolCall
 		for _, tc := range toolCalls {
-			if autoTools[tc.Name] {
-				autoCalls = append(autoCalls, tc)
+			if tc.Name == "propose_plan" {
+				planCall = &tc
 			} else {
-				writeCalls = append(writeCalls, tc)
+				autoCalls = append(autoCalls, tc)
 			}
 		}
 
@@ -466,8 +483,9 @@ reactLoop:
 			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeText, Text: respContent})
 		}
 
-		// If write tools are present, this is the terminal iteration
-		if len(writeCalls) > 0 {
+		// If propose_plan is present, this is the terminal iteration
+		if planCall != nil {
+			// Add all tool_use blocks (auto + plan)
 			for _, tc := range autoCalls {
 				var input json.RawMessage
 				if tc.Input != "" {
@@ -477,15 +495,13 @@ reactLoop:
 					Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input,
 				})
 			}
-			for _, tc := range writeCalls {
-				var input json.RawMessage
-				if tc.Input != "" {
-					input = json.RawMessage(tc.Input)
-				}
-				blocks = append(blocks, ai.ContentBlock{
-					Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input,
-				})
+			var planInput json.RawMessage
+			if planCall.Input != "" {
+				planInput = json.RawMessage(planCall.Input)
 			}
+			blocks = append(blocks, ai.ContentBlock{
+				Type: ai.ContentTypeToolUse, ID: planCall.ID, Name: planCall.Name, Input: planInput,
+			})
 
 			if assistantContent, err := ai.ContentBlocksToJSON(blocks); err == nil {
 				aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: assistantContent})
@@ -500,8 +516,26 @@ reactLoop:
 				aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
 			}
 
-			pendingActions = h.toolCallsToPendingActions(writeCalls)
-			break reactLoop
+			// Create Plan from propose_plan call
+			plan, err := h.createPlanFromToolCall(req.ConversationID, planCall.Input)
+			if err != nil {
+				sseWrite(w, "error", fmt.Sprintf("create plan failed: %v", err), canFlush, flusher)
+				break reactLoop
+			}
+
+			// Save assistant message with plan info
+			planSummary := fmt.Sprintf("[操作计划] %s\n共 %d 个操作待确认。", plan.Reasoning, len(plan.Actions))
+			_, _ = h.db.ExecContext(ctx,
+				"INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)",
+				req.ConversationID, planSummary, config.Provider)
+
+			// Send plan to frontend via SSE meta event
+			metaData := map[string]any{
+				"plan": plan,
+			}
+			metaJSON, _ := json.Marshal(metaData)
+			sseWrite(w, "meta", string(metaJSON), canFlush, flusher)
+			break reactLoop // Exit loop — wait for user confirmation
 		}
 
 		// Only auto tools: add tool_use blocks, execute, stream results, and loop
@@ -683,6 +717,55 @@ func (h *AIHandler) buildWikiContext(ctx context.Context, targetPageID *int64) s
 		return "（知识库为空）"
 	}
 	return h.renderTreeContext(pages, "")
+}
+
+// createPlanFromToolCall creates a Plan from a propose_plan tool call input.
+func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (*model.Plan, error) {
+	var proposal struct {
+		Reasoning string `json:"reasoning"`
+		Actions   []struct {
+			ID        string         `json:"id"`
+			Type      string         `json:"type"`
+			Params    map[string]any `json:"params"`
+			DependsOn []string       `json:"depends_on"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal([]byte(input), &proposal); err != nil {
+		return nil, fmt.Errorf("parse propose_plan input: %w", err)
+	}
+
+	planID := fmt.Sprintf("plan-%d", time.Now().UnixNano())
+	now := time.Now().Format("2006-01-02 15:04:05")
+	plan := &model.Plan{
+		ID:             planID,
+		ConversationID: conversationID,
+		Reasoning:      proposal.Reasoning,
+		Status:         "pending",
+		CreatedAt:      now,
+	}
+
+	for i, a := range proposal.Actions {
+		paramsJSON, _ := json.Marshal(a.Params)
+		dependsOnJSON, _ := json.Marshal(a.DependsOn)
+		plan.Actions = append(plan.Actions, model.PlanAction{
+			ID:        a.ID,
+			PlanID:    planID,
+			Type:      a.Type,
+			Params:    string(paramsJSON),
+			DependsOn: string(dependsOnJSON),
+			Status:    "pending",
+			SortOrder: int64(i),
+			CreatedAt: now,
+		})
+	}
+
+	// Save to database using PlanHandler
+	planHandler := NewPlanHandler(h.db, h.queries, nil)
+	if err := planHandler.SavePlan(context.Background(), plan); err != nil {
+		return nil, fmt.Errorf("save plan: %w", err)
+	}
+
+	return plan, nil
 }
 
 func (h *AIHandler) toolCallsToPendingActions(toolCalls []ai.ToolCall) []PendingAction {

@@ -183,7 +183,7 @@ func (h *PlanHandler) loadPlan(ctx context.Context, planID string) (*model.Plan,
 }
 
 // savePlan saves a plan and its actions to the database within a transaction.
-func (h *PlanHandler) savePlan(ctx context.Context, p *model.Plan) error {
+func (h *PlanHandler) SavePlan(ctx context.Context, p *model.Plan) error {
 	tx, err := h.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
