@@ -271,24 +271,41 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get conversation role (needed early for confirmation response path)
+	var convRole string
+	h.db.QueryRowContext(ctx, `SELECT role FROM conversations WHERE id = ?`, req.ConversationID).Scan(&convRole)
+
+	// Execute confirmed actions and return confirmation — no new AI call
+	if len(req.ConfirmedActions) > 0 {
+		h.executeConfirmedActions(ctx, req.ConfirmedActions)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		flusher, canFlush := w.(http.Flusher)
+
+		confirmMsg := "✅ 操作已执行完成"
+		sseWrite(w, "content", confirmMsg, canFlush, flusher)
+
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
+			req.ConversationID, confirmMsg, config.Provider)
+		h.db.ExecContext(ctx, `UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, req.ConversationID)
+
+		if convRole == ai.RoleWikiMaintainer {
+			go h.updateOverviewPage()
+		}
+		return
+	}
+
 	provider, err := ai.NewProvider(ai.ProviderType(config.Provider), config.ApiKey, config.ModelName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid provider: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	// Execute confirmed actions
-	if len(req.ConfirmedActions) > 0 {
-		h.executeConfirmedActions(ctx, req.ConfirmedActions)
-	}
-
 	// Save user message
 	h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
 		req.ConversationID, req.Message, config.Provider)
-
-	// Get conversation role
-	var convRole string
-	h.db.QueryRowContext(ctx, `SELECT role FROM conversations WHERE id = ?`, req.ConversationID).Scan(&convRole)
 
 	// Load history
 	rows, err := h.db.QueryContext(ctx, `SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at`, req.ConversationID)
@@ -307,7 +324,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build context and prompt
-	wikiContext := h.buildWikiContext(ctx)
+	wikiContext := h.buildWikiContext(ctx, nil)
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
 
 	chatReq := ai.ChatRequest{
@@ -327,46 +344,131 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	flusher, canFlush := w.(http.Flusher)
 
-	ch, err := provider.StreamChat(ctx, chatReq)
+	// First: non-streaming call to detect lookup_page (read-only) tool calls
+	resp, err := provider.Chat(ctx, chatReq)
 	if err != nil {
 		sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
 		return
 	}
 
-	var fullContent strings.Builder
-	var toolCalls []*ai.ToolCall
+	// Check if the AI called lookup_page (read-only tool that doesn't need user confirmation)
+	hasLookup := false
+	var otherToolCalls []ai.ToolCall
+	for _, tc := range resp.ToolCalls {
+		if tc.Name == "lookup_page" {
+			hasLookup = true
+		} else {
+			otherToolCalls = append(otherToolCalls, tc)
+		}
+	}
 
-	for chunk := range ch {
-		if chunk.Content != "" {
-			fullContent.WriteString(chunk.Content)
-			sseWrite(w, "content", chunk.Content, canFlush, flusher)
+	if hasLookup && convRole == ai.RoleWikiMaintainer {
+		// Add the first assistant response to conversation history
+		var firstContentBuf strings.Builder
+		firstContentBuf.WriteString(resp.Content)
+		if len(otherToolCalls) > 0 {
+			firstContentBuf.WriteString("\n[操作建议]\n")
+			for _, tc := range otherToolCalls {
+				firstContentBuf.WriteString(fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input))
+			}
 		}
-		if chunk.ToolCall != nil {
-			toolCalls = append(toolCalls, chunk.ToolCall)
+		if firstContentBuf.Len() > 0 {
+			aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: firstContentBuf.String()})
 		}
-		if chunk.Done {
+
+		// Execute each lookup_page call and inject result as a user message
+		for _, tc := range resp.ToolCalls {
+			if tc.Name != "lookup_page" {
+				continue
+			}
+			aiMessages = append(aiMessages, ai.Message{Role: "user", Content: h.executeLookupPage(ctx, tc)})
+		}
+
+		// Streaming follow-up call with lookup results injected
+		chatReq.Messages = aiMessages
+		ch, err := provider.StreamChat(ctx, chatReq)
+		if err != nil {
+			sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
+			return
+		}
+
+		var fullContent strings.Builder
+		var toolCalls []*ai.ToolCall
+
+		for chunk := range ch {
+			if chunk.Content != "" {
+				fullContent.WriteString(chunk.Content)
+				sseWrite(w, "content", chunk.Content, canFlush, flusher)
+			}
+			if chunk.ToolCall != nil {
+				toolCalls = append(toolCalls, chunk.ToolCall)
+			}
+			if chunk.Done {
+				if len(toolCalls) > 0 {
+					pendingActions := h.toolCallsToPendingActions(toolCalls)
+					metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
+					sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+				}
+				sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
+			}
+		}
+
+		// Save assistant message
+		content := fullContent.String()
+		if content != "" || len(toolCalls) > 0 {
+			savedContent := content
 			if len(toolCalls) > 0 {
-				pendingActions := h.toolCallsToPendingActions(toolCalls)
-				metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
-				sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+				savedContent += "\n[操作建议]\n"
+				for _, tc := range toolCalls {
+					savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+				}
 			}
-			sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
+			h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
+				req.ConversationID, savedContent, config.Provider)
 		}
-	}
+	} else {
+			// No lookup_page — stream the response normally
+			ch, err := provider.StreamChat(ctx, chatReq)
+			if err != nil {
+				sseWrite(w, "error", fmt.Sprintf("AI error: %v", err), canFlush, flusher)
+				return
+			}
 
-	// Save assistant message
-	content := fullContent.String()
-	if content != "" || len(toolCalls) > 0 {
-		savedContent := content
-		if len(toolCalls) > 0 {
-			savedContent += "\n[操作建议]\n"
-			for _, tc := range toolCalls {
-				savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+			var fullContent strings.Builder
+			var toolCalls []*ai.ToolCall
+
+			for chunk := range ch {
+				if chunk.Content != "" {
+					fullContent.WriteString(chunk.Content)
+					sseWrite(w, "content", chunk.Content, canFlush, flusher)
+				}
+				if chunk.ToolCall != nil {
+					toolCalls = append(toolCalls, chunk.ToolCall)
+				}
+				if chunk.Done {
+					if len(toolCalls) > 0 {
+						pendingActions := h.toolCallsToPendingActions(toolCalls)
+						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
+						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+					}
+					sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
+				}
+			}
+
+			// Save assistant message
+			content := fullContent.String()
+			if content != "" || len(toolCalls) > 0 {
+				savedContent := content
+				if len(toolCalls) > 0 {
+					savedContent += "\n[操作建议]\n"
+					for _, tc := range toolCalls {
+						savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+					}
+				}
+				h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
+					req.ConversationID, savedContent, config.Provider)
 			}
 		}
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-			req.ConversationID, savedContent, config.Provider)
-	}
 
 	h.db.ExecContext(ctx, `UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, req.ConversationID)
 
@@ -420,10 +522,9 @@ func (h *AIHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 // --- Helpers ---
 
-func (h *AIHandler) buildWikiContext(ctx context.Context) string {
-	pages, err := h.queries.GetWikiPageTree(ctx)
-	if err != nil || len(pages) == 0 {
-		return "（知识库为空）"
+func (h *AIHandler) renderTreeContext(pages []model.GetWikiPageTreeRow, header string) string {
+	if len(pages) == 0 {
+		return ""
 	}
 
 	type node struct {
@@ -447,6 +548,9 @@ func (h *AIHandler) buildWikiContext(ctx context.Context) string {
 	}
 
 	var b strings.Builder
+	if header != "" {
+		b.WriteString(fmt.Sprintf("【%s】的子页面:\n", header))
+	}
 	var render func(ids []int64, indent string)
 	render = func(ids []int64, indent string) {
 		for _, id := range ids {
@@ -455,7 +559,7 @@ func (h *AIHandler) buildWikiContext(ctx context.Context) string {
 			if n.page.ContentStatus == "published" {
 				status = "有内容"
 			}
-			b.WriteString(fmt.Sprintf("%s- [%d] %s (%s)\n", indent, n.page.ID, n.page.Title, status))
+			b.WriteString(fmt.Sprintf("%s- [ID=%d] %s (%s)\n", indent, n.page.ID, n.page.Title, status))
 			if len(n.children) > 0 {
 				render(n.children, indent+"  ")
 			}
@@ -463,6 +567,42 @@ func (h *AIHandler) buildWikiContext(ctx context.Context) string {
 	}
 	render(roots, "")
 	return b.String()
+}
+
+func (h *AIHandler) buildWikiContext(ctx context.Context, targetPageID *int64) string {
+	if targetPageID != nil {
+		// Subtree mode: only load the target page and its descendants
+		parentPage, err := h.queries.GetWikiPageByID(ctx, *targetPageID)
+		if err != nil {
+			return fmt.Sprintf("（未找到目标页面 ID=%d）", *targetPageID)
+		}
+		pages, err := h.queries.GetSubtreePages(ctx, sql.NullString{String: parentPage.Path, Valid: true})
+		if err != nil || len(pages) == 0 {
+			return fmt.Sprintf("（页面「%s」下没有子节点）", parentPage.Title)
+		}
+		// Convert to GetWikiPageTreeRow for the render helper (identical fields)
+		treeRows := make([]model.GetWikiPageTreeRow, len(pages))
+		for i, p := range pages {
+			treeRows[i] = model.GetWikiPageTreeRow{
+				ID:            p.ID,
+				Title:         p.Title,
+				Slug:          p.Slug,
+				PageType:      p.PageType,
+				ContentStatus: p.ContentStatus,
+				ParentID:      p.ParentID,
+				SortOrder:     p.SortOrder,
+				Path:          p.Path,
+			}
+		}
+		return h.renderTreeContext(treeRows, parentPage.Title)
+	}
+
+	// Existing full-tree behavior
+	pages, err := h.queries.GetWikiPageTree(ctx)
+	if err != nil || len(pages) == 0 {
+		return "（知识库为空）"
+	}
+	return h.renderTreeContext(pages, "")
 }
 
 func (h *AIHandler) toolCallsToPendingActions(toolCalls []*ai.ToolCall) []PendingAction {
@@ -570,6 +710,35 @@ func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []Pendi
 			h.queries.DeleteWikiPage(ctx, int64(pageID))
 		}
 	}
+}
+
+func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) string {
+	var details struct {
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(tc.Input), &details); err != nil || details.Title == "" {
+		return "[系统] lookup_page 执行失败：参数无效"
+	}
+
+	page, err := h.queries.GetWikiPageByTitle(ctx, details.Title)
+	if err != nil {
+		return fmt.Sprintf("[系统] lookup_page 未找到页面「%s」", details.Title)
+	}
+
+	result, _ := json.Marshal(map[string]any{
+		"id":             page.ID,
+		"title":          page.Title,
+		"slug":           page.Slug,
+		"content_status": page.ContentStatus,
+	})
+
+	// Build subtree context for this page
+	subtreeContext := h.buildWikiContext(ctx, &page.ID)
+
+	return fmt.Sprintf(
+		"[系统] 工具 lookup_page 已执行完毕，查询「%s」结果：%s\n\n%s",
+		details.Title, string(result), subtreeContext,
+	)
 }
 
 func (h *AIHandler) updateOverviewPage() {
