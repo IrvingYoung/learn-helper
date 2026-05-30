@@ -23,6 +23,8 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showList, setShowList] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [agentStatus, setAgentStatus] = useState<{
@@ -32,6 +34,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
   } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,6 +61,28 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
       }
     }
   }, [conversations.length > 0]);
+
+  useEffect(() => {
+    if (!showList && !showMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (listRef.current && !listRef.current.contains(e.target as Node)) {
+        setShowList(false);
+        setShowMenu(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowList(false);
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showList, showMenu]);
 
   async function loadConversations() {
     try {
@@ -221,59 +246,130 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
 
   return (
     <div className="flex flex-col h-full bg-th-bg-secondary">
-      {/* Header */}
-      <div className="flex items-center gap-2 p-3 border-b border-th-border bg-th-bg-tertiary shrink-0">
-        <select
-          className="flex-1 text-sm border border-th-input-border rounded px-2 py-1.5 bg-th-input-bg text-th-text-primary"
-          value={activeConv?.id ?? ""}
-          onChange={(e) => {
-            const conv = conversations.find((c) => c.id === Number(e.target.value));
-            if (conv) switchToConversation(conv);
-          }}
-        >
-          <option value="" disabled>
-            选择会话...
-          </option>
-          {conversations.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.title || `会话 ${c.id}`} ({c.message_count})
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() => setShowNewDialog(true)}
-          className="p-1.5 text-th-text-muted hover:text-th-accent hover:bg-th-accent-bg rounded"
-          title="新建会话"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-        {activeConv && (
-          <>
-            <button
-              onClick={() => {
-                setTitleDraft(activeConv.title || "");
-                setEditingTitle(true);
-              }}
-              className="p-1.5 text-th-text-muted hover:text-th-success hover:bg-th-accent-bg rounded"
-              title="重命名"
+      {/* Header - conversation picker */}
+      <div className="relative shrink-0" ref={listRef}>
+        <div className="flex items-center gap-1.5 p-2 border-b border-th-border bg-th-bg-tertiary">
+          <button
+            onClick={() => setShowList(!showList)}
+            className="flex-1 flex items-center gap-2 min-w-0 px-2 py-1.5 rounded-md hover:bg-th-bg-secondary transition-colors text-left"
+          >
+            <svg className="w-4 h-4 shrink-0 text-th-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span className="text-sm truncate text-th-text-primary font-medium">
+              {activeConv?.title || '选择会话...'}
+            </span>
+            <svg
+              className={"w-3.5 h-3.5 shrink-0 text-th-text-muted transition-transform duration-200" + (showList ? ' rotate-180' : '')}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-            <button
-              onClick={handleDeleteConversation}
-              className="p-1.5 text-th-text-muted hover:text-th-error hover:bg-th-accent-bg rounded"
-              title="删除会话"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          </>
-        )}
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {activeConv && (
+            <span className="text-xs text-th-text-muted bg-th-bg-secondary px-1.5 py-0.5 rounded shrink-0 font-mono tabular-nums">
+              {activeConv.message_count}
+            </span>
+          )}
+
+          <button
+            onClick={() => { setShowNewDialog(true); setShowList(false); }}
+            className="p-1.5 text-th-text-muted hover:text-th-accent hover:bg-th-accent-bg rounded-md transition-all duration-150 active:scale-90"
+            title="新建会话"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+
+          {activeConv && (
+            <div className="relative">
+              <button
+                onClick={() => setShowMenu(!showMenu)}
+                className={"p-1.5 rounded-md transition-all duration-150 active:scale-90 " + (showMenu ? 'text-th-accent bg-th-accent-bg' : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-bg-secondary')}
+                title="更多"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
+              </button>
+
+              {showMenu && (
+                <div className="absolute right-0 top-full mt-1 w-36 bg-th-bg-secondary border border-th-border rounded-lg shadow-th-lg py-1 z-50">
+                  <button
+                    onClick={() => {
+                      setTitleDraft(activeConv.title || "");
+                      setEditingTitle(true);
+                      setShowMenu(false);
+                    }}
+                    className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-th-text-primary hover:bg-th-bg-tertiary transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    重命名
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      handleDeleteConversation();
+                    }}
+                    className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-th-error hover:bg-th-bg-tertiary transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    删除
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Conversation list dropdown */}
+        <div
+          className={"overflow-hidden transition-all duration-200 ease-in-out " + (showList ? 'max-h-80 border-b border-th-border' : 'max-h-0')}
+        >
+          <div className="bg-th-bg-secondary">
+            {conversations.length === 0 ? (
+              <div className="px-4 py-8 text-center text-th-text-muted text-sm">
+                暂无会话
+              </div>
+            ) : (
+              <div className="py-1 max-h-64 overflow-y-auto custom-scroll">
+                {conversations.map((conv) => {
+                  const isActive = conv.id === activeConv?.id;
+                  return (
+                    <button
+                      key={conv.id}
+                      onClick={() => {
+                        switchToConversation(conv);
+                        setShowList(false);
+                      }}
+                      className={"flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors " + (isActive ? 'bg-th-accent-bg' : 'hover:bg-th-bg-tertiary')}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className={"text-sm truncate " + (isActive ? 'text-th-accent font-medium' : 'text-th-text-primary')}>
+                          {conv.title || '会话 ' + conv.id}
+                        </div>
+                        <div className="text-xs text-th-text-muted mt-0.5">
+                          {conv.message_count} 条消息
+                        </div>
+                      </div>
+                      {isActive && (
+                        <svg className="w-4 h-4 shrink-0 text-th-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Title edit */}
@@ -349,18 +445,21 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scroll">
         {!activeConv && (
-          <div className="text-center text-th-text-muted mt-10">
-            <p className="text-lg mb-2">没有活动会话</p>
-            <p className="text-sm">点击 + 新建一个 AI 对话</p>
+          <div className="text-center text-th-text-muted mt-12 space-y-3">
+            <svg className="w-10 h-10 mx-auto opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <p className="text-base font-medium">没有活动会话</p>
+            <p className="text-sm opacity-60">点击 + 新建一个 AI 对话</p>
           </div>
         )}
         {messages.map((msg, i) => (
           <div key={msg.id || i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
                 msg.role === "user"
-                  ? "bg-th-user-bubble text-th-user-bubble-text"
-                  : "bg-th-assistant-bubble text-th-assistant-bubble-text"
+                  ? "bg-th-user-bubble text-th-user-bubble-text rounded-tr-md"
+                  : "bg-th-assistant-bubble text-th-assistant-bubble-text rounded-tl-md"
               }`}
             >
               {msg.role === "assistant" ? (
@@ -395,7 +494,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
         <div className="flex gap-2">
           <input
             type="text"
-            className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
+            className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/40 focus:border-th-accent transition-all duration-200"
             placeholder={activeConv ? "输入消息..." : "请先选择或新建会话"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -410,7 +509,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
           <button
             onClick={() => handleSend()}
             disabled={!activeConv || loading || !input.trim()}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-th-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150"
           >
             发送
           </button>

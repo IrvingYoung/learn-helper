@@ -36,9 +36,12 @@ export function PageViewer({ page, collapsed }: PageViewerProps) {
   if (!page) {
     return (
       <div className="h-full flex items-center justify-center bg-th-bg-secondary">
-        <div className="text-center text-th-text-muted">
-          <p className="text-lg mb-2">选择一个页面</p>
-          <p className="text-sm">点击左侧知识树查看内容</p>
+        <div className="text-center text-th-text-muted space-y-3">
+          <svg className="w-10 h-10 mx-auto opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <p className="text-base font-medium">选择一个页面</p>
+          <p className="text-sm opacity-60">点击左侧知识树查看内容</p>
         </div>
       </div>
     );
@@ -50,20 +53,22 @@ export function PageViewer({ page, collapsed }: PageViewerProps) {
     <div className="h-full overflow-y-auto bg-th-bg-secondary custom-scroll">
       <div className="p-6 max-w-3xl">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-th-text-primary font-display">{page.title}</h1>
-          <div className="flex items-center gap-2 mt-2 text-sm">
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${status.bg} ${status.text} ${status.border}`}>
-              <span className={`w-1.5 h-1.5 rounded-full mr-1 ${status.dot}`} />
+          <h1 className="text-2xl font-bold text-th-text-primary font-display leading-tight">{page.title}</h1>
+          <div className="flex items-center gap-2 mt-3 text-sm">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${status.bg} ${status.text} ${status.border}`}>
+              <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${status.dot}`} />
               {status.label}
             </span>
             {page.page_type !== 'entity' && (
-              <span className="px-2 py-0.5 rounded bg-th-accent-bg text-th-accent text-xs">
+              <span className="px-2.5 py-0.5 rounded bg-th-accent-bg text-th-accent text-xs font-medium">
                 {page.page_type}
               </span>
             )}
           </div>
         </div>
-        <MarkdownContent content={page.content} />
+        <div className="prose-custom">
+          <MarkdownContent content={page.content} />
+        </div>
       </div>
     </div>
   );

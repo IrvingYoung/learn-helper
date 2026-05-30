@@ -4,3 +4,45 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* === Global polish === */
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Orphan word prevention for headings */
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+}
+
+p, li {
+  text-wrap: pretty;
+}
+
+/* Better selection color */
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+/* Focus ring consistency */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Subtle ambient gradient overlay — breaks flat vector feel */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  pointer-events: none;
+  opacity: 0.06;
+  background: radial-gradient(ellipse at 20% 50%, var(--accent) 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 20%, var(--accent-light) 0%, transparent 50%),
+              radial-gradient(ellipse at 60% 80%, var(--accent) 0%, transparent 50%);
+}

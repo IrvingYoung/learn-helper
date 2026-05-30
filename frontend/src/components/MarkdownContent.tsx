@@ -73,13 +73,13 @@ export function MarkdownContent({ content, className = '' }: MarkdownContentProp
             return <blockquote className="border-l-4 border-th-accent bg-th-accent-bg pl-4 py-1 my-2 text-sm text-th-text-secondary">{children}</blockquote>
           },
           h1({ children }) {
-            return <h1 className="text-xl font-bold mt-4 mb-2 text-th-text-primary">{children}</h1>
+            return <h1 className="text-2xl font-bold mt-6 mb-3 text-th-text-primary font-display leading-tight">{children}</h1>
           },
           h2({ children }) {
-            return <h2 className="text-lg font-bold mt-3 mb-1.5 text-th-text-primary">{children}</h2>
+            return <h2 className="text-xl font-bold mt-5 mb-2 text-th-text-primary font-display leading-snug">{children}</h2>
           },
           h3({ children }) {
-            return <h3 className="text-base font-semibold mt-2 mb-1 text-th-text-primary">{children}</h3>
+            return <h3 className="text-base font-semibold mt-4 mb-1.5 text-th-text-primary">{children}</h3>
           },
           ul({ children }) {
             return <ul className="list-disc list-inside space-y-0.5 my-1 text-th-text-primary">{children}</ul>

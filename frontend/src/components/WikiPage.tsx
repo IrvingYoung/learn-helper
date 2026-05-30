@@ -70,20 +70,20 @@ export function WikiPageLayout() {
   return (
     <div className="h-screen flex flex-col bg-th-bg-primary">
       {/* Header */}
-      <header className="bg-th-bg-secondary border-b border-th-border h-12 flex items-center px-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-th-accent rounded-md flex items-center justify-center">
+      <header className="bg-th-bg-secondary/80 backdrop-blur-sm border-b border-th-border h-12 flex items-center px-4 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 bg-th-accent rounded-lg flex items-center justify-center shadow-sm">
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 19.477 5.754 20 7.5 20s3.332-.477 4.5-1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 19.477 18.247 20 16.5 20a3.5 3.5 0 01-3.5-3.5" />
             </svg>
           </div>
-          <h1 className="text-base font-semibold text-th-text-primary font-display">LLM Wiki</h1>
+          <h1 className="text-base font-semibold text-th-text-primary font-display tracking-tight">LLM Wiki</h1>
         </div>
         <div className="flex-1" />
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <button
             onClick={toggleTheme}
-            className="p-1.5 rounded text-sm text-th-text-muted hover:text-th-text-secondary hover:bg-th-bg-tertiary transition-colors"
+            className="p-1.5 rounded text-sm text-th-text-muted hover:text-th-text-secondary hover:bg-th-bg-tertiary transition-all duration-150 active:scale-90"
             title={theme === 'warm' ? '切换深色主题' : '切换暖色主题'}
           >
             {theme === 'warm' ? (
@@ -196,7 +196,7 @@ export function WikiPageLayout() {
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSettings(false)}>
-          <div className="bg-th-bg-secondary rounded-lg shadow-th w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-th-bg-secondary rounded-lg shadow-th-md w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-th-text-primary">AI 模型配置</h2>
               <button onClick={() => setShowSettings(false)} className="text-th-text-muted hover:text-th-text-secondary">
@@ -214,7 +214,7 @@ export function WikiPageLayout() {
                     setProvider(e.target.value);
                     setModel(e.target.value === 'deepseek' ? 'deepseek-v4-flash' : 'claude-sonnet-4-7-20250514');
                   }}
-                  className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm"
+                  className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
                 >
                   <option value="claude">Claude</option>
                   <option value="deepseek">DeepSeek</option>
@@ -225,7 +225,7 @@ export function WikiPageLayout() {
                 <select
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm"
+                  className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
                 >
                   {provider === 'claude' ? (
                     <>
@@ -248,7 +248,7 @@ export function WikiPageLayout() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-ant-...'}
-                  className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm"
+                  className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
                 />
               </div>
               <button

@@ -35,6 +35,8 @@ export default {
       },
       boxShadow: {
         'th': 'var(--shadow)',
+        'th-md': 'var(--shadow-md)',
+        'th-lg': 'var(--shadow-lg)',
       },
     },
   },

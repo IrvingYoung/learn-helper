@@ -24,14 +24,14 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="max-w-xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6">设置</h1>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold mb-4">AI 模型配置</h2>
+    <div className="min-h-screen bg-th-bg-primary">
+      <div className="p-8 max-w-xl mx-auto">
+        <h1 className="text-2xl font-bold text-th-text-primary mb-6">设置</h1>
+        <div className="bg-th-bg-secondary rounded-lg border border-th-border shadow-th p-6">
+          <h2 className="text-lg font-semibold text-th-text-primary mb-4">AI 模型配置</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+              <label className="block text-sm font-medium text-th-text-secondary mb-1">Provider</label>
               <select
                 value={provider}
                 onChange={(e) => {
@@ -42,18 +42,18 @@ export default function SettingsPage() {
                     setModel('claude-sonnet-4-7-20250514')
                   }
                 }}
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
               >
                 <option value="claude">Claude</option>
                 <option value="deepseek">DeepSeek</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+              <label className="block text-sm font-medium text-th-text-secondary mb-1">Model</label>
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
               >
                 {provider === 'claude' ? (
                   <>
@@ -70,22 +70,23 @@ export default function SettingsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+              <label className="block text-sm font-medium text-th-text-secondary mb-1">API Key</label>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-ant-...'}
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent"
               />
             </div>
             <button
               onClick={handleSave}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              disabled={!apiKey.trim()}
+              className="px-4 py-2 bg-th-accent text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-all active:scale-[0.98]"
             >
               保存配置
             </button>
-            {saved && <span className="ml-3 text-green-600 text-sm">配置已保存</span>}
+            {saved && <span className="ml-3 text-th-success text-sm animate-pulse">配置已保存</span>}
           </div>
         </div>
       </div>
