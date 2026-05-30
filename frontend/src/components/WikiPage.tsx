@@ -58,7 +58,7 @@ export function WikiPageLayout() {
   const { theme, toggleTheme } = useTheme();
   const [treeVersion, setTreeVersion] = useState(0);
 
-  const { data: tree, mutate: mutateTree } = useSWR(['wiki-tree', treeVersion], fetchWikiTree);
+  const { data: tree } = useSWR(['wiki-tree', treeVersion], fetchWikiTree);
   const { data: page } = useSWR(
     selectedSlug ? `wiki-page-${selectedSlug}` : null,
     () => selectedSlug ? fetchWikiPage(selectedSlug) : null
