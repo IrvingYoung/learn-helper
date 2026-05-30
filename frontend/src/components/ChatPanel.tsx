@@ -284,7 +284,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleRenameTitle();
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) handleRenameTitle();
               if (e.key === "Escape") setEditingTitle(false);
             }}
             autoFocus
@@ -308,7 +308,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreateConversation(titleDraft || undefined);
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) handleCreateConversation(titleDraft || undefined);
               if (e.key === "Escape") { setShowNewDialog(false); setTitleDraft(""); }
             }}
             autoFocus
@@ -400,7 +400,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 handleSend();
               }
