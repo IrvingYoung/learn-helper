@@ -414,6 +414,21 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	flusher, canFlush := w.(http.Flusher)
 
+	// Inject current page as user message for visibility (supplements the system prompt)
+	if req.CurrentSlug != "" {
+		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
+		if err == nil {
+			contextMsg := fmt.Sprintf(
+				"[系统信息] 当前页面：%s (ID: %d)\n当用户提到「这个页面」或「当前页面」时，即指此页面。",
+				page.Title, page.ID,
+			)
+			aiMessages = append(aiMessages, ai.Message{Role: "user", Content: contextMsg})
+			log.Printf("[AIChat] injected current page as user message: %s", page.Title)
+		} else {
+			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
+		}
+	}
+
 	// Build context and prompt
 	// When current page context is active, use full tree (not subtree via FocusPageID)
 	var focusID *int64 = req.FocusPageID
