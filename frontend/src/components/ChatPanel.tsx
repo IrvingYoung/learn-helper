@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import type { Conversation, ConversationMessage, PendingAction } from "../types";
+import type { Conversation, ConversationMessage, PendingAction, Plan } from "../types";
 import {
   listConversations,
   createConversation,
@@ -7,6 +7,8 @@ import {
   deleteConversation,
   getConversationMessages,
   streamChat,
+  confirmPlan,
+  rejectPlan,
 } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -14,9 +16,11 @@ const STORAGE_KEY = "llm-wiki-active-conversation-id";
 
 interface ChatPanelProps {
   onPageChanged?: () => void;
+  onPlanCreated?: (plan: Plan) => void;
+  focusPageId?: number | null;
 }
 
-export function ChatPanel({ onPageChanged }: ChatPanelProps) {
+export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPanelProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -32,6 +36,8 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
     maxSteps: number;
     running: boolean;
   } | null>(null);
+  const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [confirmingPlan, setConfirmingPlan] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -141,7 +147,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
     }
   }
 
-  async function handleSend(confirmedActions?: PendingAction[]) {
+  async function handleSend(confirmedActions?: PendingAction[], planId?: string) {
     if (!activeConv || loading) return;
 
     const userContent = input.trim();
@@ -184,6 +190,8 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
           role: "wiki_maintainer",
           context_type: "wiki",
           confirmed_actions: confirmedActions,
+          plan_id: planId,
+          focus_page_id: focusPageId,
         },
         (content) => {
           fullContent += content;
@@ -200,11 +208,25 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
           if (meta.conversation_id) {
             newConvId = meta.conversation_id;
           }
+          // Handle plan from AI
+          if (meta.plan) {
+            setActivePlan(meta.plan);
+            setMessages((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last && last.role === "assistant") {
+                updated[updated.length - 1] = { ...last, plan: meta.plan };
+              }
+              return updated;
+            });
+            onPlanCreated?.(meta.plan);
+          }
+          // Keep backward compat for pending_actions
           if (meta.pending_actions) {
             setMessages((prev) => {
               const updated = [...prev];
               const last = updated[updated.length - 1];
-              if (last.role === "assistant") {
+              if (last && last.role === "assistant") {
                 updated[updated.length - 1] = { ...last, pending_actions: meta.pending_actions };
               }
               return updated;
@@ -244,6 +266,30 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
     handleSend(actions);
   }
 
+  async function handleConfirmPlan(planId: string) {
+    if (!activePlan) return;
+    setConfirmingPlan(true);
+    try {
+      await confirmPlan(planId);
+      setActivePlan(null);
+      // Refresh tree after plan execution
+      onPageChanged?.();
+    } catch (err) {
+      console.error("Plan confirmation failed:", err);
+    } finally {
+      setConfirmingPlan(false);
+    }
+  }
+
+  async function handleRejectPlan(planId: string) {
+    try {
+      await rejectPlan(planId);
+      setActivePlan(null);
+    } catch (err) {
+      console.error("Plan rejection failed:", err);
+    }
+  }
+
   const renderedMessages = useMemo(() =>
     messages.map((msg, i) => (
       <div key={msg.id || i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -258,6 +304,35 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             <MarkdownContent content={msg.content} />
           ) : (
             <span className="whitespace-pre-wrap">{msg.content}</span>
+          )}
+          {msg.plan && (
+            <div className="border border-th-accent/30 bg-th-accent/5 rounded-lg p-3 mt-3">
+              <div className="text-sm text-th-text">
+                {"已生成操作计划："}
+                {msg.plan.reasoning.length > 100
+                  ? msg.plan.reasoning.slice(0, 100) + "..."
+                  : msg.plan.reasoning}
+              </div>
+              <div className="text-xs text-th-muted mt-1">
+                {msg.plan.actions.length} 个操作 · 请在右侧查看详情
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={() => handleConfirmPlan(msg.plan!.id)}
+                  disabled={confirmingPlan}
+                  className="text-xs bg-th-accent text-white px-3 py-1 rounded hover:opacity-90 disabled:opacity-50"
+                >
+                  确认执行
+                </button>
+                <button
+                  onClick={() => handleRejectPlan(msg.plan!.id)}
+                  disabled={confirmingPlan}
+                  className="text-xs border border-th-separator text-th-muted px-3 py-1 rounded hover:opacity-90 disabled:opacity-50"
+                >
+                  拒绝
+                </button>
+              </div>
+            </div>
           )}
           {msg.pending_actions && msg.pending_actions.length > 0 && (
             <div className="mt-2 pt-2 border-t border-th-border space-y-1">
@@ -278,7 +353,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
         </div>
       </div>
     )),
-    [messages, loading]
+    [messages, loading, confirmingPlan]
   );
 
 
@@ -510,11 +585,11 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
                 handleSend();
               }
             }}
-            disabled={!activeConv || loading}
+            disabled={!activeConv || loading || !!activePlan}
           />
           <button
             onClick={() => handleSend()}
-            disabled={!activeConv || loading || !input.trim()}
+            disabled={!activeConv || loading || !input.trim() || !!activePlan}
             className="px-3 rounded-xl text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150 flex items-center justify-center"
           >
             {loading ? (

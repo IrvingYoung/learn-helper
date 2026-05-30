@@ -83,7 +83,7 @@ export interface ChatRequest {
 export async function streamChat(
   req: ChatRequest,
   onChunk: (content: string) => void,
-  onMeta: (data: { conversation_id?: number; pending_actions?: PendingAction[] }) => void,
+  onMeta: (data: { conversation_id?: number; pending_actions?: PendingAction[]; plan?: Plan }) => void,
   onStatus?: (data: { step: number; max_steps: number; status: string }) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/ai/chat`, {
