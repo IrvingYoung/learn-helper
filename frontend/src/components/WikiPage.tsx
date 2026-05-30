@@ -237,7 +237,7 @@ export function WikiPageLayout() {
 
         {/* Center: Chat */}
         <Panel id="center" minSize={300}>
-          <ChatPanel ref={chatPanelRef} onPageChanged={handlePageChanged} onPlanCreated={handlePlanCreated} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? undefined} currentPageTitle={selectedPageInfo.title} />
+          <ChatPanel ref={chatPanelRef} onPageChanged={handlePageChanged} onPlanCreated={handlePlanCreated} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? displayPage?.slug ?? undefined} currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined} />
         </Panel>
 
         <Separator />

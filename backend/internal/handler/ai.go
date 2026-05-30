@@ -414,17 +414,12 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	// Build context and prompt
 	wikiContext := h.buildWikiContext(ctx, req.FocusPageID)
 	if req.CurrentSlug != "" {
-		pages, err := h.queries.GetWikiPageTree(ctx)
+		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
 		if err == nil {
-			for _, p := range pages {
-				if p.Slug == req.CurrentSlug && p.PageType != "overview" {
-					wikiContext += fmt.Sprintf(
-						"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n",
-						p.Title, p.Slug, p.ID,
-					)
-					break
-				}
-			}
+			wikiContext += fmt.Sprintf(
+				"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n",
+				page.Title, page.Slug, page.ID,
+			)
 		}
 	}
 	if req.SelectedText != "" {
