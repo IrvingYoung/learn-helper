@@ -415,7 +415,12 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	flusher, canFlush := w.(http.Flusher)
 
 	// Build context and prompt
-	wikiContext := h.buildWikiContext(ctx, req.FocusPageID)
+	// When current page context is active, use full tree (not subtree via FocusPageID)
+	var focusID *int64 = req.FocusPageID
+	if req.CurrentSlug != "" {
+		focusID = nil
+	}
+	wikiContext := h.buildWikiContext(ctx, focusID)
 	if req.CurrentSlug != "" {
 		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
 		if err == nil {
