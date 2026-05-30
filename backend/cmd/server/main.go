@@ -69,10 +69,12 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'tool')),
     content TEXT NOT NULL,
     model_provider TEXT,
     token_count INTEGER,
+    tool_call_id TEXT,
+    tool_name TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -95,7 +97,6 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
     content TEXT NOT NULL DEFAULT '',
     tags TEXT DEFAULT '[]',
     parent_id INTEGER REFERENCES wiki_pages(id),
-    path TEXT NOT NULL DEFAULT '',
     content_status TEXT NOT NULL DEFAULT 'empty',
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -104,7 +105,6 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
 
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
-CREATE INDEX IF NOT EXISTS idx_wiki_pages_path ON wiki_pages(path);
 `
 
 func main() {
@@ -122,10 +122,6 @@ func main() {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		log.Fatalf("Failed to initialize schema: %v", err)
 	}
-
-	// Add path column for existing databases (safe to ignore if already exists)
-	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN path TEXT NOT NULL DEFAULT ''`)
-	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_pages_path ON wiki_pages(path)`)
 
 	db.Exec(`INSERT OR IGNORE INTO wiki_pages (title, slug, page_type, content, content_status, sort_order) VALUES ('概览', 'overview', 'overview', '# 知识库概览\n\n欢迎使用 LLM Wiki！\n\n通过与 AI 对话来构建你的知识库。试试说：\n\n- "我要学 Go 后端"\n- "总结一下 Redis 的核心数据结构"\n- "帮我梳理数据库索引的知识"', 'published', 0)`)
 

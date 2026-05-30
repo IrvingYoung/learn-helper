@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type ClaudeProvider struct {
@@ -29,7 +30,7 @@ func (p *ClaudeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 
 	messages := make([]claudeMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, claudeMessage{Role: m.Role, Content: m.Content})
+		messages = append(messages, messageToClaudeMessage(m))
 	}
 
 	claudeReq := claudeRequest{
@@ -87,15 +88,29 @@ func (p *ClaudeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	content := ""
+	var textContent strings.Builder
+	var toolCalls []ToolCall
+
 	for _, c := range claudeResp.Content {
-		if c.Type == "text" {
-			content += c.Text
+		switch c.Type {
+		case "text":
+			textContent.WriteString(c.Text)
+		case "tool_use":
+			inputStr := ""
+			if c.Input != nil {
+				inputStr = string(c.Input)
+			}
+			toolCalls = append(toolCalls, ToolCall{
+				ID:    c.ID,
+				Name:  c.Name,
+				Input: inputStr,
+			})
 		}
 	}
 
 	return &ChatResponse{
-		Content:    content,
+		Content:    textContent.String(),
+		ToolCalls:  toolCalls,
 		TokenCount: claudeResp.Usage.InputTokens + claudeResp.Usage.OutputTokens,
 	}, nil
 }
@@ -108,7 +123,7 @@ func (p *ClaudeProvider) StreamChat(ctx context.Context, req ChatRequest) (<-cha
 
 	messages := make([]claudeMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, claudeMessage{Role: m.Role, Content: m.Content})
+		messages = append(messages, messageToClaudeMessage(m))
 	}
 
 	claudeReq := claudeRequest{
@@ -160,6 +175,46 @@ func (p *ClaudeProvider) StreamChat(ctx context.Context, req ChatRequest) (<-cha
 	}()
 
 	return ch, nil
+}
+
+// messageToClaudeMessage converts a Message to Claude's message format.
+// It handles both old-style (plain text) and new-style (structured content blocks) messages.
+func messageToClaudeMessage(m Message) claudeMessage {
+	// Tool result: use role "user" with tool_result content block
+	if m.Role == "tool" {
+		blocks := []claudeContentBlock{
+			{
+				Type:      "tool_result",
+				ToolUseID: m.ToolCallID,
+				Content:   m.Content,
+				IsError:   false,
+			},
+		}
+		return claudeMessage{Role: "user", Content: blocks}
+	}
+
+	// Structured content (JSON array of content blocks)
+	if IsStructuredContent(m.Content) {
+		parsed := ParseContentBlocks(m.Content)
+		blocks := make([]claudeContentBlock, 0, len(parsed))
+		for _, b := range parsed {
+			switch b.Type {
+			case ContentTypeText:
+				blocks = append(blocks, claudeContentBlock{Type: "text", Text: b.Text})
+			case ContentTypeToolUse:
+				blocks = append(blocks, claudeContentBlock{
+					Type:  "tool_use",
+					ID:    b.ID,
+					Name:  b.Name,
+					Input: b.Input,
+				})
+			}
+		}
+		return claudeMessage{Role: m.Role, Content: blocks}
+	}
+
+	// Old format: plain text
+	return claudeMessage{Role: m.Role, Content: m.Content}
 }
 
 func (p *ClaudeProvider) GetModel() string {

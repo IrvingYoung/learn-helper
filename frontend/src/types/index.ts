@@ -19,7 +19,6 @@ export interface WikiTreeNode {
   page_type: string;
   content_status: string;
   parent_id: number | null;
-  path: string;
   sort_order: number;
   children?: WikiTreeNode[];
 }

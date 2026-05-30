@@ -96,7 +96,6 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
     content         TEXT NOT NULL DEFAULT '',
     tags            TEXT DEFAULT '[]',
     parent_id       INTEGER REFERENCES wiki_pages(id),
-    path            TEXT NOT NULL DEFAULT '',
     content_status  TEXT NOT NULL DEFAULT 'empty',
     sort_order      INTEGER NOT NULL DEFAULT 0,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -106,4 +105,3 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
-CREATE INDEX IF NOT EXISTS idx_wiki_pages_path ON wiki_pages(path);

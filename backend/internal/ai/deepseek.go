@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type DeepSeekProvider struct {
@@ -29,7 +30,7 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 
 	messages := make([]deepseekMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, deepseekMessage{Role: m.Role, Content: m.Content})
+		messages = append(messages, messageToDeepSeekMessage(m))
 	}
 
 	dsReq := deepseekRequest{
@@ -84,7 +85,8 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 	var dsResp struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content   string              `json:"content"`
+				ToolCalls []deepseekToolCall  `json:"tool_calls,omitempty"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
@@ -95,13 +97,23 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
+	var toolCalls []ToolCall
 	content := ""
 	if len(dsResp.Choices) > 0 {
-		content = dsResp.Choices[0].Message.Content
+		msg := dsResp.Choices[0].Message
+		content = msg.Content
+		for _, tc := range msg.ToolCalls {
+			toolCalls = append(toolCalls, ToolCall{
+				ID:    tc.ID,
+				Name:  tc.Function.Name,
+				Input: tc.Function.Arguments,
+			})
+		}
 	}
 
 	return &ChatResponse{
 		Content:    content,
+		ToolCalls:  toolCalls,
 		TokenCount: dsResp.Usage.TotalTokens,
 	}, nil
 }
@@ -114,7 +126,7 @@ func (p *DeepSeekProvider) StreamChat(ctx context.Context, req ChatRequest) (<-c
 
 	messages := make([]deepseekMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, deepseekMessage{Role: m.Role, Content: m.Content})
+		messages = append(messages, messageToDeepSeekMessage(m))
 	}
 
 	dsReq := deepseekRequest{
@@ -171,6 +183,64 @@ func (p *DeepSeekProvider) StreamChat(ctx context.Context, req ChatRequest) (<-c
 	}()
 
 	return ch, nil
+}
+
+// messageToDeepSeekMessage converts a Message to DeepSeek (OpenAI-compatible) message format.
+// It handles old-style (plain text), structured content, and tool role messages.
+func messageToDeepSeekMessage(m Message) deepseekMessage {
+	// Tool result: use role "tool" with tool_call_id
+	if m.Role == "tool" {
+		return deepseekMessage{
+			Role:       "tool",
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+		}
+	}
+
+	// Structured content: extract text for assistant messages, keep blocks for assistant tool_use
+	if IsStructuredContent(m.Content) {
+		parsed := ParseContentBlocks(m.Content)
+		if m.Role == "assistant" {
+			// For assistant messages, extract text and tool_calls from structured content
+			var textBuilder strings.Builder
+			var toolCalls []deepseekToolCall
+			for _, b := range parsed {
+				switch b.Type {
+				case ContentTypeText:
+					textBuilder.WriteString(b.Text)
+				case ContentTypeToolUse:
+					args := string(b.Input)
+					if args == "" {
+						args = "{}"
+					}
+					toolCalls = append(toolCalls, deepseekToolCall{
+						ID:   b.ID,
+						Type: "function",
+						Function: deepseekFunction{
+							Name:      b.Name,
+							Arguments: args,
+						},
+					})
+				}
+			}
+			return deepseekMessage{
+				Role:      "assistant",
+				Content:   textBuilder.String(),
+				ToolCalls: toolCalls,
+			}
+		}
+		// For user messages, just extract text
+		var textBuilder strings.Builder
+		for _, b := range parsed {
+			if b.Type == ContentTypeText {
+				textBuilder.WriteString(b.Text)
+			}
+		}
+		return deepseekMessage{Role: m.Role, Content: textBuilder.String()}
+	}
+
+	// Old format: plain text
+	return deepseekMessage{Role: m.Role, Content: m.Content}
 }
 
 func (p *DeepSeekProvider) GetModel() string {

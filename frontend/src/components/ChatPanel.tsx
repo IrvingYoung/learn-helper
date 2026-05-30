@@ -25,6 +25,11 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [agentStatus, setAgentStatus] = useState<{
+    step: number;
+    maxSteps: number;
+    running: boolean;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -131,6 +136,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
     }
 
     setLoading(true);
+    setAgentStatus({ step: 0, maxSteps: 20, running: true });
 
     const assistantMsg: ConversationMessage = {
       id: Date.now() + 1,
@@ -180,6 +186,9 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
             });
           }
         },
+        (status) => {
+          setAgentStatus({ step: status.step, maxSteps: status.max_steps, running: true });
+        },
       );
 
       if (newConvId && newConvId !== activeConv.id) {
@@ -202,6 +211,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
       });
     } finally {
       setLoading(false);
+      setAgentStatus(null);
     }
   }
 
@@ -320,6 +330,22 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
         </div>
       )}
 
+      {/* Agent progress bar */}
+      {agentStatus && (
+        <div className="px-4 py-2 border-b border-th-border bg-th-accent-bg shrink-0">
+          <div className="flex items-center gap-2 text-xs text-th-text-secondary">
+            <span className="animate-pulse">🤖</span>
+            <span>步骤 {agentStatus.step}/{agentStatus.maxSteps}</span>
+            <div className="flex-1 h-1.5 bg-th-bg-tertiary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-th-accent rounded-full transition-all duration-300"
+                style={{ width: `${(agentStatus.step / agentStatus.maxSteps) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scroll">
         {!activeConv && (
@@ -344,7 +370,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
               )}
               {msg.pending_actions && msg.pending_actions.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-th-border space-y-1">
-                  <div className="text-xs text-th-text-muted font-medium">待确认操作：</div>
+                  <div className="text-xs text-th-text-muted font-medium">{msg.pending_actions.length} 个待确认操作</div>
                   {msg.pending_actions.map((action, j) => (
                     <div key={j} className="text-xs bg-th-accent-bg border border-th-accent p-2 rounded">
                       {action.preview}
@@ -354,7 +380,7 @@ export function ChatPanel({ onPageChanged }: ChatPanelProps) {
                     onClick={() => handleConfirm(msg.pending_actions!)}
                     className="mt-1 text-xs bg-th-success text-white px-3 py-1 rounded hover:opacity-90"
                   >
-                    确认执行
+                    确认执行全部
                   </button>
                 </div>
               )}

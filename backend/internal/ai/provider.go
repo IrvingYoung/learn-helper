@@ -52,13 +52,6 @@ type ChatChunk struct {
 	Done     bool
 }
 
-// ToolCall represents a completed tool call from the AI.
-type ToolCall struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Input string `json:"input"` // JSON string of tool input
-}
-
 // Tool represents a tool definition for AI function calling.
 type Tool struct {
 	Name        string         `json:"name"`
@@ -106,6 +99,39 @@ func WikiTools() []Tool {
 					"page_id": map[string]any{"type": "integer", "description": "要删除的页面 ID"},
 				},
 				"required": []string{"page_id"},
+			},
+		},
+		{
+			Name:        "lookup_page",
+			Description: "根据页面标题查询页面信息，返回页面 ID、标题等元数据。可自动执行，无需用户确认。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"title": map[string]any{"type": "string", "description": "要查询的页面标题（精确匹配）"},
+				},
+				"required": []string{"title"},
+			},
+		},
+		{
+			Name:        "read_page",
+			Description: "根据页面 ID 读取 Wiki 页面的完整 Markdown 内容。可自动执行，无需用户确认。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"page_id": map[string]any{"type": "integer", "description": "要读取的页面 ID"},
+				},
+				"required": []string{"page_id"},
+			},
+		},
+		{
+			Name:        "search_pages",
+			Description: "在知识库中搜索页面标题和内容，返回匹配的页面列表。可自动执行，无需用户确认。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "搜索关键词"},
+				},
+				"required": []string{"query"},
 			},
 		},
 	}
@@ -171,11 +197,14 @@ type claudeMessage struct {
 }
 
 type claudeContentBlock struct {
-	Type  string `json:"type"`
-	Text  string `json:"text,omitempty"`
-	ID    string `json:"id,omitempty"`
-	Name  string `json:"name,omitempty"`
-	Input json.RawMessage `json:"input,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	Content   string          `json:"content,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
 }
 
 type claudeTool struct {
@@ -196,9 +225,10 @@ type deepseekRequest struct {
 }
 
 type deepseekMessage struct {
-	Role      string              `json:"role"`
-	Content   any                 `json:"content"`
-	ToolCalls []deepseekToolCall  `json:"tool_calls,omitempty"`
+	Role       string              `json:"role"`
+	Content    any                 `json:"content"`
+	ToolCalls  []deepseekToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID string              `json:"tool_call_id,omitempty"`
 }
 
 type deepseekTool struct {

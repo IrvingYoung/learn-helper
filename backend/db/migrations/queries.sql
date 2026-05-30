@@ -95,30 +95,25 @@ SELECT id, slug, name FROM ancestors WHERE depth > 0 ORDER BY depth DESC;
 -- Wiki queries
 
 -- name: GetAllWikiPages :many
-SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 ORDER BY sort_order, id;
 
 -- name: GetWikiPageTree :many
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order
 FROM wiki_pages
 ORDER BY sort_order, id;
 
 -- name: GetWikiPageBySlug :one
-SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 WHERE slug = ?;
 
 -- name: GetWikiPageByID :one
 SELECT * FROM wiki_pages WHERE id = ?;
 
--- name: GetWikiPageByTitle :one
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order
-FROM wiki_pages
-WHERE title = ? LIMIT 1;
-
 -- name: GetOverviewPage :one
-SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 WHERE page_type = 'overview' LIMIT 1;
 
@@ -170,21 +165,6 @@ FROM wiki_pages
 WHERE parent_id = ?
 ORDER BY sort_order, id;
 
--- name: GetSubtreePages :many
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
-FROM wiki_pages
-WHERE path LIKE sqlc.arg(prefix) || '%'
-ORDER BY path, sort_order, id;
-
--- name: GetWikiPagePathByID :one
-SELECT path FROM wiki_pages WHERE id = ?;
-
--- name: UpdateWikiPagePath :exec
-UPDATE wiki_pages SET path = ? WHERE id = ?;
-
--- name: BatchUpdateWikiPagePath :exec
-UPDATE wiki_pages SET path = REPLACE(path, sqlc.arg(old_prefix), sqlc.arg(new_prefix)) WHERE path LIKE sqlc.arg(like_prefix) || '%';
-
 -- name: CountWikiPages :one
 SELECT COUNT(*) FROM wiki_pages;
 
@@ -196,3 +176,7 @@ SELECT id, title, slug, parent_id
 FROM wiki_pages
 WHERE content_status = 'empty'
 ORDER BY sort_order, id;
+
+-- Agent Loop migration: add tool_call_id and tool_name columns
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_call_id TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_name TEXT;

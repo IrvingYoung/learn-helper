@@ -82,6 +82,7 @@ export async function streamChat(
   req: ChatRequest,
   onChunk: (content: string) => void,
   onMeta: (data: { conversation_id?: number; pending_actions?: PendingAction[] }) => void,
+  onStatus?: (data: { step: number; max_steps: number; status: string }) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/ai/chat`, {
     method: "POST",
@@ -98,6 +99,7 @@ export async function streamChat(
 
   const decoder = new TextDecoder();
   let buffer = "";
+  let currentEvent = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -108,15 +110,28 @@ export async function streamChat(
     buffer = lines.pop() || "";
 
     for (const line of lines) {
-      if (line.startsWith("event: meta")) continue;
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7);
+        continue;
+      }
       if (line.startsWith("data: ")) {
         const data = line.slice(6);
         if (data === "[DONE]") continue;
+
+        if (currentEvent === "agent_status" && onStatus) {
+          try {
+            const parsed = JSON.parse(data);
+            onStatus(parsed);
+          } catch { /* ignore */ }
+          currentEvent = "";
+          continue;
+        }
 
         try {
           const parsed = JSON.parse(data);
           if (typeof parsed.conversation_id === "number" || parsed.pending_actions) {
             onMeta(parsed);
+            currentEvent = "";
             continue;
           }
         } catch {
