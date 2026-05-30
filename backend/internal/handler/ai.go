@@ -381,25 +381,56 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasAutoTool && convRole == ai.RoleWikiMaintainer {
-		// Add the first assistant response to conversation history.
-		// Even when only auto tools were called (no text), we must save the response
-		// so the streaming call sees the AI's own tool usage in history.
-		var firstContentBuf strings.Builder
-		firstContentBuf.WriteString(resp.Content)
-		if len(resp.ToolCalls) > 0 {
-			if firstContentBuf.Len() > 0 {
-				firstContentBuf.WriteString("\n")
-			}
-			firstContentBuf.WriteString("[操作建议]\n")
-			for _, tc := range resp.ToolCalls {
-				firstContentBuf.WriteString(fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input))
-			}
-		}
-		if firstContentBuf.Len() > 0 {
-			aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: firstContentBuf.String()})
+		// Build the first assistant response as structured content with proper tool_use blocks.
+		// This ensures Claude/DeepSeek see tool_use → tool_result pairing in the follow-up call.
+		var contentBlocks []ai.ContentBlock
+
+		// Text content from the AI (if any)
+		if resp.Content != "" {
+			contentBlocks = append(contentBlocks, ai.ContentBlock{
+				Type: ai.ContentTypeText,
+				Text: resp.Content,
+			})
 		}
 
-		// Execute each read-only tool call and inject result as a user message
+		// tool_use blocks for auto-executed read-only tools
+		for _, tc := range resp.ToolCalls {
+			if !autoTools[tc.Name] {
+				continue
+			}
+			var input json.RawMessage
+			if tc.Input != "" {
+				input = json.RawMessage(tc.Input)
+			}
+			contentBlocks = append(contentBlocks, ai.ContentBlock{
+				Type:  ai.ContentTypeToolUse,
+				ID:    tc.ID,
+				Name:  tc.Name,
+				Input: input,
+			})
+		}
+
+		// Text block for write tool suggestions (pending confirmation)
+		if len(otherToolCalls) > 0 {
+			var otherBuf strings.Builder
+			otherBuf.WriteString("\n[操作建议]\n")
+			for _, tc := range otherToolCalls {
+				otherBuf.WriteString(fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input))
+			}
+			contentBlocks = append(contentBlocks, ai.ContentBlock{
+				Type: ai.ContentTypeText,
+				Text: otherBuf.String(),
+			})
+		}
+
+		if len(contentBlocks) > 0 {
+			firstContentJSON, err := ai.ContentBlocksToJSON(contentBlocks)
+			if err == nil {
+				aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: firstContentJSON})
+			}
+		}
+
+		// Execute each read-only tool call and inject result as a proper tool_result message
 		for _, tc := range resp.ToolCalls {
 			if !autoTools[tc.Name] {
 				continue
@@ -414,11 +445,15 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 				result = h.executeReadPage(ctx, tc)
 			}
 			if result != "" {
-				aiMessages = append(aiMessages, ai.Message{Role: "user", Content: result})
+				aiMessages = append(aiMessages, ai.Message{
+					Role:       "tool",
+					Content:    result,
+					ToolCallID: tc.ID,
+				})
 			}
 		}
 
-		// Streaming follow-up call with lookup results injected
+		// Streaming follow-up call with proper tool_use → tool_result history
 		chatReq.Messages = aiMessages
 		ch, err := provider.StreamChat(ctx, chatReq)
 		if err != nil {
