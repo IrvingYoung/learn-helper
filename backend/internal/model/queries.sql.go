@@ -71,7 +71,7 @@ func (q *Queries) CountWikiPagesByStatus(ctx context.Context, contentStatus stri
 
 const createAIConfig = `-- name: CreateAIConfig :execresult
 INSERT INTO ai_configs (provider, model_name, api_key, is_active, config)
-VALUES (?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateAIConfigParams struct {
@@ -400,21 +400,35 @@ func (q *Queries) GetAllTopics(ctx context.Context) ([]GetAllTopicsRow, error) {
 
 const getAllWikiPages = `-- name: GetAllWikiPages :many
 
-SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 ORDER BY sort_order, id
 `
 
+type GetAllWikiPagesRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 // Wiki queries
-func (q *Queries) GetAllWikiPages(ctx context.Context) ([]WikiPage, error) {
+func (q *Queries) GetAllWikiPages(ctx context.Context) ([]GetAllWikiPagesRow, error) {
 	rows, err := q.db.QueryContext(ctx, getAllWikiPages)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []WikiPage
+	var items []GetAllWikiPagesRow
 	for rows.Next() {
-		var i WikiPage
+		var i GetAllWikiPagesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -423,7 +437,6 @@ func (q *Queries) GetAllWikiPages(ctx context.Context) ([]WikiPage, error) {
 			&i.Content,
 			&i.Tags,
 			&i.ParentID,
-			&i.Path,
 			&i.ContentStatus,
 			&i.SortOrder,
 			&i.CreatedAt,
@@ -796,14 +809,28 @@ func (q *Queries) GetNextTopic(ctx context.Context, arg GetNextTopicParams) (Get
 }
 
 const getOverviewPage = `-- name: GetOverviewPage :one
-SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 WHERE page_type = 'overview' LIMIT 1
 `
 
-func (q *Queries) GetOverviewPage(ctx context.Context) (WikiPage, error) {
+type GetOverviewPageRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (q *Queries) GetOverviewPage(ctx context.Context) (GetOverviewPageRow, error) {
 	row := q.db.QueryRowContext(ctx, getOverviewPage)
-	var i WikiPage
+	var i GetOverviewPageRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -812,7 +839,6 @@ func (q *Queries) GetOverviewPage(ctx context.Context) (WikiPage, error) {
 		&i.Content,
 		&i.Tags,
 		&i.ParentID,
-		&i.Path,
 		&i.ContentStatus,
 		&i.SortOrder,
 		&i.CreatedAt,
@@ -1072,7 +1098,7 @@ func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (GetTopicBySl
 }
 
 const getWikiPageByID = `-- name: GetWikiPageByID :one
-SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE id = ?
+SELECT id, title, slug, page_type, content, tags, parent_id, path, links, backlinks, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE id = ?
 `
 
 func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, error) {
@@ -1087,6 +1113,8 @@ func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, erro
 		&i.Tags,
 		&i.ParentID,
 		&i.Path,
+		&i.Links,
+		&i.Backlinks,
 		&i.ContentStatus,
 		&i.SortOrder,
 		&i.CreatedAt,
@@ -1096,13 +1124,50 @@ func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, erro
 }
 
 const getWikiPageBySlug = `-- name: GetWikiPageBySlug :one
-SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 WHERE slug = ?
 `
 
-func (q *Queries) GetWikiPageBySlug(ctx context.Context, slug string) (WikiPage, error) {
+type GetWikiPageBySlugRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (q *Queries) GetWikiPageBySlug(ctx context.Context, slug string) (GetWikiPageBySlugRow, error) {
 	row := q.db.QueryRowContext(ctx, getWikiPageBySlug, slug)
+	var i GetWikiPageBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.PageType,
+		&i.Content,
+		&i.Tags,
+		&i.ParentID,
+		&i.ContentStatus,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWikiPageByTitle = `-- name: GetWikiPageByTitle :one
+SELECT id, title, slug, page_type, content, tags, parent_id, path, links, backlinks, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE title = ? LIMIT 1
+`
+
+func (q *Queries) GetWikiPageByTitle(ctx context.Context, title string) (WikiPage, error) {
+	row := q.db.QueryRowContext(ctx, getWikiPageByTitle, title)
 	var i WikiPage
 	err := row.Scan(
 		&i.ID,
@@ -1113,41 +1178,12 @@ func (q *Queries) GetWikiPageBySlug(ctx context.Context, slug string) (WikiPage,
 		&i.Tags,
 		&i.ParentID,
 		&i.Path,
+		&i.Links,
+		&i.Backlinks,
 		&i.ContentStatus,
 		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getWikiPageByTitle = `-- name: GetWikiPageByTitle :one
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order
-FROM wiki_pages
-WHERE title = ? LIMIT 1
-`
-
-type GetWikiPageByTitleRow struct {
-	ID            int64
-	Title         string
-	Slug          string
-	PageType      string
-	ContentStatus string
-	ParentID      sql.NullInt64
-	SortOrder     int64
-}
-
-func (q *Queries) GetWikiPageByTitle(ctx context.Context, title string) (GetWikiPageByTitleRow, error) {
-	row := q.db.QueryRowContext(ctx, getWikiPageByTitle, title)
-	var i GetWikiPageByTitleRow
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Slug,
-		&i.PageType,
-		&i.ContentStatus,
-		&i.ParentID,
-		&i.SortOrder,
 	)
 	return i, err
 }
@@ -1244,6 +1280,62 @@ func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, er
 			&i.ParentID,
 			&i.SortOrder,
 			&i.Path,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchWikiPages = `-- name: SearchWikiPages :many
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE title LIKE '%' || ?1 || '%' OR content LIKE '%' || ?1 || '%'
+ORDER BY sort_order, id
+`
+
+type SearchWikiPagesRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (q *Queries) SearchWikiPages(ctx context.Context, query sql.NullString) ([]SearchWikiPagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchWikiPages, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchWikiPagesRow
+	for rows.Next() {
+		var i SearchWikiPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.PageType,
+			&i.Content,
+			&i.Tags,
+			&i.ParentID,
+			&i.ContentStatus,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1434,59 +1526,3 @@ func (q *Queries) UpsertLearningRecord(ctx context.Context, arg UpsertLearningRe
 	)
 	return err
 }
-const searchWikiPages = `-- name: SearchWikiPages :many
-SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
-FROM wiki_pages
-WHERE title LIKE '%' || ?1 || '%' OR content LIKE '%' || ?1 || '%'
-ORDER BY sort_order, id
-`
-
-type SearchWikiPagesRow struct {
-	ID            int64
-	Title         string
-	Slug          string
-	PageType      string
-	Content       string
-	Tags          sql.NullString
-	ParentID      sql.NullInt64
-	ContentStatus string
-	SortOrder     int64
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-}
-
-func (q *Queries) SearchWikiPages(ctx context.Context, query string) ([]SearchWikiPagesRow, error) {
-	rows, err := q.db.QueryContext(ctx, searchWikiPages, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SearchWikiPagesRow
-	for rows.Next() {
-		var i SearchWikiPagesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Slug,
-			&i.PageType,
-			&i.Content,
-			&i.Tags,
-			&i.ParentID,
-			&i.ContentStatus,
-			&i.SortOrder,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-

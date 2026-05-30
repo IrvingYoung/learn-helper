@@ -100,7 +100,7 @@ FROM wiki_pages
 ORDER BY sort_order, id;
 
 -- name: GetWikiPageTree :many
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
 FROM wiki_pages
 ORDER BY sort_order, id;
 
@@ -108,6 +108,12 @@ ORDER BY sort_order, id;
 SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 WHERE slug = ?;
+
+-- name: GetSubtreePages :many
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
+FROM wiki_pages
+WHERE path LIKE sqlc.arg(prefix) || '%'
+ORDER BY path, sort_order, id;
 
 -- name: GetWikiPageByID :one
 SELECT * FROM wiki_pages WHERE id = ?;
@@ -183,5 +189,17 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_name TEXT;
 -- name: SearchWikiPages :many
 SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
-WHERE title LIKE '%' || ?1 || '%' OR content LIKE '%' || ?1 || '%'
+WHERE title LIKE '%' || @query || '%' OR content LIKE '%' || @query || '%'
 ORDER BY sort_order, id;
+
+-- name: GetWikiPagePathByID :one
+SELECT path FROM wiki_pages WHERE id = ?;
+
+-- name: UpdateWikiPagePath :exec
+UPDATE wiki_pages SET path = ? WHERE id = ?;
+
+-- name: BatchUpdateWikiPagePath :exec
+UPDATE wiki_pages SET path = REPLACE(path, @old_prefix, @new_prefix) WHERE path LIKE sqlc.arg(like_prefix) || '%';
+
+-- name: GetWikiPageByTitle :one
+SELECT id, title, slug, page_type, content, tags, parent_id, path, links, backlinks, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE title = ? LIMIT 1;
