@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"fmt"
 	"io"
 	"net/http"
@@ -277,33 +278,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	// Execute confirmed actions and inject results, OR save user message
 	if len(req.ConfirmedActions) > 0 {
-		h.executeConfirmedActions(ctx, req.ConfirmedActions)
-
-		// Build a readable execution result
-		var resultBuilder strings.Builder
-		resultBuilder.WriteString("[系统] 以下操作已执行完成：\n")
-		for _, action := range req.ConfirmedActions {
-			details, ok := action.Details.(map[string]any)
-			if !ok {
-				continue
-			}
-			switch action.Type {
-			case "create":
-				if title, _ := details["title"].(string); title != "" {
-					resultBuilder.WriteString(fmt.Sprintf("- 创建页面「%s」\n", title))
-				}
-			case "update":
-				if title, _ := details["title"].(string); title != "" {
-					resultBuilder.WriteString(fmt.Sprintf("- 更新页面「%s」\n", title))
-				} else if pid, _ := details["page_id"].(float64); pid > 0 {
-					resultBuilder.WriteString(fmt.Sprintf("- 更新页面 #%d\n", int(pid)))
-				}
-			case "delete":
-				resultBuilder.WriteString("- 删除页面\n")
-			}
-		}
-		resultContent := resultBuilder.String()
-
+		resultContent := h.executeConfirmedActions(ctx, req.ConfirmedActions)
 		// Save execution result as user message so the AI can continue reasoning
 		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
 			req.ConversationID, resultContent, config.Provider)
@@ -749,10 +724,12 @@ func (h *AIHandler) toolCallsToPendingActions(toolCalls []*ai.ToolCall) []Pendin
 	return actions
 }
 
-func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []PendingAction) {
+func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []PendingAction) string {
+	var results []string
 	for _, action := range actions {
 		details, ok := action.Details.(map[string]any)
 		if !ok {
+			results = append(results, "- 操作失败：参数解析错误")
 			continue
 		}
 		switch action.Type {
@@ -771,18 +748,27 @@ func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []Pendi
 			if content == "" {
 				status = "empty"
 			}
-			h.queries.CreateWikiPage(ctx, model.CreateWikiPageParams{
+			_, err := h.queries.CreateWikiPage(ctx, model.CreateWikiPageParams{
 				Title: title, Slug: slug, PageType: "entity",
 				Content: content, ParentID: parentID,
 				ContentStatus: status, SortOrder: 0,
 			})
+			if err != nil {
+				log.Printf("[executeConfirmedActions] create page failed: %v", err)
+				results = append(results, fmt.Sprintf("- 创建页面「%s」失败：%v", title, err))
+			} else {
+				results = append(results, fmt.Sprintf("- 创建页面「%s」成功", title))
+			}
 		case "update":
 			pageID, ok := details["page_id"].(float64)
 			if !ok {
+				results = append(results, "- 更新页面失败：缺少 page_id")
 				continue
 			}
 			page, err := h.queries.GetWikiPageByID(ctx, int64(pageID))
 			if err != nil {
+				log.Printf("[executeConfirmedActions] get page %d failed: %v", int(pageID), err)
+				results = append(results, fmt.Sprintf("- 更新页面 #%d 失败：页面不存在", int(pageID)))
 				continue
 			}
 			title := page.Title
@@ -797,19 +783,38 @@ func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []Pendi
 			if content == "" {
 				contentStatus = "empty"
 			}
-			h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
+			err = h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
 				Title: title, Slug: page.Slug, PageType: page.PageType,
 				Content: content, Tags: page.Tags, ParentID: page.ParentID,
 				ContentStatus: contentStatus, SortOrder: page.SortOrder, ID: int64(pageID),
 			})
+			if err != nil {
+				log.Printf("[executeConfirmedActions] update page %d failed: %v", int(pageID), err)
+				results = append(results, fmt.Sprintf("- 更新页面 #%d 失败：%v", int(pageID), err))
+			} else {
+				results = append(results, fmt.Sprintf("- 更新页面 #%d 成功", int(pageID)))
+			}
 		case "delete":
 			pageID, ok := details["page_id"].(float64)
 			if !ok {
+				results = append(results, "- 删除页面失败：缺少 page_id")
 				continue
 			}
-			h.queries.DeleteWikiPage(ctx, int64(pageID))
+			err := h.queries.DeleteWikiPage(ctx, int64(pageID))
+			if err != nil {
+				log.Printf("[executeConfirmedActions] delete page %d failed: %v", int(pageID), err)
+				results = append(results, fmt.Sprintf("- 删除页面 #%d 失败：%v", int(pageID), err))
+			} else {
+				results = append(results, fmt.Sprintf("- 删除页面 #%d 成功", int(pageID)))
+			}
 		}
 	}
+	var b strings.Builder
+	b.WriteString("[系统] 以下操作已执行：\n")
+	for _, r := range results {
+		b.WriteString(r + "\n")
+	}
+	return b.String()
 }
 
 func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) string {

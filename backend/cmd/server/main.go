@@ -115,11 +115,13 @@ func main() {
 		dbPath = "learn-helper.db"
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
 	defer db.Close()
+	// SQLite doesn't support concurrent writes; limit to one connection.
+	db.SetMaxOpenConns(1)
 
 	if _, err := db.Exec(schemaSQL); err != nil {
 		log.Fatalf("Failed to initialize schema: %v", err)

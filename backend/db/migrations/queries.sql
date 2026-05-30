@@ -180,3 +180,8 @@ ORDER BY sort_order, id;
 -- Agent Loop migration: add tool_call_id and tool_name columns
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_call_id TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_name TEXT;
+-- name: SearchWikiPages :many
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE title LIKE '%' || ?1 || '%' OR content LIKE '%' || ?1 || '%'
+ORDER BY sort_order, id;

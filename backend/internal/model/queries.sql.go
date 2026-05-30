@@ -1430,3 +1430,59 @@ func (q *Queries) UpsertLearningRecord(ctx context.Context, arg UpsertLearningRe
 	)
 	return err
 }
+const searchWikiPages = `-- name: SearchWikiPages :many
+SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+FROM wiki_pages
+WHERE title LIKE '%' || ?1 || '%' OR content LIKE '%' || ?1 || '%'
+ORDER BY sort_order, id
+`
+
+type SearchWikiPagesRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	Content       string
+	Tags          sql.NullString
+	ParentID      sql.NullInt64
+	ContentStatus string
+	SortOrder     int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (q *Queries) SearchWikiPages(ctx context.Context, query string) ([]SearchWikiPagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchWikiPages, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchWikiPagesRow
+	for rows.Next() {
+		var i SearchWikiPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.PageType,
+			&i.Content,
+			&i.Tags,
+			&i.ParentID,
+			&i.ContentStatus,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
