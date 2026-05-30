@@ -790,13 +790,17 @@ func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []Pendi
 				title = t
 			}
 			content := page.Content
-			if c, ok := details["content"].(string); ok && c != "" {
+			if c, ok := details["content"].(string); ok {
 				content = c
+			}
+			contentStatus := "published"
+			if content == "" {
+				contentStatus = "empty"
 			}
 			h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
 				Title: title, Slug: page.Slug, PageType: page.PageType,
 				Content: content, Tags: page.Tags, ParentID: page.ParentID,
-				ContentStatus: "published", SortOrder: page.SortOrder, ID: int64(pageID),
+				ContentStatus: contentStatus, SortOrder: page.SortOrder, ID: int64(pageID),
 			})
 		case "delete":
 			pageID, ok := details["page_id"].(float64)
