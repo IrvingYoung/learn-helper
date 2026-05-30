@@ -425,7 +425,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
 		if err == nil {
 			wikiContext += fmt.Sprintf(
-				"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n",
+				"\n【当前页面】用户正在查看：%s (slug: %s, ID: %d)\n当用户询问关于\"这个页面\"或\"当前页面\"的问题时，直接基于以上信息回复，无需搜索。\n",
 				page.Title, page.Slug, page.ID,
 			)
 			log.Printf("[AIChat] injected current page context: %s (slug=%s)", page.Title, page.Slug)
@@ -439,6 +439,8 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			req.SelectedText,
 		)
 	}
+	log.Printf("[AIChat] wikiContext length=%d", len(wikiContext))
+	log.Printf("[AIChat] wikiContext excerpt: %s", wikiContext[:min(len(wikiContext), 500)])
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
 	if len(req.ConfirmedActions) > 0 {
 		systemPrompt += "\n\n【本次请求特别说明】以上对话中已经包含 tool（tool_result）返回结果，表明对应操作已被用户确认执行完毕。请直接回复告知用户结果即可，不要再次调用相同的工具。"
