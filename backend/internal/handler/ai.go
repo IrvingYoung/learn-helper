@@ -381,12 +381,17 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasAutoTool && convRole == ai.RoleWikiMaintainer {
-		// Add the first assistant response to conversation history
+		// Add the first assistant response to conversation history.
+		// Even when only auto tools were called (no text), we must save the response
+		// so the streaming call sees the AI's own tool usage in history.
 		var firstContentBuf strings.Builder
 		firstContentBuf.WriteString(resp.Content)
-		if len(otherToolCalls) > 0 {
-			firstContentBuf.WriteString("\n[操作建议]\n")
-			for _, tc := range otherToolCalls {
+		if len(resp.ToolCalls) > 0 {
+			if firstContentBuf.Len() > 0 {
+				firstContentBuf.WriteString("\n")
+			}
+			firstContentBuf.WriteString("[操作建议]\n")
+			for _, tc := range resp.ToolCalls {
 				firstContentBuf.WriteString(fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input))
 			}
 		}
@@ -434,22 +439,32 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			}
 			if chunk.Done {
 				if len(toolCalls) > 0 {
-					pendingActions := h.toolCallsToPendingActions(toolCalls)
-					metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
-					sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+					if pendingActions := h.toolCallsToPendingActions(toolCalls); len(pendingActions) > 0 {
+						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
+						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+					}
 				}
 				sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
 			}
 		}
 
-		// Save assistant message
+		// Save assistant message (only non-auto tool calls)
 		content := fullContent.String()
 		if content != "" || len(toolCalls) > 0 {
 			savedContent := content
-			if len(toolCalls) > 0 {
+			var hasWriteTool bool
+			for _, tc := range toolCalls {
+				if !autoTools[tc.Name] {
+					hasWriteTool = true
+					break
+				}
+			}
+			if hasWriteTool {
 				savedContent += "\n[操作建议]\n"
 				for _, tc := range toolCalls {
-					savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+					if !autoTools[tc.Name] {
+						savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+					}
 				}
 			}
 			h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
@@ -476,22 +491,32 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			}
 			if chunk.Done {
 				if len(toolCalls) > 0 {
-					pendingActions := h.toolCallsToPendingActions(toolCalls)
-					metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
-					sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+					if pendingActions := h.toolCallsToPendingActions(toolCalls); len(pendingActions) > 0 {
+						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
+						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+					}
 				}
 				sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
 			}
 		}
 
-		// Save assistant message
+		// Save assistant message (only non-auto tool calls)
 		content := fullContent.String()
 		if content != "" || len(toolCalls) > 0 {
 			savedContent := content
-			if len(toolCalls) > 0 {
+			var hasWriteTool bool
+			for _, tc := range toolCalls {
+				if !autoTools[tc.Name] {
+					hasWriteTool = true
+					break
+				}
+			}
+			if hasWriteTool {
 				savedContent += "\n[操作建议]\n"
 				for _, tc := range toolCalls {
-					savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+					if !autoTools[tc.Name] {
+						savedContent += fmt.Sprintf("- %s: %s\n", tc.Name, tc.Input)
+					}
 				}
 			}
 			h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
