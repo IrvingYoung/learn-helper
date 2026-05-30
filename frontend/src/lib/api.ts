@@ -79,6 +79,7 @@ export interface ChatRequest {
   plan_id?: string;
   focus_page_id?: number | null;
   current_slug?: string;
+  selected_text?: string;
 }
 
 export async function streamChat(

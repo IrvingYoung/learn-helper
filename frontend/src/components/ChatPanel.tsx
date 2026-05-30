@@ -20,7 +20,7 @@ interface ChatPanelProps {
   currentPageTitle?: string;
 }
 
-export const ChatPanel = forwardRef<{ appendToInput: (text: string) => void }, ChatPanelProps>(
+export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle: string) => void }, ChatPanelProps>(
   function ChatPanel({ onPageChanged, onPlanCreated, focusPageId, currentSlug, currentPageTitle }, ref) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -40,12 +40,13 @@ export const ChatPanel = forwardRef<{ appendToInput: (text: string) => void }, C
 
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const [selectedTextPage, setSelectedTextPage] = useState<string | null>(null);
+
   useImperativeHandle(ref, () => ({
-    appendToInput(text: string) {
-      setInput((prev) => {
-        const newInput = prev ? prev + "\n" + text : text;
-        return newInput;
-      });
+    setSelectedText(text: string, pageTitle: string) {
+      setSelectedText(text);
+      setSelectedTextPage(pageTitle);
       setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
@@ -206,6 +207,7 @@ export const ChatPanel = forwardRef<{ appendToInput: (text: string) => void }, C
           plan_id: planId,
           focus_page_id: focusPageId,
           current_slug: currentSlug,
+          selected_text: selectedText ?? undefined,
         },
         (content) => {
           fullContent += content;
@@ -270,6 +272,8 @@ export const ChatPanel = forwardRef<{ appendToInput: (text: string) => void }, C
         return updated;
       });
     } finally {
+      setSelectedText(null);
+      setSelectedTextPage(null);
       setLoading(false);
       setAgentStatus(null);
     }
@@ -554,6 +558,22 @@ export const ChatPanel = forwardRef<{ appendToInput: (text: string) => void }, C
               </svg>
               当前页面：{currentPageTitle}
             </span>
+          </div>
+        )}
+        {selectedText && (
+          <div className="pb-2 flex items-center gap-1.5">
+            <span className="text-xs text-th-text-muted flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              已引用选中文本{selectedTextPage && <span> · {selectedTextPage}</span>}
+            </span>
+            <button
+              onClick={() => { setSelectedText(null); setSelectedTextPage(null); }}
+              className="text-xs text-th-text-muted hover:text-th-text-primary ml-1"
+            >
+              × 移除
+            </button>
           </div>
         )}
         <div className="flex gap-2">

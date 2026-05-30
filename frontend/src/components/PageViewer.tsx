@@ -94,12 +94,7 @@ export function PageViewer({ page, collapsed, plan, onConfirmPlan, onRejectPlan,
 
   const handleAskAIClick = useCallback(() => {
     if (!selectionTooltip || !page) return;
-    const quotedText = selectionTooltip.text
-      .split("\n")
-      .map((l) => "> " + l)
-      .join("\n");
-    const formatted = quotedText + "\n>\n[来自页面：" + page.title + "]";
-    onAskAI?.(formatted, page.title);
+    onAskAI?.(selectionTooltip.text, page.title);
     setSelectionTooltip(null);
     window.getSelection()?.removeAllRanges();
   }, [selectionTooltip, page, onAskAI]);

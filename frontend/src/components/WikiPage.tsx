@@ -29,7 +29,7 @@ export function WikiPageLayout() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
   const rightPanelRef = useRef<PanelImperativeHandle>(null);
-  const chatPanelRef = useRef<{ appendToInput: (text: string) => void }>(null);
+  const chatPanelRef = useRef<{ setSelectedText: (text: string, pageTitle: string) => void }>(null);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [provider, setProvider] = useState('claude');
@@ -96,8 +96,8 @@ export function WikiPageLayout() {
     setActivePlan(plan);
   };
 
-  const handleAskAI = useCallback((text: string, _pageTitle: string) => {
-    chatPanelRef.current?.appendToInput(text);
+  const handleAskAI = useCallback((text: string, pageTitle: string) => {
+    chatPanelRef.current?.setSelectedText(text, pageTitle);
   }, []);
 
   const handleConfirmPlan = async (planId: string) => {

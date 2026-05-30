@@ -293,6 +293,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		PlanID           string          `json:"plan_id"`
 		FocusPageID      *int64          `json:"focus_page_id"`
 		CurrentSlug      string          `json:"current_slug"`
+		SelectedText     string          `json:"selected_text"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -425,6 +426,12 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+	if req.SelectedText != "" {
+		wikiContext += fmt.Sprintf(
+			"\n用户选中了以下文本内容：\n%s\n",
+			req.SelectedText,
+		)
 	}
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
 	if len(req.ConfirmedActions) > 0 {
