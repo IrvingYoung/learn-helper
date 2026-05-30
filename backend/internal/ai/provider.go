@@ -92,7 +92,7 @@ func WikiTools() []Tool {
 		},
 		{
 			Name:        "delete_page",
-			Description: "删除 Wiki 页面。只能删除空页面（无内容或无子页面）。用户确认后才会执行。",
+			Description: "删除 Wiki 页面。用户确认后才会执行。可直接删除任何页面。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
