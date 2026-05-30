@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
     content_status TEXT NOT NULL DEFAULT 'empty',
     sort_order INTEGER NOT NULL DEFAULT 0,
     path TEXT NOT NULL DEFAULT '',
+    links TEXT NOT NULL DEFAULT '[]',
+    backlinks TEXT NOT NULL DEFAULT '[]',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -107,6 +109,30 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_path ON wiki_pages(path);
+
+CREATE TABLE IF NOT EXISTS plans (
+    id TEXT PRIMARY KEY,
+    conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    reasoning TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'executing', 'completed', 'rejected', 'completed_with_failures')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    executed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS plan_actions (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK(type IN ('create_page', 'update_page', 'delete_page', 'link_pages', 'move_page')),
+    params TEXT NOT NULL,
+    depends_on TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+    result TEXT,
+    sort_order INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_plans_conversation ON plans(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_plan_actions_plan ON plan_actions(plan_id);
 `
 
 func main() {
@@ -126,6 +152,10 @@ func main() {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		log.Fatalf("Failed to initialize schema: %v", err)
 	}
+
+	// Migrate existing databases: add links/backlinks columns if missing
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN links TEXT NOT NULL DEFAULT '[]'`)
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN backlinks TEXT NOT NULL DEFAULT '[]'`)
 
 	db.Exec(`INSERT OR IGNORE INTO wiki_pages (title, slug, page_type, content, content_status, sort_order) VALUES ('概览', 'overview', 'overview', '# 知识库概览\n\n欢迎使用 LLM Wiki！\n\n通过与 AI 对话来构建你的知识库。试试说：\n\n- "我要学 Go 后端"\n- "总结一下 Redis 的核心数据结构"\n- "帮我梳理数据库索引的知识"', 'published', 0)`)
 

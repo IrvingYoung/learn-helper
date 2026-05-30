@@ -98,8 +98,32 @@ type WikiPage struct {
 	Tags          sql.NullString
 	ParentID      sql.NullInt64
 	Path          string
+	Links         string
+	Backlinks     string
 	ContentStatus string
 	SortOrder     int64
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+type Plan struct {
+	ID             string       `json:"id"`
+	ConversationID int64        `json:"conversation_id"`
+	Reasoning      string       `json:"reasoning"`
+	Status         string       `json:"status"`
+	Actions        []PlanAction `json:"actions,omitempty"`
+	CreatedAt      string       `json:"created_at"`
+	ExecutedAt     *string      `json:"executed_at,omitempty"`
+}
+
+type PlanAction struct {
+	ID        string  `json:"id"`
+	PlanID    string  `json:"plan_id"`
+	Type      string  `json:"type"`
+	Params    string  `json:"params"`
+	DependsOn string  `json:"depends_on"`
+	Status    string  `json:"status"`
+	Result    *string `json:"result,omitempty"`
+	SortOrder int64   `json:"sort_order"`
+	CreatedAt string  `json:"created_at"`
 }
