@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, confirmPlan, rejectPlan } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { WikiPage, Plan } from '../types';
+import type { WikiPage, Plan, WikiTreeNode } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
@@ -29,6 +29,7 @@ export function WikiPageLayout() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
   const rightPanelRef = useRef<PanelImperativeHandle>(null);
+  const chatPanelRef = useRef<{ appendToInput: (text: string) => void }>(null);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [provider, setProvider] = useState('claude');
@@ -71,6 +72,22 @@ export function WikiPageLayout() {
 
   const displayPage: WikiPage | null = page || overviewPage || null;
 
+  const selectedPageInfo = useMemo(() => {
+    if (!selectedSlug || !tree) return { id: undefined, title: undefined };
+    const findNode = (nodes: WikiTreeNode[]): { id: number; title: string } | undefined => {
+      for (const n of nodes) {
+        if (n.slug === selectedSlug) return { id: n.id, title: n.title };
+        if (n.children) {
+          const found = findNode(n.children);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+    const info = findNode(tree);
+    return { id: info?.id, title: info?.title };
+  }, [selectedSlug, tree]);
+
   const handlePageChanged = useCallback(() => {
     setTreeVersion(v => v + 1);
   }, []);
@@ -78,6 +95,10 @@ export function WikiPageLayout() {
   const handlePlanCreated = (plan: Plan) => {
     setActivePlan(plan);
   };
+
+  const handleAskAI = useCallback((text: string, _pageTitle: string) => {
+    chatPanelRef.current?.appendToInput(text);
+  }, []);
 
   const handleConfirmPlan = async (planId: string) => {
     setConfirmingPlan(true);
@@ -216,7 +237,7 @@ export function WikiPageLayout() {
 
         {/* Center: Chat */}
         <Panel id="center" minSize={300}>
-          <ChatPanel onPageChanged={handlePageChanged} onPlanCreated={handlePlanCreated} focusPageId={displayPage?.id ?? null} />
+          <ChatPanel ref={chatPanelRef} onPageChanged={handlePageChanged} onPlanCreated={handlePlanCreated} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? undefined} currentPageTitle={selectedPageInfo.title} />
         </Panel>
 
         <Separator />
@@ -234,7 +255,7 @@ export function WikiPageLayout() {
           }}
         >
           <div className="h-full overflow-hidden">
-            <PageViewer page={displayPage} collapsed={rightCollapsed} plan={activePlan} onConfirmPlan={handleConfirmPlan} onRejectPlan={handleRejectPlan} confirmingPlan={confirmingPlan} onSelectPage={(slug) => setSelectedSlug(slug)} />
+            <PageViewer page={displayPage} collapsed={rightCollapsed} plan={activePlan} onConfirmPlan={handleConfirmPlan} onRejectPlan={handleRejectPlan} confirmingPlan={confirmingPlan} onSelectPage={(slug) => setSelectedSlug(slug)} onAskAI={handleAskAI} />
           </div>
         </Panel>
       </Group>

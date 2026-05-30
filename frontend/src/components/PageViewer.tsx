@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { WikiPage, Plan } from '../types';
 import { MarkdownContent } from './MarkdownContent';
 import { PlanPreview } from './PlanPreview';
@@ -11,6 +11,7 @@ interface PageViewerProps {
   onRejectPlan: (planId: string) => void;
   confirmingPlan: boolean;
   onSelectPage: (slug: string) => void;
+  onAskAI?: (text: string, pageTitle: string) => void;
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; border: string; dot: string; label: string }> = {
@@ -37,7 +38,7 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; border: string; 
   },
 };
 
-export function PageViewer({ page, collapsed, plan, onConfirmPlan, onRejectPlan, confirmingPlan, onSelectPage }: PageViewerProps) {
+export function PageViewer({ page, collapsed, plan, onConfirmPlan, onRejectPlan, confirmingPlan, onSelectPage, onAskAI }: PageViewerProps) {
   if (collapsed) return null;
 
   if (plan) {
@@ -67,6 +68,55 @@ export function PageViewer({ page, collapsed, plan, onConfirmPlan, onRejectPlan,
     );
   }
 
+  const [selectionTooltip, setSelectionTooltip] = useState<{
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const handleContentMouseUp = useCallback((_e: React.MouseEvent) => {
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        setSelectionTooltip(null);
+        return;
+      }
+      const text = sel.toString().trim();
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      setSelectionTooltip({
+        text,
+        x: rect.left + rect.width / 2,
+        y: rect.top - 10,
+      });
+    }, 10);
+  }, []);
+
+  const handleAskAIClick = useCallback(() => {
+    if (!selectionTooltip || !page) return;
+    const quotedText = selectionTooltip.text
+      .split("\n")
+      .map((l) => "> " + l)
+      .join("\n");
+    const formatted = quotedText + "\n>\n[来自页面：" + page.title + "]";
+    onAskAI?.(formatted, page.title);
+    setSelectionTooltip(null);
+    window.getSelection()?.removeAllRanges();
+  }, [selectionTooltip, page, onAskAI]);
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setSelectionTooltip(null);
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener("click", handleClickOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, [selectionTooltip]);
+
   const status = STATUS_STYLES[page.content_status] || STATUS_STYLES.empty;
 
   return (
@@ -86,7 +136,7 @@ export function PageViewer({ page, collapsed, plan, onConfirmPlan, onRejectPlan,
             )}
           </div>
         </div>
-        <div className="prose-custom">
+        <div className="prose-custom" onMouseUp={handleContentMouseUp}>
           <MarkdownContent content={page.content} onWikiLinkClick={onSelectPage} />
         </div>
         {page.backlinks && page.backlinks.length > 0 && (
@@ -100,6 +150,20 @@ export function PageViewer({ page, collapsed, plan, onConfirmPlan, onRejectPlan,
           </div>
         )}
       </div>
+      {selectionTooltip && (
+        <button
+          className="fixed z-50 px-3 py-1.5 bg-th-accent text-white text-xs rounded-lg shadow-md hover:opacity-90 transition-opacity whitespace-nowrap"
+          style={{
+            left: selectionTooltip.x,
+            top: selectionTooltip.y,
+            transform: "translate(-50%, -100%)",
+          }}
+          onClick={handleAskAIClick}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          💬 询问 AI
+        </button>
+      )}
     </div>
   );
 }

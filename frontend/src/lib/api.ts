@@ -78,6 +78,7 @@ export interface ChatRequest {
   confirmed_actions?: PendingAction[];
   plan_id?: string;
   focus_page_id?: number | null;
+  current_slug?: string;
 }
 
 export async function streamChat(

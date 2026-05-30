@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
 import type { Conversation, ConversationMessage, PendingAction, Plan } from "../types";
 import {
   listConversations,
@@ -7,8 +7,6 @@ import {
   deleteConversation,
   getConversationMessages,
   streamChat,
-  confirmPlan,
-  rejectPlan,
 } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -18,9 +16,12 @@ interface ChatPanelProps {
   onPageChanged?: () => void;
   onPlanCreated?: (plan: Plan) => void;
   focusPageId?: number | null;
+  currentSlug?: string;
+  currentPageTitle?: string;
 }
 
-export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPanelProps) {
+export const ChatPanel = forwardRef<{ appendToInput: (text: string) => void }, ChatPanelProps>(
+  function ChatPanel({ onPageChanged, onPlanCreated, focusPageId, currentSlug, currentPageTitle }, ref) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -36,8 +37,20 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
     maxSteps: number;
     running: boolean;
   } | null>(null);
-  const [activePlan, setActivePlan] = useState<Plan | null>(null);
-  const [confirmingPlan, setConfirmingPlan] = useState(false);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    appendToInput(text: string) {
+      setInput((prev) => {
+        const newInput = prev ? prev + "\n" + text : text;
+        return newInput;
+      });
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
+    },
+  }));
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -192,6 +205,7 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
           confirmed_actions: confirmedActions,
           plan_id: planId,
           focus_page_id: focusPageId,
+          current_slug: currentSlug,
         },
         (content) => {
           fullContent += content;
@@ -210,7 +224,6 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
           }
           // Handle plan from AI
           if (meta.plan) {
-            setActivePlan(meta.plan);
             setMessages((prev) => {
               const updated = [...prev];
               const last = updated[updated.length - 1];
@@ -266,30 +279,6 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
     handleSend(actions);
   }
 
-  async function handleConfirmPlan(planId: string) {
-    if (!activePlan) return;
-    setConfirmingPlan(true);
-    try {
-      await confirmPlan(planId);
-      setActivePlan(null);
-      // Refresh tree after plan execution
-      onPageChanged?.();
-    } catch (err) {
-      console.error("Plan confirmation failed:", err);
-    } finally {
-      setConfirmingPlan(false);
-    }
-  }
-
-  async function handleRejectPlan(planId: string) {
-    try {
-      await rejectPlan(planId);
-      setActivePlan(null);
-    } catch (err) {
-      console.error("Plan rejection failed:", err);
-    }
-  }
-
   const renderedMessages = useMemo(() =>
     messages.map((msg, i) => (
       <div key={msg.id || i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -316,22 +305,7 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
               <div className="text-xs text-th-muted mt-1">
                 {msg.plan.actions.length} 个操作 · 请在右侧查看详情
               </div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={() => handleConfirmPlan(msg.plan!.id)}
-                  disabled={confirmingPlan}
-                  className="text-xs bg-th-accent text-white px-3 py-1 rounded hover:opacity-90 disabled:opacity-50"
-                >
-                  确认执行
-                </button>
-                <button
-                  onClick={() => handleRejectPlan(msg.plan!.id)}
-                  disabled={confirmingPlan}
-                  className="text-xs border border-th-separator text-th-muted px-3 py-1 rounded hover:opacity-90 disabled:opacity-50"
-                >
-                  拒绝
-                </button>
-              </div>
+
             </div>
           )}
           {msg.pending_actions && msg.pending_actions.length > 0 && (
@@ -353,7 +327,7 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
         </div>
       </div>
     )),
-    [messages, loading, confirmingPlan]
+    [messages, loading]
   );
 
 
@@ -572,8 +546,19 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
 
       {/* Input */}
       <div className="p-3 border-t border-th-border shrink-0">
+        {currentPageTitle && (
+          <div className="pb-2">
+            <span className="text-xs text-th-text-muted flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              当前页面：{currentPageTitle}
+            </span>
+          </div>
+        )}
         <div className="flex gap-2">
           <input
+            ref={inputRef}
             type="text"
             className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/40 focus:border-th-accent transition-all duration-200"
             placeholder={activeConv ? "输入消息..." : "请先选择或新建会话"}
@@ -585,11 +570,11 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
                 handleSend();
               }
             }}
-            disabled={!activeConv || loading || !!activePlan}
+            disabled={!activeConv || loading}
           />
           <button
             onClick={() => handleSend()}
-            disabled={!activeConv || loading || !input.trim() || !!activePlan}
+            disabled={!activeConv || loading || !input.trim()}
             className="px-3 rounded-xl text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150 flex items-center justify-center"
           >
             {loading ? (
@@ -607,4 +592,4 @@ export function ChatPanel({ onPageChanged, onPlanCreated, focusPageId }: ChatPan
       </div>
     </div>
   );
-}
+});
