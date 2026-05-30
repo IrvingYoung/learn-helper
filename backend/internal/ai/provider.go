@@ -168,6 +168,11 @@ func buildWikiMaintainerPrompt(wikiContext string) string {
 4. 创建子页面时必须设置正确的 parent_id（父页面的 ID）
 5. 创建页面时 slug 使用英文短横线格式（如 job-hunting）
 6. 内容使用 Markdown 格式
+7. 当用户请求创建/更新/删除页面时，你必须调用对应的工具（create_page/update_page/delete_page）来执行，不能仅回复文字而不调工具。
+   特别地：如果你需要先查询信息（如查找父页面 ID），你应该直接调用 lookup_page 或 search_pages 等查询工具，而不是回复"让我看看XXX的内容"之类的文字。
+   正确做法：用户提出请求后立即调用对应的工具，不需要先用文字向用户说明你打算做什么。
+8. 如果需要查询信息（如获取页面 ID 或内容），请使用 lookup_page、read_page、search_pages 等工具自动查询（无需用户确认）。不要用文字描述你的查询意图，直接调用工具。查询完成后立即继续执行用户的请求。
+9. 当你看到对话历史中有自己发出的 tool_use（或 tool_calls）和对应的 tool（tool_result）返回结果时，说明该操作已被执行完毕。不要再次提议或执行相同的操作——直接告知用户结果即可。
 
 知识库结构：`
 

@@ -321,6 +321,25 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		aiMessages = injectToolResults(aiMessages, req.ConfirmedActions)
 	}
 
+	// Build fingerprint set of just-confirmed actions to prevent AI from repeating them
+	confirmedFingerprints := make(map[string]bool)
+	selfTypeToToolName := map[string]string{
+		"create": "create_page",
+		"update": "update_page",
+		"delete": "delete_page",
+	}
+	for _, a := range req.ConfirmedActions {
+		toolName, ok := selfTypeToToolName[a.Type]
+		if !ok {
+			continue
+		}
+		dj, err := json.Marshal(a.Details)
+		if err != nil {
+			continue
+		}
+		confirmedFingerprints[toolName+":"+string(dj)] = true
+	}
+
 	// SSE setup
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -331,6 +350,9 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	// Build context and prompt
 	wikiContext := h.buildWikiContext(ctx, nil)
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
+	if len(req.ConfirmedActions) > 0 {
+		systemPrompt += "\n\n【本次请求特别说明】以上对话中已经包含 tool（tool_result）返回结果，表明对应操作已被用户确认执行完毕。请直接回复告知用户结果即可，不要再次调用相同的工具。"
+	}
 
 	chatReq := ai.ChatRequest{
 		Messages:     aiMessages,
@@ -456,6 +478,16 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			}
 			if chunk.Done {
 				if len(toolCalls) > 0 {
+					// Filter out tool calls that were just confirmed to prevent loops
+					if len(confirmedFingerprints) > 0 {
+						var filtered []*ai.ToolCall
+						for _, tc := range toolCalls {
+							if !confirmedFingerprints[tc.Name+":"+tc.Input] {
+								filtered = append(filtered, tc)
+							}
+						}
+						toolCalls = filtered
+					}
 					if pendingActions := h.toolCallsToPendingActions(toolCalls); len(pendingActions) > 0 {
 						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
 						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
@@ -508,6 +540,16 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			}
 			if chunk.Done {
 				if len(toolCalls) > 0 {
+					// Filter out tool calls that were just confirmed to prevent loops
+					if len(confirmedFingerprints) > 0 {
+						var filtered []*ai.ToolCall
+						for _, tc := range toolCalls {
+							if !confirmedFingerprints[tc.Name+":"+tc.Input] {
+								filtered = append(filtered, tc)
+							}
+						}
+						toolCalls = filtered
+					}
 					if pendingActions := h.toolCallsToPendingActions(toolCalls); len(pendingActions) > 0 {
 						metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
 						sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
