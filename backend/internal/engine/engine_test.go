@@ -241,8 +241,8 @@ func TestReplacePlaceholders(t *testing.T) {
 		},
 		{
 			name:     "multiple replacements",
-			input:    `{"source_id": {{action:a1.page_id}}, "target_id": {{action:a2.page_id}}}`,
-			expected: `{"source_id": 42, "target_id": 99}`,
+			input:    `{"source_page_id": {{action:a1.page_id}}, "target_page_id": {{action:a2.page_id}}}`,
+			expected: `{"source_page_id": 42, "target_page_id": 99}`,
 		},
 		{
 			name:     "string field replacement",

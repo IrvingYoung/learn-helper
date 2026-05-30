@@ -327,6 +327,20 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	// Handle plan confirmation
 	if req.PlanID != "" {
+		// Verify plan is pending before executing
+		var planStatus string
+		err := h.db.QueryRowContext(ctx, "SELECT status FROM plans WHERE id = ?", req.PlanID).Scan(&planStatus)
+		if err != nil || planStatus != "pending" {
+			http.Error(w, "plan not found or not pending", http.StatusBadRequest)
+			return
+		}
+		// Mark as confirmed
+		_, err = h.db.ExecContext(ctx, "UPDATE plans SET status = 'confirmed' WHERE id = ?", req.PlanID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("update plan status: %v", err), http.StatusInternalServerError)
+			return
+		}
+		// Now execute
 		eng := engine.NewExecutionEngine(h.db, h.queries)
 		report, err := eng.ExecutePlan(ctx, req.PlanID)
 		if err != nil {

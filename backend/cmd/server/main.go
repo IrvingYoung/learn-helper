@@ -180,6 +180,7 @@ func main() {
 		// Wiki routes
 		r.Get("/wiki", wikiHandler.GetWikiTree)
 		r.Get("/wiki/overview", wikiHandler.GetOverviewPage)
+		r.Get("/wiki/by-id", wikiHandler.GetWikiPageByID)
 		r.Get("/wiki/{slug}", wikiHandler.GetWikiPageBySlug)
 		r.Post("/wiki", wikiHandler.CreateWikiPage)
 		r.Put("/wiki/{id}", wikiHandler.UpdateWikiPage)

@@ -108,7 +108,7 @@ function BacklinkBadge({ pageId, onSelect }: { pageId: number; onSelect: (slug: 
   const [info, setInfo] = useState<{title: string; slug: string} | null>(null);
 
   useEffect(() => {
-    fetch(`/api/wiki?page_id=${pageId}`)
+    fetch(`/api/wiki/by-id?id=${pageId}`)
       .then(res => res.json())
       .then(data => setInfo({ title: data.title, slug: data.slug }))
       .catch(() => {});

@@ -452,30 +452,14 @@ func (e *ExecutionEngine) execDeletePage(ctx context.Context, params map[string]
 	// 1. Remove all link/backlink references to this page
 	e.removeLinksForPage(ctx, pageID)
 
-	// 2. Reparent children to the deleted page's parent
-	page, err := e.queries.GetWikiPageByID(ctx, pageID)
-	if err != nil {
-		return nil, fmt.Errorf("get page %d: %w", pageID, err)
-	}
-
-	children, err := e.queries.GetWikiPageChildren(ctx, sql.NullInt64{Int64: pageID, Valid: true})
-	if err == nil {
-		for _, child := range children {
-			// Update child's parent to the deleted page's parent
-			if err := e.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
-				Title:         child.Title,
-				Slug:          child.Slug,
-				PageType:      child.PageType,
-				Content:       "",
-				Tags:          sql.NullString{},
-				ParentID:      page.ParentID,
-				ContentStatus: child.ContentStatus,
-				SortOrder:     child.SortOrder,
-				ID:            child.ID,
-			}); err != nil {
-				log.Printf("WARN: failed to reparent child %d: %v", child.ID, err)
-			}
-		}
+	// 2. Reparent children to the deleted page's parent using direct SQL
+	//    (only update parent_id, preserve all other fields including content)
+	var deletedParentID sql.NullInt64
+	e.db.QueryRowContext(ctx, "SELECT parent_id FROM wiki_pages WHERE id = ?", pageID).Scan(&deletedParentID)
+	if _, err := e.db.ExecContext(ctx,
+		"UPDATE wiki_pages SET parent_id = ? WHERE parent_id = ?",
+		deletedParentID, pageID); err != nil {
+		log.Printf("WARN: failed to reparent children of page %d: %v", pageID, err)
 	}
 
 	// 3. Delete the page
@@ -490,13 +474,13 @@ func (e *ExecutionEngine) execDeletePage(ctx context.Context, params map[string]
 
 // execLinkPages appends [[linkText]] to source page content and updates links/backlinks.
 func (e *ExecutionEngine) execLinkPages(ctx context.Context, params map[string]any) (any, error) {
-	sourceID, ok := toInt64(params["source_id"])
+	sourceID, ok := toInt64(params["source_page_id"])
 	if !ok {
-		return nil, fmt.Errorf("link_pages: source_id is required")
+		return nil, fmt.Errorf("link_pages: source_page_id is required")
 	}
-	targetID, ok := toInt64(params["target_id"])
+	targetID, ok := toInt64(params["target_page_id"])
 	if !ok {
-		return nil, fmt.Errorf("link_pages: target_id is required")
+		return nil, fmt.Errorf("link_pages: target_page_id is required")
 	}
 	linkText, _ := params["link_text"].(string)
 	if linkText == "" {
@@ -515,9 +499,9 @@ func (e *ExecutionEngine) execLinkPages(ctx context.Context, params map[string]a
 		// Link already present; just update the link arrays
 		e.updatePageLinks(ctx, sourceID, source.Content)
 		return map[string]any{
-			"source_id":  sourceID,
-			"target_id":  targetID,
-			"link_text":  linkText,
+			"source_page_id": sourceID,
+			"target_page_id": targetID,
+			"link_text":      linkText,
 		}, nil
 	}
 
@@ -545,9 +529,9 @@ func (e *ExecutionEngine) execLinkPages(ctx context.Context, params map[string]a
 	e.updatePageLinks(ctx, sourceID, newContent)
 
 	return map[string]any{
-		"source_id":  sourceID,
-		"target_id":  targetID,
-		"link_text":  linkText,
+		"source_page_id": sourceID,
+		"target_page_id": targetID,
+		"link_text":      linkText,
 	}, nil
 }
 
@@ -559,7 +543,7 @@ func (e *ExecutionEngine) execMovePage(ctx context.Context, params map[string]an
 	}
 
 	var newParentID sql.NullInt64
-	if pid, ok := toInt64(params["parent_id"]); ok {
+	if pid, ok := toInt64(params["new_parent_id"]); ok {
 		newParentID = sql.NullInt64{Int64: pid, Valid: true}
 	}
 

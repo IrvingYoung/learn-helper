@@ -262,6 +262,25 @@ func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"tree": resultSlice})
 }
 
+func (h *WikiHandler) GetWikiPageByID(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	var title, slug string
+	err = h.db.QueryRow("SELECT title, slug FROM wiki_pages WHERE id = ?", id).Scan(&title, &slug)
+	if err != nil {
+		http.Error(w, "page not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"title": title, "slug": slug})
+}
+
 func (h *WikiHandler) GetWikiPageBySlug(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -461,6 +480,13 @@ func (h *WikiHandler) DeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 
 	// Cleanup links/backlinks before deleting
 	h.cleanupLinksForPage(id)
+
+	// Reparent children to the deleted page's parent (only update parent_id, preserve content)
+	var deletedParentID sql.NullInt64
+	h.db.QueryRow("SELECT parent_id FROM wiki_pages WHERE id = ?", id).Scan(&deletedParentID)
+	if _, err := h.db.Exec("UPDATE wiki_pages SET parent_id = ? WHERE parent_id = ?", deletedParentID, id); err != nil {
+		log.Printf("WARN: failed to reparent children of page %d: %v", id, err)
+	}
 
 	// Delete the page
 	err = h.queries.DeleteWikiPage(ctx, id)
