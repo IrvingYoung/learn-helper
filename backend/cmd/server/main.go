@@ -11,7 +11,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	_ "modernc.org/sqlite"
 
+	"learn-helper/internal/engine"
 	"learn-helper/internal/handler"
+	"learn-helper/internal/model"
 )
 
 const schemaSQL = `
@@ -161,6 +163,8 @@ func main() {
 
 	wikiHandler := handler.NewWikiHandler(db)
 	aiHandler := handler.NewAIHandler(db)
+	eng := engine.NewExecutionEngine(db, model.New(db))
+	planHandler := handler.NewPlanHandler(db, model.New(db), eng)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -198,6 +202,11 @@ func main() {
 			r.Get("/configs", aiHandler.GetAIConfigs)
 			r.Post("/configs", aiHandler.UpsertAIConfig)
 		})
+
+		// Plan routes
+		r.Get("/plans", planHandler.GetPlan)
+		r.Post("/plans/confirm", planHandler.ConfirmPlan)
+		r.Post("/plans/reject", planHandler.RejectPlan)
 	})
 
 	port := os.Getenv("PORT")
