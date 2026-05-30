@@ -25,11 +25,19 @@ SyntaxHighlighter.registerLanguage('sql', sql)
 interface MarkdownContentProps {
   content: string
   className?: string
+  onWikiLinkClick?: (title: string) => void
 }
 
-export const MarkdownContent = memo(function MarkdownContent({ content, className = '' }: MarkdownContentProps) {
+function processWikiLinks(content: string): string {
+  return content.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
+    return `[${title}](wiki:${encodeURIComponent(title)})`
+  })
+}
+
+export const MarkdownContent = memo(function MarkdownContent({ content, className = '', onWikiLinkClick }: MarkdownContentProps) {
   const { theme } = useTheme()
   const syntaxStyle = theme === 'dark' ? oneDark : oneLight
+  const processedContent = processWikiLinks(content)
 
   if (!content) return null
   return (
@@ -91,9 +99,28 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
           p({ children }) {
             return <p className="my-1.5 leading-relaxed text-th-text-secondary">{children}</p>
           },
+          a({ href, children, ...props }) {
+            if (href?.startsWith('wiki:')) {
+              return (
+                <a
+                  href={href}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    const title = decodeURIComponent(href.slice(5))
+                    onWikiLinkClick?.(title)
+                  }}
+                  className="text-th-accent hover:underline cursor-pointer"
+                  {...props}
+                >
+                  {children}
+                </a>
+              )
+            }
+            return <a href={href} {...props}>{children}</a>
+          },
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   )

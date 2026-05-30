@@ -1,9 +1,16 @@
-import type { WikiPage } from '../types';
+import { useState, useEffect } from 'react';
+import type { WikiPage, Plan } from '../types';
 import { MarkdownContent } from './MarkdownContent';
+import { PlanPreview } from './PlanPreview';
 
 interface PageViewerProps {
   page: WikiPage | null;
   collapsed: boolean;
+  plan: Plan | null;
+  onConfirmPlan: (planId: string) => void;
+  onRejectPlan: (planId: string) => void;
+  confirmingPlan: boolean;
+  onSelectPage: (slug: string) => void;
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; border: string; dot: string; label: string }> = {
@@ -30,8 +37,21 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; border: string; 
   },
 };
 
-export function PageViewer({ page, collapsed }: PageViewerProps) {
+export function PageViewer({ page, collapsed, plan, onConfirmPlan, onRejectPlan, confirmingPlan, onSelectPage }: PageViewerProps) {
   if (collapsed) return null;
+
+  if (plan) {
+    return (
+      <div className="h-full flex flex-col">
+        <PlanPreview
+          plan={plan}
+          onConfirm={onConfirmPlan}
+          onReject={onRejectPlan}
+          confirming={confirmingPlan}
+        />
+      </div>
+    );
+  }
 
   if (!page) {
     return (
@@ -67,9 +87,42 @@ export function PageViewer({ page, collapsed }: PageViewerProps) {
           </div>
         </div>
         <div className="prose-custom">
-          <MarkdownContent content={page.content} />
+          <MarkdownContent content={page.content} onWikiLinkClick={onSelectPage} />
         </div>
+        {page.backlinks && page.backlinks.length > 0 && (
+          <div className="mt-6 pt-4 border-t border-th-separator">
+            <h3 className="text-sm font-medium text-th-muted mb-2">反向链接</h3>
+            <div className="flex flex-wrap gap-2">
+              {page.backlinks.map(blId => (
+                <BacklinkBadge key={blId} pageId={blId} onSelect={onSelectPage} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function BacklinkBadge({ pageId, onSelect }: { pageId: number; onSelect: (slug: string) => void }) {
+  const [info, setInfo] = useState<{title: string; slug: string} | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/wiki?page_id=${pageId}`)
+      .then(res => res.json())
+      .then(data => setInfo({ title: data.title, slug: data.slug }))
+      .catch(() => {});
+  }, [pageId]);
+
+  if (!info) return null;
+
+  return (
+    <button
+      onClick={() => onSelect(info.slug)}
+      className="px-2 py-1 text-xs rounded-md border border-th-separator
+                 text-th-muted hover:bg-th-hover transition-colors"
+    >
+      {info.title}
+    </button>
   );
 }

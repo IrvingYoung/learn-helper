@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
-import { fetchWikiTree, fetchWikiPage, fetchOverviewPage } from '../lib/api';
+import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, confirmPlan, rejectPlan } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { WikiPage } from '../types';
+import type { WikiPage, Plan } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
@@ -36,6 +36,8 @@ export function WikiPageLayout() {
   const [apiKey, setApiKey] = useState('')
   const [tavilyApiKey, setTavilyApiKey] = useState('');
   const [saved, setSaved] = useState(false);
+  const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [confirmingPlan, setConfirmingPlan] = useState(false);
 
   useEffect(() => {
     fetch('/api/ai/configs')
@@ -72,6 +74,32 @@ export function WikiPageLayout() {
   const handlePageChanged = useCallback(() => {
     setTreeVersion(v => v + 1);
   }, []);
+
+  const handlePlanCreated = (plan: Plan) => {
+    setActivePlan(plan);
+  };
+
+  const handleConfirmPlan = async (planId: string) => {
+    setConfirmingPlan(true);
+    try {
+      await confirmPlan(planId);
+      setActivePlan(null);
+      handlePageChanged();
+    } catch {
+      // error handled in ChatPanel
+    } finally {
+      setConfirmingPlan(false);
+    }
+  };
+
+  const handleRejectPlan = async (planId: string) => {
+    try {
+      await rejectPlan(planId);
+      setActivePlan(null);
+    } catch {
+      // error handled in ChatPanel
+    }
+  };
 
   const handleSaveConfig = async () => {
     const resp = await fetch('/api/ai/configs', {
@@ -188,7 +216,7 @@ export function WikiPageLayout() {
 
         {/* Center: Chat */}
         <Panel id="center" minSize={300}>
-          <ChatPanel onPageChanged={handlePageChanged} />
+          <ChatPanel onPageChanged={handlePageChanged} onPlanCreated={handlePlanCreated} focusPageId={displayPage?.id ?? null} />
         </Panel>
 
         <Separator />
@@ -206,7 +234,7 @@ export function WikiPageLayout() {
           }}
         >
           <div className="h-full overflow-hidden">
-            <PageViewer page={displayPage} collapsed={rightCollapsed} />
+            <PageViewer page={displayPage} collapsed={rightCollapsed} plan={activePlan} onConfirmPlan={handleConfirmPlan} onRejectPlan={handleRejectPlan} confirmingPlan={confirmingPlan} onSelectPage={(slug) => setSelectedSlug(slug)} />
           </div>
         </Panel>
       </Group>
