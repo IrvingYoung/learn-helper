@@ -2,6 +2,7 @@ package handler
 
 import (
 	"database/sql"
+	"log"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,6 +33,7 @@ type WikiTreeNode struct {
 	PageType      string         `json:"page_type"`
 	ContentStatus string         `json:"content_status"`
 	ParentID      *int64         `json:"parent_id"`
+	Path          string         `json:"path"`
 	SortOrder     int64          `json:"sort_order"`
 	Children      []WikiTreeNode `json:"children,omitempty"`
 }
@@ -77,6 +79,7 @@ func (h *WikiHandler) GetWikiTree(w http.ResponseWriter, r *http.Request) {
 			PageType:      p.PageType,
 			ContentStatus: p.ContentStatus,
 			ParentID:      nullInt64ToPtr(p.ParentID),
+			Path:          p.Path,
 			SortOrder:     p.SortOrder,
 			Children:      []WikiTreeNode{},
 		}
@@ -187,6 +190,25 @@ func (h *WikiHandler) CreateWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, _ := result.LastInsertId()
+	if id > 0 {
+		var path string
+		if req.ParentID != nil && *req.ParentID > 0 {
+			parentPath, err := h.queries.GetWikiPagePathByID(ctx, *req.ParentID)
+			if err != nil {
+				log.Printf("Failed to fetch parent path: %v", err)
+			} else {
+				path = parentPath + fmt.Sprintf("%d/", id)
+			}
+		} else {
+			path = fmt.Sprintf("%d/", id)
+		}
+		if path != "" {
+			h.queries.UpdateWikiPagePath(ctx, model.UpdateWikiPagePathParams{
+				Path: path,
+				ID:   id,
+			})
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "slug": req.Slug})
@@ -252,10 +274,32 @@ func (h *WikiHandler) DeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	// Fetch page to get its path for children reparenting
+	page, err := h.queries.GetWikiPageByID(ctx, id)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Page not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Failed to fetch page", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete the page
 	err = h.queries.DeleteWikiPage(ctx, id)
 	if err != nil {
 		http.Error(w, "Failed to delete page", http.StatusInternalServerError)
 		return
+	}
+
+	// Reparent children: remove the deleted node's path segment from descendants
+	if page.Path != "" {
+		h.queries.BatchUpdateWikiPagePath(ctx, model.BatchUpdateWikiPagePathParams{
+			OldPrefix:  page.Path,
+			NewPrefix:  "",
+			LikePrefix: sql.NullString{String: page.Path, Valid: true},
+		})
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -405,6 +449,41 @@ func (h *WikiHandler) MoveWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Migrate subtree paths
+	if page.Path != "" {
+		var newPath string
+		if parentID.Valid && parentID.Int64 > 0 {
+			parentPath, err := h.queries.GetWikiPagePathByID(ctx, parentID.Int64)
+			if err != nil {
+				log.Printf("Failed to fetch parent path: %v", err)
+				http.Error(w, "Failed to get parent page path", http.StatusInternalServerError)
+				return
+			}
+			newPath = parentPath + fmt.Sprintf("%d/", id)
+		} else {
+			newPath = fmt.Sprintf("%d/", id)
+		}
+
+		// Prevent moving page under its own descendant (cycle detection)
+		if strings.HasPrefix(newPath, page.Path) {
+			http.Error(w, "Cannot move page under its own descendant", http.StatusBadRequest)
+			return
+		}
+
+		// Update the moved page's own path
+		h.queries.UpdateWikiPagePath(ctx, model.UpdateWikiPagePathParams{
+			Path: newPath,
+			ID:   id,
+		})
+
+		// Batch update descendants
+		h.queries.BatchUpdateWikiPagePath(ctx, model.BatchUpdateWikiPagePathParams{
+			OldPrefix:  page.Path,
+			NewPrefix:  newPath,
+			LikePrefix: sql.NullString{String: page.Path, Valid: true},
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -445,6 +524,25 @@ func (h *WikiHandler) CreateEmptyWikiPage(w http.ResponseWriter, r *http.Request
 	}
 
 	id, _ := result.LastInsertId()
+	if id > 0 {
+		var path string
+		if req.ParentID != nil && *req.ParentID > 0 {
+			parentPath, err := h.queries.GetWikiPagePathByID(ctx, *req.ParentID)
+			if err != nil {
+				log.Printf("Failed to fetch parent path: %v", err)
+			} else {
+				path = parentPath + fmt.Sprintf("%d/", id)
+			}
+		} else {
+			path = fmt.Sprintf("%d/", id)
+		}
+		if path != "" {
+			h.queries.UpdateWikiPagePath(ctx, model.UpdateWikiPagePathParams{
+				Path: path,
+				ID:   id,
+			})
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{"id": id, "slug": slug, "title": req.Title})
