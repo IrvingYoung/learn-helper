@@ -97,6 +97,7 @@ type WikiPage struct {
 	Content       string
 	Tags          sql.NullString
 	ParentID      sql.NullInt64
+	Path          string
 	ContentStatus string
 	SortOrder     int64
 	CreatedAt     time.Time

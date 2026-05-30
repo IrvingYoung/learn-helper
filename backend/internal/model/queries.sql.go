@@ -32,6 +32,21 @@ func (q *Queries) BatchUpdateTopicContent(ctx context.Context, arg BatchUpdateTo
 	return err
 }
 
+const batchUpdateWikiPagePath = `-- name: BatchUpdateWikiPagePath :exec
+UPDATE wiki_pages SET path = REPLACE(path, ?1, ?2) WHERE path LIKE ?3 || '%'
+`
+
+type BatchUpdateWikiPagePathParams struct {
+	OldPrefix  string
+	NewPrefix  string
+	LikePrefix sql.NullString
+}
+
+func (q *Queries) BatchUpdateWikiPagePath(ctx context.Context, arg BatchUpdateWikiPagePathParams) error {
+	_, err := q.db.ExecContext(ctx, batchUpdateWikiPagePath, arg.OldPrefix, arg.NewPrefix, arg.LikePrefix)
+	return err
+}
+
 const countWikiPages = `-- name: CountWikiPages :one
 SELECT COUNT(*) FROM wiki_pages
 `
@@ -383,7 +398,7 @@ func (q *Queries) GetAllTopics(ctx context.Context) ([]GetAllTopicsRow, error) {
 
 const getAllWikiPages = `-- name: GetAllWikiPages :many
 
-SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 ORDER BY sort_order, id
 `
@@ -406,6 +421,7 @@ func (q *Queries) GetAllWikiPages(ctx context.Context) ([]WikiPage, error) {
 			&i.Content,
 			&i.Tags,
 			&i.ParentID,
+			&i.Path,
 			&i.ContentStatus,
 			&i.SortOrder,
 			&i.CreatedAt,
@@ -778,7 +794,7 @@ func (q *Queries) GetNextTopic(ctx context.Context, arg GetNextTopicParams) (Get
 }
 
 const getOverviewPage = `-- name: GetOverviewPage :one
-SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 WHERE page_type = 'overview' LIMIT 1
 `
@@ -794,6 +810,7 @@ func (q *Queries) GetOverviewPage(ctx context.Context) (WikiPage, error) {
 		&i.Content,
 		&i.Tags,
 		&i.ParentID,
+		&i.Path,
 		&i.ContentStatus,
 		&i.SortOrder,
 		&i.CreatedAt,
@@ -867,6 +884,56 @@ func (q *Queries) GetRecentlyUpdatedWikiPages(ctx context.Context) ([]GetRecentl
 			&i.PageType,
 			&i.ContentStatus,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSubtreePages = `-- name: GetSubtreePages :many
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
+FROM wiki_pages
+WHERE path LIKE ?1 || '%'
+ORDER BY path, sort_order, id
+`
+
+type GetSubtreePagesRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	ContentStatus string
+	ParentID      sql.NullInt64
+	SortOrder     int64
+	Path          string
+}
+
+func (q *Queries) GetSubtreePages(ctx context.Context, prefix sql.NullString) ([]GetSubtreePagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getSubtreePages, prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSubtreePagesRow
+	for rows.Next() {
+		var i GetSubtreePagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.PageType,
+			&i.ContentStatus,
+			&i.ParentID,
+			&i.SortOrder,
+			&i.Path,
 		); err != nil {
 			return nil, err
 		}
@@ -1003,7 +1070,7 @@ func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (GetTopicBySl
 }
 
 const getWikiPageByID = `-- name: GetWikiPageByID :one
-SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE id = ?
+SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE id = ?
 `
 
 func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, error) {
@@ -1017,6 +1084,7 @@ func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, erro
 		&i.Content,
 		&i.Tags,
 		&i.ParentID,
+		&i.Path,
 		&i.ContentStatus,
 		&i.SortOrder,
 		&i.CreatedAt,
@@ -1026,7 +1094,7 @@ func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, erro
 }
 
 const getWikiPageBySlug = `-- name: GetWikiPageBySlug :one
-SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
+SELECT id, title, slug, page_type, content, tags, parent_id, path, content_status, sort_order, created_at, updated_at
 FROM wiki_pages
 WHERE slug = ?
 `
@@ -1042,10 +1110,42 @@ func (q *Queries) GetWikiPageBySlug(ctx context.Context, slug string) (WikiPage,
 		&i.Content,
 		&i.Tags,
 		&i.ParentID,
+		&i.Path,
 		&i.ContentStatus,
 		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWikiPageByTitle = `-- name: GetWikiPageByTitle :one
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order
+FROM wiki_pages
+WHERE title = ? LIMIT 1
+`
+
+type GetWikiPageByTitleRow struct {
+	ID            int64
+	Title         string
+	Slug          string
+	PageType      string
+	ContentStatus string
+	ParentID      sql.NullInt64
+	SortOrder     int64
+}
+
+func (q *Queries) GetWikiPageByTitle(ctx context.Context, title string) (GetWikiPageByTitleRow, error) {
+	row := q.db.QueryRowContext(ctx, getWikiPageByTitle, title)
+	var i GetWikiPageByTitleRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.PageType,
+		&i.ContentStatus,
+		&i.ParentID,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -1096,8 +1196,19 @@ func (q *Queries) GetWikiPageChildren(ctx context.Context, parentID sql.NullInt6
 	return items, nil
 }
 
+const getWikiPagePathByID = `-- name: GetWikiPagePathByID :one
+SELECT path FROM wiki_pages WHERE id = ?
+`
+
+func (q *Queries) GetWikiPagePathByID(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, getWikiPagePathByID, id)
+	var path string
+	err := row.Scan(&path)
+	return path, err
+}
+
 const getWikiPageTree = `-- name: GetWikiPageTree :many
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
 FROM wiki_pages
 ORDER BY sort_order, id
 `
@@ -1110,6 +1221,7 @@ type GetWikiPageTreeRow struct {
 	ContentStatus string
 	ParentID      sql.NullInt64
 	SortOrder     int64
+	Path          string
 }
 
 func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, error) {
@@ -1129,6 +1241,7 @@ func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, er
 			&i.ContentStatus,
 			&i.ParentID,
 			&i.SortOrder,
+			&i.Path,
 		); err != nil {
 			return nil, err
 		}
@@ -1264,6 +1377,20 @@ type UpdateWikiPageContentParams struct {
 
 func (q *Queries) UpdateWikiPageContent(ctx context.Context, arg UpdateWikiPageContentParams) error {
 	_, err := q.db.ExecContext(ctx, updateWikiPageContent, arg.Content, arg.ContentStatus, arg.ID)
+	return err
+}
+
+const updateWikiPagePath = `-- name: UpdateWikiPagePath :exec
+UPDATE wiki_pages SET path = ? WHERE id = ?
+`
+
+type UpdateWikiPagePathParams struct {
+	Path string
+	ID   int64
+}
+
+func (q *Queries) UpdateWikiPagePath(ctx context.Context, arg UpdateWikiPagePathParams) error {
+	_, err := q.db.ExecContext(ctx, updateWikiPagePath, arg.Path, arg.ID)
 	return err
 }
 
