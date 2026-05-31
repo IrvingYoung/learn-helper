@@ -913,7 +913,7 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 
 	plan := &model.Plan{
 		ID:             planID,
-		ConversationID: conversationID,
+		ConversationID: &conversationID,
 		Reasoning:      proposal.Reasoning,
 		Status:         "pending",
 		Outline:        outlineStr,

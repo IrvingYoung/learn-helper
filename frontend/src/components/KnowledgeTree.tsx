@@ -18,6 +18,28 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddCh
     x: number; y: number; nodeId: number; nodeTitle: string; hasChildren: boolean;
   } | null>(null);
   const [renameNodeId, setRenameNodeId] = useState<number | null>(null);
+  const [draggedId, setDraggedId] = useState<number | null>(null);
+
+  const getDescendantIds = (parentId: number, nodes: WikiTreeNode[]): Set<number> => {
+    const ids = new Set<number>();
+    const findAndCollect = (ns: WikiTreeNode[]): void => {
+      for (const n of ns) {
+        if (n.id === parentId) {
+          const collect = (node: WikiTreeNode): void => {
+            ids.add(node.id);
+            node.children?.forEach(collect);
+          };
+          n.children?.forEach(collect);
+          return;
+        }
+        if (n.children) findAndCollect(n.children);
+      }
+    };
+    findAndCollect(nodes);
+    return ids;
+  };
+
+  const draggedDescendants = draggedId ? getDescendantIds(draggedId, tree) : new Set<number>();
 
   const handleContextMenu = (e: React.MouseEvent, node: WikiTreeNode) => {
     e.preventDefault();
@@ -50,6 +72,10 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddCh
             onMove={onMove}
             renameNodeId={renameNodeId}
             onRenameStarted={() => setRenameNodeId(null)}
+            draggedId={draggedId}
+            draggedDescendants={draggedDescendants}
+            onDragStart={(id) => setDraggedId(id)}
+            onDragEnd={() => setDraggedId(null)}
           />
         ))}
       </div>
@@ -90,9 +116,13 @@ interface TreeNodeProps {
   onMove?: (nodeId: number, newParentId: number | null) => void;
   renameNodeId?: number | null;
   onRenameStarted?: () => void;
+  draggedId?: number | null;
+  draggedDescendants?: Set<number>;
+  onDragStart?: (id: number) => void;
+  onDragEnd?: () => void;
 }
 
-function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename, onMove, renameNodeId, onRenameStarted }: TreeNodeProps) {
+function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename, onMove, renameNodeId, onRenameStarted, draggedId, draggedDescendants, onDragStart, onDragEnd }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -141,19 +171,29 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", String(node.id));
     e.dataTransfer.effectAllowed = "move";
+    onDragStart?.(node.id);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (draggedId === node.id || draggedDescendants?.has(node.id)) {
+      e.dataTransfer.dropEffect = "none";
+      return;
+    }
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const draggedId = parseInt(e.dataTransfer.getData("text/plain"), 10);
-    if (draggedId !== node.id && onMove) {
-      onMove(draggedId, node.id);
+    onDragEnd?.();
+    const draggedNodeId = parseInt(e.dataTransfer.getData("text/plain"), 10);
+    if (draggedNodeId !== node.id && !draggedDescendants?.has(node.id) && onMove) {
+      onMove(draggedNodeId, node.id);
     }
+  };
+
+  const handleDragEnd = () => {
+    onDragEnd?.();
   };
 
   return (
@@ -173,6 +213,7 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
       >
         {hasChildren ? (
           <button
@@ -243,6 +284,10 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
               onMove={onMove}
               renameNodeId={renameNodeId}
               onRenameStarted={onRenameStarted}
+              draggedId={draggedId}
+              draggedDescendants={draggedDescendants}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
             />
           ))}
         </div>

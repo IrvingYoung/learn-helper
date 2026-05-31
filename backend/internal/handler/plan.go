@@ -189,7 +189,7 @@ func (h *PlanHandler) CreatePlan(w http.ResponseWriter, r *http.Request) {
 
 	plan := &model.Plan{
 		ID:             planID,
-		ConversationID: 0,
+		ConversationID: nil,
 		Reasoning:      req.Reasoning,
 		Status:         "pending",
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
@@ -222,15 +222,19 @@ func (h *PlanHandler) loadPlan(ctx context.Context, planID string) (*model.Plan,
 	var plan model.Plan
 	var executedAt sql.NullString
 	var outline sql.NullString
+	var conversationID sql.NullInt64
 
 	err := h.db.QueryRowContext(ctx,
 		`SELECT id, conversation_id, reasoning, status, outline, phase_index, total_phases, created_at, executed_at
 		 FROM plans WHERE id = ?`, planID).Scan(
-		&plan.ID, &plan.ConversationID, &plan.Reasoning, &plan.Status, &outline, &plan.PhaseIndex, &plan.TotalPhases, &plan.CreatedAt, &executedAt)
+		&plan.ID, &conversationID, &plan.Reasoning, &plan.Status, &outline, &plan.PhaseIndex, &plan.TotalPhases, &plan.CreatedAt, &executedAt)
 	if err != nil {
 		return nil, err
 	}
 
+	if conversationID.Valid {
+		plan.ConversationID = &conversationID.Int64
+	}
 	if executedAt.Valid {
 		plan.ExecutedAt = &executedAt.String
 	}

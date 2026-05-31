@@ -6,6 +6,7 @@ package model
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -108,22 +109,25 @@ type WikiPage struct {
 
 type Plan struct {
 	ID             string       `json:"id"`
-	ConversationID int64        `json:"conversation_id"`
+	ConversationID *int64       `json:"conversation_id,omitempty"`
 	Reasoning      string       `json:"reasoning"`
 	Status         string       `json:"status"`
+	Outline        *string      `json:"outline,omitempty"`
+	PhaseIndex     *int64       `json:"phase_index,omitempty"`
+	TotalPhases    *int64       `json:"total_phases,omitempty"`
 	Actions        []PlanAction `json:"actions,omitempty"`
 	CreatedAt      string       `json:"created_at"`
 	ExecutedAt     *string      `json:"executed_at,omitempty"`
 }
 
 type PlanAction struct {
-	ID        string  `json:"id"`
-	PlanID    string  `json:"plan_id"`
-	Type      string  `json:"type"`
-	Params    string  `json:"params"`
-	DependsOn string  `json:"depends_on"`
-	Status    string  `json:"status"`
-	Result    *string `json:"result,omitempty"`
-	SortOrder int64   `json:"sort_order"`
-	CreatedAt string  `json:"created_at"`
+	ID        string          `json:"id"`
+	PlanID    string          `json:"plan_id"`
+	Type      string          `json:"type"`
+	Params    json.RawMessage `json:"params"`
+	DependsOn json.RawMessage `json:"depends_on"`
+	Status    string          `json:"status"`
+	Result    *string         `json:"result,omitempty"`
+	SortOrder int64           `json:"sort_order"`
+	CreatedAt string          `json:"created_at"`
 }
