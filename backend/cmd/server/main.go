@@ -117,6 +117,9 @@ CREATE TABLE IF NOT EXISTS plans (
     conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     reasoning TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'executing', 'completed', 'rejected', 'completed_with_failures')),
+    outline TEXT,
+    phase_index INTEGER,
+    total_phases INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     executed_at TEXT
 );
@@ -147,7 +150,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		// Checkpoint WAL before closing so all data is in the main db file
+		db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+		db.Close()
+	}()
 	// SQLite doesn't support concurrent writes; limit to one connection.
 	db.SetMaxOpenConns(1)
 
@@ -158,6 +165,11 @@ func main() {
 	// Migrate existing databases: add links/backlinks columns if missing
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN links TEXT NOT NULL DEFAULT '[]'`)
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN backlinks TEXT NOT NULL DEFAULT '[]'`)
+
+	// Migrate existing databases: add outline/phase columns to plans if missing
+	db.Exec(`ALTER TABLE plans ADD COLUMN outline TEXT`)
+	db.Exec(`ALTER TABLE plans ADD COLUMN phase_index INTEGER`)
+	db.Exec(`ALTER TABLE plans ADD COLUMN total_phases INTEGER`)
 
 	db.Exec(`INSERT OR IGNORE INTO wiki_pages (title, slug, page_type, content, content_status, sort_order) VALUES ('概览', 'overview', 'overview', '# 知识库概览\n\n欢迎使用 LLM Wiki！\n\n通过与 AI 对话来构建你的知识库。试试说：\n\n- "我要学 Go 后端"\n- "总结一下 Redis 的核心数据结构"\n- "帮我梳理数据库索引的知识"', 'published', 0)`)
 
@@ -206,6 +218,7 @@ func main() {
 
 		// Plan routes
 		r.Get("/plans", planHandler.GetPlan)
+		r.Post("/plans", planHandler.CreatePlan)
 		r.Post("/plans/confirm", planHandler.ConfirmPlan)
 		r.Post("/plans/reject", planHandler.RejectPlan)
 	})

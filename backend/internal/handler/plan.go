@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
+
+	"github.com/google/uuid"
 
 	"learn-helper/internal/engine"
 	"learn-helper/internal/model"
@@ -90,7 +94,29 @@ func (h *PlanHandler) ConfirmPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Execute the plan
+	// Check if this is an outline-only plan (no actions)
+	plan, err := h.loadPlan(r.Context(), req.PlanID)
+	if err != nil {
+		http.Error(w, "failed to load plan: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if plan.Outline != nil && *plan.Outline != "" && len(plan.Actions) == 0 {
+		// Outline-only: create skeleton pages
+		result, err := h.engine.ExecOutline(r.Context(), *plan.Outline, nil)
+		if err != nil {
+			http.Error(w, "outline execution failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"plan_id": req.PlanID,
+			"status":  "completed",
+			"outline": result,
+		})
+		return
+	}
+
+	// Execute the plan (has actions)
 	report, err := h.engine.ExecutePlan(r.Context(), req.PlanID)
 	if err != nil {
 		http.Error(w, "plan execution failed: "+err.Error(), http.StatusInternalServerError)
@@ -135,21 +161,82 @@ func (h *PlanHandler) RejectPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "rejected"})
 }
 
+// CreatePlan handles POST /api/plans
+// Body: { "reasoning": "...", "actions": [...] }
+// Creates a plan from user-initiated operations (e.g., delete from tree).
+func (h *PlanHandler) CreatePlan(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Reasoning string `json:"reasoning"`
+		Actions   []struct {
+			Type   string          `json:"type"`
+			Params json.RawMessage `json:"params"`
+		} `json:"actions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Reasoning == "" {
+		req.Reasoning = "用户操作"
+	}
+	if len(req.Actions) == 0 {
+		http.Error(w, "at least one action required", http.StatusBadRequest)
+		return
+	}
+
+	planID := fmt.Sprintf("user-%d-%s", time.Now().UnixMilli(), uuid.New().String()[:8])
+
+	plan := &model.Plan{
+		ID:             planID,
+		ConversationID: 0,
+		Reasoning:      req.Reasoning,
+		Status:         "pending",
+		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
+	}
+
+	for i, a := range req.Actions {
+		actionID := fmt.Sprintf("%s-a%d", planID, i+1)
+		plan.Actions = append(plan.Actions, model.PlanAction{
+			ID:        actionID,
+			PlanID:    planID,
+			Type:      a.Type,
+			Params:    a.Params,
+			DependsOn: json.RawMessage("[]"),
+			Status:    "pending",
+			SortOrder: int64(i),
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+
+	if err := h.SavePlan(r.Context(), plan); err != nil {
+		http.Error(w, "failed to save plan: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, plan)
+}
+
 // loadPlan loads a plan and its actions from the database.
 func (h *PlanHandler) loadPlan(ctx context.Context, planID string) (*model.Plan, error) {
 	var plan model.Plan
 	var executedAt sql.NullString
+	var outline sql.NullString
 
 	err := h.db.QueryRowContext(ctx,
-		`SELECT id, conversation_id, reasoning, status, created_at, executed_at
+		`SELECT id, conversation_id, reasoning, status, outline, phase_index, total_phases, created_at, executed_at
 		 FROM plans WHERE id = ?`, planID).Scan(
-		&plan.ID, &plan.ConversationID, &plan.Reasoning, &plan.Status, &plan.CreatedAt, &executedAt)
+		&plan.ID, &plan.ConversationID, &plan.Reasoning, &plan.Status, &outline, &plan.PhaseIndex, &plan.TotalPhases, &plan.CreatedAt, &executedAt)
 	if err != nil {
 		return nil, err
 	}
 
 	if executedAt.Valid {
 		plan.ExecutedAt = &executedAt.String
+	}
+	if outline.Valid {
+		s := outline.String
+		plan.Outline = &s
 	}
 
 	// Load actions
@@ -196,14 +283,14 @@ func (h *PlanHandler) SavePlan(ctx context.Context, p *model.Plan) error {
 
 	// Insert plan
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO plans (id, conversation_id, reasoning, status, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		p.ID, p.ConversationID, p.Reasoning, p.Status, p.CreatedAt)
+		`INSERT INTO plans (id, conversation_id, reasoning, status, outline, phase_index, total_phases, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.ConversationID, p.Reasoning, p.Status, p.Outline, p.PhaseIndex, p.TotalPhases, p.CreatedAt)
 	if err != nil {
 		return err
 	}
 
-	// Insert actions
+	// Insert actions (if any)
 	for _, a := range p.Actions {
 		_, err = tx.ExecContext(ctx,
 			`INSERT INTO plan_actions (id, plan_id, type, params, depends_on, status, sort_order, created_at)
