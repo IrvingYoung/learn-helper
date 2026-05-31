@@ -34,12 +34,6 @@ func NewAIHandler(db *sql.DB) *AIHandler {
 	}
 			}
 
-type PendingAction struct {
-	Type    string `json:"type"`
-	Preview string `json:"preview"`
-	Details any    `json:"details"`
-			}
-
 // --- Conversation handlers (direct SQL, schema has role column) ---
 
 func (h *AIHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +92,11 @@ func (h *AIHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]any{"id": id})
+	json.NewEncoder(w).Encode(map[string]any{
+		"id":    id,
+		"title": req.Title,
+		"role":  req.Role,
+	})
 			}
 
 func (h *AIHandler) UpdateConversationTitle(w http.ResponseWriter, r *http.Request) {
@@ -287,13 +285,12 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 
 func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ConversationID   int64           `json:"conversation_id"`
-		Message          string          `json:"message"`
-		ConfirmedActions []PendingAction `json:"confirmed_actions"`
-		PlanID           string          `json:"plan_id"`
-		FocusPageID      *int64          `json:"focus_page_id"`
-		CurrentSlug      string          `json:"current_slug"`
-		SelectedText     string          `json:"selected_text"`
+		ConversationID int64   `json:"conversation_id"`
+		Message        string  `json:"message"`
+		PlanID         string  `json:"plan_id"`
+		FocusPageID    *int64  `json:"focus_page_id"`
+		CurrentSlug    string  `json:"current_slug"`
+		SelectedText   string  `json:"selected_text"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -316,12 +313,24 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	var convRole string
 	h.db.QueryRowContext(ctx, `SELECT role FROM conversations WHERE id = ?`, req.ConversationID).Scan(&convRole)
 
-	// Execute confirmed actions and inject results, OR save user message
-	if len(req.ConfirmedActions) > 0 {
-		resultContent := h.executeConfirmedActions(ctx, req.ConfirmedActions)
-		// Save execution result as user message so the AI can continue reasoning
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
-			req.ConversationID, resultContent, config.Provider)
+	// Merge selected text into user message so AI sees it directly
+	if req.SelectedText != "" {
+		prefix := fmt.Sprintf("关于选中的内容「%s」", req.SelectedText)
+		if req.Message != "" {
+			req.Message = prefix + "：\n\n" + req.Message
+		} else {
+			req.Message = prefix
+		}
+	}
+
+	// Add current page context to user message
+	if req.CurrentSlug != "" {
+		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
+		if err == nil {
+			req.Message += fmt.Sprintf("\n\n[当前页面：%s (ID=%d)]", page.Title, page.ID)
+		} else {
+			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
+		}
 	}
 
 	// Save user message (only when there's actual text)
@@ -330,11 +339,23 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			req.ConversationID, req.Message, config.Provider)
 	}
 
+	// Auto-title: only on first user message with actual content
+	var needsTitle bool
+	if req.Message != "" {
+		var currentTitle sql.NullString
+		h.db.QueryRowContext(ctx, `SELECT title FROM conversations WHERE id = ?`, req.ConversationID).Scan(&currentTitle)
+		needsTitle = !currentTitle.Valid || currentTitle.String == ""
+	}
+
 	// Handle plan confirmation
 	if req.PlanID != "" {
 		// Verify plan is pending before executing
 		var planStatus string
-		err := h.db.QueryRowContext(ctx, "SELECT status FROM plans WHERE id = ?", req.PlanID).Scan(&planStatus)
+		var outline sql.NullString
+		var actionCount int64
+		err := h.db.QueryRowContext(ctx,
+			"SELECT p.status, p.outline, (SELECT COUNT(*) FROM plan_actions WHERE plan_id = ?) FROM plans p WHERE p.id = ?",
+			req.PlanID, req.PlanID).Scan(&planStatus, &outline, &actionCount)
 		if err != nil || planStatus != "pending" {
 			http.Error(w, "plan not found or not pending", http.StatusBadRequest)
 			return
@@ -345,15 +366,25 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("update plan status: %v", err), http.StatusInternalServerError)
 			return
 		}
-		// Now execute
 		eng := engine.NewExecutionEngine(h.db, h.queries)
-		report, err := eng.ExecutePlan(ctx, req.PlanID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("plan execution failed: %v", err), http.StatusInternalServerError)
-			return
+		var confirmContent string
+		if outline.Valid && outline.String != "" && actionCount == 0 {
+			result, err := eng.ExecOutline(ctx, outline.String, nil)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("outline execution failed: %v", err), http.StatusInternalServerError)
+				return
+			}
+			resultJSON, _ := json.Marshal(result)
+			confirmContent = fmt.Sprintf("大纲已确认，知识骨架已创建：\n%s", string(resultJSON))
+		} else {
+			report, err := eng.ExecutePlan(ctx, req.PlanID)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("plan execution failed: %v", err), http.StatusInternalServerError)
+				return
+			}
+			reportJSON, _ := json.Marshal(report)
+			confirmContent = fmt.Sprintf("操作计划已执行完成：\n%s", string(reportJSON))
 		}
-		reportJSON, _ := json.Marshal(report)
-		confirmContent := fmt.Sprintf("操作计划已执行完成：\n%s", string(reportJSON))
 		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
 			req.ConversationID, confirmContent, config.Provider)
 	}
@@ -382,31 +413,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// When confirmed actions were executed, transform the conversation so the AI
-	// sees native tool_use -> tool_result pairing.
-	if len(req.ConfirmedActions) > 0 {
-		aiMessages = injectToolResults(aiMessages, req.ConfirmedActions)
-	}
-
-	// Build fingerprint set of just-confirmed actions to prevent AI from repeating them
-	confirmedFingerprints := make(map[string]bool)
-	selfTypeToToolName := map[string]string{
-		"create": "create_page",
-		"update": "update_page",
-		"delete": "delete_page",
-	}
-	for _, a := range req.ConfirmedActions {
-		toolName, ok := selfTypeToToolName[a.Type]
-		if !ok {
-			continue
-		}
-		dj, err := json.Marshal(a.Details)
-		if err != nil {
-			continue
-		}
-		confirmedFingerprints[toolName+":"+string(dj)] = true
-	}
-
 	// SSE setup
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -414,22 +420,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	flusher, canFlush := w.(http.Flusher)
 
-	// Inject current page as user message for visibility (supplements the system prompt)
-	if req.CurrentSlug != "" {
-		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
-		if err == nil {
-			contextMsg := fmt.Sprintf(
-				"[系统信息] 当前页面：%s (ID: %d)\n当用户提到「这个页面」或「当前页面」时，即指此页面。",
-				page.Title, page.ID,
-			)
-			aiMessages = append(aiMessages, ai.Message{Role: "user", Content: contextMsg})
-			log.Printf("[AIChat] injected current page as user message: %s", page.Title)
-		} else {
-			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
-		}
-	}
-
-	// Build context and prompt
 	// When current page context is active, use full tree (not subtree via FocusPageID)
 	var focusID *int64 = req.FocusPageID
 	if req.CurrentSlug != "" {
@@ -439,27 +429,15 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	if req.CurrentSlug != "" {
 		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
 		if err == nil {
-			wikiContext += fmt.Sprintf(
-				"\n【当前页面】用户正在查看：%s (slug: %s, ID: %d)\n当用户询问关于\"这个页面\"或\"当前页面\"的问题时，直接基于以上信息回复，无需搜索。\n",
-				page.Title, page.Slug, page.ID,
-			)
+			wikiContext += "\n当用户询问关于\"这个页面\"或\"当前页面\"的问题时，请使用 read_page 读取当前页面内容后再回答。不要发起空搜索。\n"
 			log.Printf("[AIChat] injected current page context: %s (slug=%s)", page.Title, page.Slug)
 		} else {
 			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
 		}
 	}
-	if req.SelectedText != "" {
-		wikiContext += fmt.Sprintf(
-			"\n用户选中了以下文本内容：\n%s\n",
-			req.SelectedText,
-		)
-	}
 	log.Printf("[AIChat] wikiContext length=%d", len(wikiContext))
 	log.Printf("[AIChat] wikiContext excerpt: %s", wikiContext[:min(len(wikiContext), 500)])
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
-	if len(req.ConfirmedActions) > 0 {
-		systemPrompt += "\n\n【本次请求特别说明】以上对话中已经包含 tool（tool_result）返回结果，表明对应操作已被用户确认执行完毕。请直接回复告知用户结果即可，不要再次调用相同的工具。"
-	}
 
 		// ====== ReAct Loop ======
 	// Uses token-by-token streaming Chat(), auto-executes read-only tools,
@@ -468,7 +446,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	fullContent := &strings.Builder{}
 	const maxIterations = 10
-	var pendingActions []PendingAction
 
 reactLoop:
 	for iteration := 0; iteration < maxIterations; iteration++ {
@@ -519,15 +496,8 @@ reactLoop:
 			fullContent.WriteString("\n\n")
 		}
 
-		// Filter out already-confirmed tool calls
-		var toolCalls []ai.ToolCall
-		for _, tc := range respToolCalls {
-			if !confirmedFingerprints[tc.Name+":"+tc.Input] {
-				toolCalls = append(toolCalls, tc)
-			}
-		}
-
 		// No tool calls → AI is done reasoning
+		toolCalls := respToolCalls
 		if len(toolCalls) == 0 {
 			log.Printf("[ReAct] iteration=%d no tool calls, done", iteration)
 			break reactLoop
@@ -580,9 +550,6 @@ reactLoop:
 				log.Printf("[ReAct] executing auto tool: %s", tc.Name)
 				result := h.executeAutoTool(ctx, tc)
 				log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
-				sseWrite(w, "content", "\n\n"+result+"\n\n", canFlush, flusher)
-				fullContent.WriteString(result)
-				fullContent.WriteString("\n\n")
 				aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
 			}
 
@@ -597,7 +564,12 @@ reactLoop:
 			log.Printf("[ReAct] plan created: id=%s actions=%d", plan.ID, len(plan.Actions))
 
 			// Save assistant message with plan info
-			planSummary := fmt.Sprintf("[操作计划] %s\n共 %d 个操作待确认。", plan.Reasoning, len(plan.Actions))
+			planSummary := ""
+			if plan.Outline != nil && *plan.Outline != "" && len(plan.Actions) == 0 {
+				planSummary = fmt.Sprintf("[操作计划 - 大纲] %s\n大纲已生成，请在右侧查看。", plan.Reasoning)
+			} else {
+				planSummary = fmt.Sprintf("[操作计划] %s\n共 %d 个操作待确认。", plan.Reasoning, len(plan.Actions))
+			}
 			_, _ = h.db.ExecContext(ctx,
 				"INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)",
 				req.ConversationID, planSummary, config.Provider)
@@ -630,9 +602,6 @@ reactLoop:
 			log.Printf("[ReAct] executing auto tool: %s", tc.Name)
 			result := h.executeAutoTool(ctx, tc)
 			log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
-			sseWrite(w, "content", "\n\n"+result+"\n\n", canFlush, flusher)
-			fullContent.WriteString(result)
-			fullContent.WriteString("\n\n")
 			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
 		}
 
@@ -648,24 +617,21 @@ reactLoop:
 
 	// ====== Save assistant message ======
 	assistantText := strings.TrimSpace(fullContent.String())
-	if assistantText != "" || len(pendingActions) > 0 {
-		savedContent := assistantText
-		if len(pendingActions) > 0 {
-			savedContent += "\n[操作建议]\n"
-			for _, pa := range pendingActions {
-				detailsJSON, _ := json.Marshal(pa.Details)
-				savedContent += fmt.Sprintf("- %s: %s\n", pa.Type, string(detailsJSON))
-			}
-		}
+	if assistantText != "" {
 		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-			req.ConversationID, savedContent, config.Provider)
+			req.ConversationID, assistantText, config.Provider)
 	}
 
-	// ====== Send pending_actions (text already streamed during loop) ======
-	if len(pendingActions) > 0 {
-		metaBytes, _ := json.Marshal(map[string]any{"pending_actions": pendingActions})
-		sseWrite(w, "meta", string(metaBytes), canFlush, flusher)
+	// Auto-title after first response: use first 48 chars of user's first message
+	if needsTitle {
+		title := req.Message
+		if len([]rune(title)) > 48 {
+			title = string([]rune(title)[:48]) + "…"
+		}
+		h.db.ExecContext(ctx, `UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, title, req.ConversationID)
 	}
+
+	// ====== Send done event ======
 	sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
 
 	if convRole == ai.RoleWikiMaintainer {
@@ -914,8 +880,12 @@ func (h *AIHandler) buildWikiContext(ctx context.Context, focusPageID *int64) st
 // Supports both old format (single "params" field) and new format (type-specific "*_params" fields).
 func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (*model.Plan, error) {
 	var proposal struct {
-		Reasoning string `json:"reasoning"`
-		Actions   []struct {
+		Reasoning    string          `json:"reasoning"`
+		Outline      json.RawMessage `json:"outline"`
+		Phases       json.RawMessage `json:"phases"`
+		PhaseIndex   *int64          `json:"phase_index"`
+		TotalPhases  *int64          `json:"total_phases"`
+		Actions      []struct {
 			ID               string         `json:"id"`
 			Type             string         `json:"type"`
 			Params           map[string]any `json:"params"`
@@ -933,11 +903,22 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 
 	planID := fmt.Sprintf("plan-%d", time.Now().UnixNano())
 	now := time.Now().Format("2006-01-02 15:04:05")
+
+	// Serialize outline to string if present
+	var outlineStr *string
+	if len(proposal.Outline) > 0 && string(proposal.Outline) != "null" {
+		s := string(proposal.Outline)
+		outlineStr = &s
+	}
+
 	plan := &model.Plan{
 		ID:             planID,
 		ConversationID: conversationID,
 		Reasoning:      proposal.Reasoning,
 		Status:         "pending",
+		Outline:        outlineStr,
+		PhaseIndex:     proposal.PhaseIndex,
+		TotalPhases:    proposal.TotalPhases,
 		CreatedAt:      now,
 	}
 
@@ -1016,154 +997,6 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 	return plan, nil
 			}
 
-func (h *AIHandler) toolCallsToPendingActions(toolCalls []ai.ToolCall) []PendingAction {
-	autoTools := map[string]bool{"lookup_page": true, "search_pages": true, "read_page": true, "websearch": true, "webfetch": true}
-	var actions []PendingAction
-
-	for _, tc := range toolCalls {
-		// Skip read-only tools — they should be auto-executed, not pending confirmation
-		if autoTools[tc.Name] {
-			continue
-		}
-
-		var details map[string]any
-		if err := json.Unmarshal([]byte(tc.Input), &details); err != nil {
-			details = map[string]any{"raw": tc.Input}
-		}
-
-		var action PendingAction
-		switch tc.Name {
-		case "create_page":
-			title, _ := details["title"].(string)
-			action = PendingAction{
-				Type:    "create",
-				Preview: fmt.Sprintf("创建页面「%s」", title),
-				Details: details,
-			}
-		case "update_page":
-			pageID, _ := details["page_id"].(float64)
-			title, _ := details["title"].(string)
-			preview := fmt.Sprintf("更新页面 #%d", int(pageID))
-			if title != "" {
-				preview = fmt.Sprintf("更新页面「%s」", title)
-			}
-			action = PendingAction{
-				Type:    "update",
-				Preview: preview,
-				Details: details,
-			}
-		case "delete_page":
-			pageID, _ := details["page_id"].(float64)
-			action = PendingAction{
-				Type:    "delete",
-				Preview: fmt.Sprintf("删除页面 #%d", int(pageID)),
-				Details: details,
-			}
-		default:
-			action = PendingAction{
-				Type:    tc.Name,
-				Preview: fmt.Sprintf("操作: %s", tc.Name),
-				Details: details,
-			}
-		}
-		actions = append(actions, action)
-	}
-	return actions
-			}
-
-func (h *AIHandler) executeConfirmedActions(ctx context.Context, actions []PendingAction) string {
-	var results []string
-	for _, action := range actions {
-		details, ok := action.Details.(map[string]any)
-		if !ok {
-			results = append(results, "- 操作失败：参数解析错误")
-			continue
-		}
-		switch action.Type {
-		case "create":
-			var parentID sql.NullInt64
-			if pid, ok := details["parent_id"].(float64); ok && pid > 0 {
-				parentID = sql.NullInt64{Int64: int64(pid), Valid: true}
-			}
-			slug, _ := details["slug"].(string)
-			title, _ := details["title"].(string)
-			content := ""
-			if c, ok := details["content"].(string); ok {
-				content = c
-			}
-			status := "published"
-			if content == "" {
-				status = "empty"
-			}
-			_, err := h.queries.CreateWikiPage(ctx, model.CreateWikiPageParams{
-				Title: title, Slug: slug, PageType: "entity",
-				Content: content, ParentID: parentID,
-				ContentStatus: status, SortOrder: 0,
-			})
-			if err != nil {
-				log.Printf("[executeConfirmedActions] create page failed: %v", err)
-				results = append(results, fmt.Sprintf("- 创建页面「%s」失败：%v", title, err))
-			} else {
-				results = append(results, fmt.Sprintf("- 创建页面「%s」成功", title))
-			}
-		case "update":
-			pageID, ok := details["page_id"].(float64)
-			if !ok {
-				results = append(results, "- 更新页面失败：缺少 page_id")
-				continue
-			}
-			page, err := h.queries.GetWikiPageByID(ctx, int64(pageID))
-			if err != nil {
-				log.Printf("[executeConfirmedActions] get page %d failed: %v", int(pageID), err)
-				results = append(results, fmt.Sprintf("- 更新页面 #%d 失败：页面不存在", int(pageID)))
-				continue
-			}
-			title := page.Title
-			if t, ok := details["title"].(string); ok && t != "" {
-				title = t
-			}
-			content := page.Content
-			if c, ok := details["content"].(string); ok {
-				content = c
-			}
-			contentStatus := "published"
-			if content == "" {
-				contentStatus = "empty"
-			}
-			err = h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
-				Title: title, Slug: page.Slug, PageType: page.PageType,
-				Content: content, Tags: page.Tags, ParentID: page.ParentID,
-				ContentStatus: contentStatus, SortOrder: page.SortOrder, ID: int64(pageID),
-			})
-			if err != nil {
-				log.Printf("[executeConfirmedActions] update page %d failed: %v", int(pageID), err)
-				results = append(results, fmt.Sprintf("- 更新页面 #%d 失败：%v", int(pageID), err))
-			} else {
-				results = append(results, fmt.Sprintf("- 更新页面 #%d 成功", int(pageID)))
-			}
-		case "delete":
-			pageID, ok := details["page_id"].(float64)
-			if !ok {
-				results = append(results, "- 删除页面失败：缺少 page_id")
-				continue
-			}
-			err := h.queries.DeleteWikiPage(ctx, int64(pageID))
-			if err != nil {
-				log.Printf("[executeConfirmedActions] delete page %d failed: %v", int(pageID), err)
-				results = append(results, fmt.Sprintf("- 删除页面 #%d 失败：%v", int(pageID), err))
-			} else {
-				results = append(results, fmt.Sprintf("- 删除页面 #%d 成功", int(pageID)))
-			}
-		}
-	}
-	var b strings.Builder
-	b.WriteString("[系统] 以下操作已执行：\n")
-	for _, r := range results {
-		b.WriteString(r + "\n")
-	}
-	return b.String()
-			}
-
 func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string {
 	switch tc.Name {
 	case "lookup_page":
@@ -1179,101 +1012,6 @@ func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string 
 	default:
 		return fmt.Sprintf("[系统] 未知工具: %s", tc.Name)
 	}
-			}
-
-func injectToolResults(messages []ai.Message, actions []PendingAction) []ai.Message {
-	// Find the last assistant message with [操作建议]
-	lastAIIdx := -1
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "assistant" && strings.Contains(messages[i].Content, "[操作建议]") {
-			lastAIIdx = i
-			break
-		}
-	}
-	if lastAIIdx < 0 {
-		return messages
-	}
-
-	msg := messages[lastAIIdx]
-
-	// Parse: split at [操作建议]
-	textParts := strings.SplitN(msg.Content, "\n[操作建议]\n", 2)
-	aiText := strings.TrimSuffix(textParts[0], "\n")
-
-	typeToToolName := map[string]string{
-		"create": "create_page",
-		"update": "update_page",
-		"delete": "delete_page",
-	}
-
-	// Build structured content: AI's text + tool_use blocks
-	var blocks []ai.ContentBlock
-	var toolUseIDs []string
-	if aiText != "" {
-		blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeText, Text: aiText})
-	}
-
-	counter := 0
-	for _, action := range actions {
-		toolName, ok := typeToToolName[action.Type]
-		if !ok {
-			continue
-		}
-		detailsJSON, err := json.Marshal(action.Details)
-		if err != nil {
-			continue
-		}
-		toolUseID := fmt.Sprintf("toolu_%d_%d", time.Now().UnixNano(), counter)
-		blocks = append(blocks, ai.ContentBlock{
-			Type:  ai.ContentTypeToolUse,
-			ID:    toolUseID,
-			Name:  toolName,
-			Input: json.RawMessage(detailsJSON),
-		})
-		toolUseIDs = append(toolUseIDs, toolUseID)
-		counter++
-	}
-
-	if len(blocks) == 0 {
-		return messages
-	}
-
-	assistantContent, err := ai.ContentBlocksToJSON(blocks)
-	if err != nil {
-		return messages
-	}
-
-	// Rebuild message list: replace the assistant message and add tool_result messages
-	var newMessages []ai.Message
-	for i, m := range messages {
-		if i == lastAIIdx {
-			newMessages = append(newMessages, ai.Message{
-				Role:    "assistant",
-				Content: assistantContent,
-			})
-			// Add tool_result messages right after the transformed assistant
-			for j, action := range actions {
-				if j >= len(toolUseIDs) {
-					break
-				}
-				toolName, _ := typeToToolName[action.Type]
-				resultContent := "操作已成功执行"
-				if action.Preview != "" {
-					resultContent = fmt.Sprintf("[系统] %s 成功", action.Preview)
-				}
-				newMessages = append(newMessages, ai.Message{
-					Role:       "tool",
-					Content:    resultContent,
-					ToolCallID: toolUseIDs[j],
-					ToolName:   toolName,
-				})
-			}
-		} else {
-			newMessages = append(newMessages, m)
-		}
-	}
-
-	return newMessages
 			}
 
 func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) string {
