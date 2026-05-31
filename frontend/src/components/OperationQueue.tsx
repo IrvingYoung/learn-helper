@@ -62,9 +62,10 @@ function OperationCard({
   onConfirm: (planId: string) => void;
   onReject: (planId: string) => void;
 }) {
-  const isUserPlan = plan.conversation_id === 0;
+  const isUserPlan = !plan.conversation_id;
   const sourceLabel = isUserPlan ? "用户操作" : "AI 计划";
   const sourceColor = isUserPlan ? "bg-gray-100 text-gray-600" : "bg-amber-100 text-amber-700";
+  const actions = plan.actions ?? [];
 
   return (
     <div className="border border-th-border rounded-lg p-3 space-y-2">
@@ -72,16 +73,16 @@ function OperationCard({
         <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${sourceColor}`}>
           {sourceLabel}
         </span>
-        {plan.actions.length > 1 && (
-          <span className="text-xs text-th-text-muted">{plan.actions.length} 个操作</span>
+        {actions.length > 1 && (
+          <span className="text-xs text-th-text-muted">{actions.length} 个操作</span>
         )}
       </div>
       <div className="text-sm text-th-text-primary">{plan.reasoning}</div>
-      {plan.actions.length > 0 && (
+      {actions.length > 0 && (
         <div className="text-xs text-th-text-muted pl-2 border-l-2 border-th-border space-y-0.5">
-          {plan.actions.map((action) => {
+          {actions.map((action) => {
             const typeInfo = ACTION_TYPE_LABELS[action.type] || { label: action.type, color: "bg-gray-100 text-gray-600" };
-            const title = (action.params.title as string) || (action.params.page_id ? `页面 #${action.params.page_id}` : action.type);
+            const title = (action.params?.title as string) || (action.params?.page_id ? `页面 #${action.params.page_id}` : action.type);
             return (
               <div key={action.id} className="flex items-center gap-1.5">
                 <span className={`text-xs font-medium px-1 py-0 rounded ${typeInfo.color}`}>{typeInfo.label}</span>
@@ -118,12 +119,13 @@ function ExecutionResultCard({
   report: ExecutionReport;
   onViewPage?: (slug: string) => void;
 }) {
-  const failedActions = report.actions.filter(a => a.status === "failed");
-  const succeededActions = report.actions.filter(a => a.status === "completed");
+  const actions = report.actions ?? [];
+  const failedActions = actions.filter(a => a.status === "failed");
+  const succeededActions = actions.filter(a => a.status === "completed");
   const hasFailures = failedActions.length > 0;
   const allFailed = succeededActions.length === 0 && failedActions.length > 0;
 
-  const slugFromResult = (action: typeof report.actions[number]) => {
+  const slugFromResult = (action: typeof actions[number]) => {
     const result = action.result;
     if (result && typeof result === "object" && "slug" in result) {
       return result.slug as string;
@@ -131,7 +133,7 @@ function ExecutionResultCard({
     return null;
   };
 
-  const firstSlug = report.actions
+  const firstSlug = actions
     .map(a => slugFromResult(a))
     .find((s): s is string => s !== null);
 
