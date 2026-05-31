@@ -46,6 +46,7 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddCh
             onContextMenu={handleContextMenu}
             onAddChild={onAddChild}
             onRename={onRename}
+            onMove={onMove}
           />
         ))}
       </div>
@@ -84,9 +85,10 @@ interface TreeNodeProps {
   onContextMenu?: (e: React.MouseEvent, node: WikiTreeNode) => void;
   onAddChild?: (parentId: number) => void;
   onRename?: (nodeId: number, currentTitle: string) => void;
+  onMove?: (nodeId: number, newParentId: number | null) => void;
 }
 
-function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename }: TreeNodeProps) {
+function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename, onMove }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -124,6 +126,24 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
     setEditTitle(node.title);
   };
 
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData("text/plain", String(node.id));
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const draggedId = parseInt(e.dataTransfer.getData("text/plain"), 10);
+    if (draggedId !== node.id && onMove) {
+      onMove(draggedId, node.id);
+    }
+  };
+
   return (
     <div>
       <div
@@ -137,6 +157,10 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
         onContextMenu={(e) => onContextMenu?.(e, node)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
         {hasChildren ? (
           <button
@@ -204,6 +228,7 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
               onContextMenu={onContextMenu}
               onAddChild={onAddChild}
               onRename={onRename}
+              onMove={onMove}
             />
           ))}
         </div>
