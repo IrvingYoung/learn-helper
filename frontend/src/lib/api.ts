@@ -221,3 +221,33 @@ export async function createPlan(params: {
   if (!res.ok) throw new Error("Failed to create plan");
   return res.json();
 }
+
+// Wiki Tree Operations
+
+export async function createEmptyWikiPage(title: string, parentId: number | null): Promise<WikiPage> {
+  const res = await fetch(`${BASE}/wiki/quick-create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, parent_id: parentId }),
+  });
+  if (!res.ok) throw new Error("Failed to create page");
+  return res.json();
+}
+
+export async function renameWikiPage(pageId: number, newTitle: string): Promise<void> {
+  const res = await fetch(`${BASE}/wiki/${pageId}/rename`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: newTitle }),
+  });
+  if (!res.ok) throw new Error("Failed to rename page");
+}
+
+export async function moveWikiPage(pageId: number, newParentId: number | null): Promise<void> {
+  const res = await fetch(`${BASE}/wiki/${pageId}/move`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent_id: newParentId }),
+  });
+  if (!res.ok) throw new Error("Failed to move page");
+}

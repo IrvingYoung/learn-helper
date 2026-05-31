@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
-import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, confirmPlan, rejectPlan } from '../lib/api';
+import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, confirmPlan, rejectPlan, createEmptyWikiPage, renameWikiPage, moveWikiPage, createPlan } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
 import type { WikiPage, Plan, WikiTreeNode, ExecutionReport } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
@@ -105,6 +105,54 @@ export function WikiPageLayout() {
   const handleAskAI = useCallback((text: string, pageTitle: string) => {
     chatPanelRef.current?.setSelectedText(text, pageTitle);
   }, []);
+
+  const handleAddChild = async (parentId: number) => {
+    try {
+      await createEmptyWikiPage("新页面", parentId);
+      handlePageChanged();
+    } catch (err) {
+      console.error("Failed to add child page:", err);
+    }
+  };
+
+  const handleRename = async (nodeId: number, newTitle: string) => {
+    try {
+      await renameWikiPage(nodeId, newTitle);
+      handlePageChanged();
+      mutateCurrentPage();
+    } catch (err) {
+      console.error("Failed to rename page:", err);
+    }
+  };
+
+  const handleMove = async (nodeId: number, newParentId: number | null) => {
+    if (newParentId === null) {
+      // "Move to..." context menu item - prompt user via chat
+      chatPanelRef.current?.setSelectedText(`请将页面 ID ${nodeId} 移动到合适的位置`, "");
+      return;
+    }
+    try {
+      await moveWikiPage(nodeId, newParentId);
+      handlePageChanged();
+    } catch (err) {
+      console.error("Failed to move page:", err);
+    }
+  };
+
+  const handleDelete = async (nodeId: number, hasChildren: boolean) => {
+    try {
+      const plan = await createPlan({
+        reasoning: hasChildren ? `删除页面及其子树` : `删除页面`,
+        actions: [{
+          type: "delete_page",
+          params: { page_id: nodeId },
+        }],
+      });
+      setPendingPlans(prev => [...prev, plan]);
+    } catch (err) {
+      console.error("Failed to create delete plan:", err);
+    }
+  };
 
   const handleConfirmPlan = async (planId: string) => {
     setConfirmingPlan(true);
@@ -247,6 +295,10 @@ export function WikiPageLayout() {
               selectedSlug={selectedSlug}
               onSelect={setSelectedSlug}
               collapsed={leftCollapsed}
+              onAddChild={handleAddChild}
+              onRename={handleRename}
+              onMove={handleMove}
+              onDelete={handleDelete}
             />
           </div>
         </Panel>
