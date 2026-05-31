@@ -4,18 +4,17 @@ interface TreeNodeMenuProps {
   x: number;
   y: number;
   nodeId: number;
-  nodeTitle: string;
   hasChildren: boolean;
   onAddChild: (parentId: number) => void;
-  onRename: (nodeId: number, currentTitle: string) => void;
+  onStartRename: (nodeId: number) => void;
   onMove: (nodeId: number, newParentId: number | null) => void;
   onDelete: (nodeId: number, hasChildren: boolean) => void;
   onClose: () => void;
 }
 
 export function TreeNodeMenu({
-  x, y, nodeId, nodeTitle, hasChildren,
-  onAddChild, onRename, onMove, onDelete, onClose,
+  x, y, nodeId, hasChildren,
+  onAddChild, onStartRename, onMove, onDelete, onClose,
 }: TreeNodeMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -45,7 +44,7 @@ export function TreeNodeMenu({
         <span className="text-th-text-muted">+</span> 添加子页面
       </button>
       <button
-        onClick={() => { onRename(nodeId, nodeTitle); onClose(); }}
+        onClick={() => { onStartRename(nodeId); onClose(); }}
         className="w-full text-left px-3 py-1.5 text-sm text-th-text-primary hover:bg-th-bg-tertiary flex items-center gap-2"
       >
         <span className="text-th-text-muted">✎</span> 重命名

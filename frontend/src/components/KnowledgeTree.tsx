@@ -8,7 +8,7 @@ interface KnowledgeTreeProps {
   onSelect: (slug: string) => void;
   collapsed: boolean;
   onAddChild?: (parentId: number) => void;
-  onRename?: (nodeId: number, currentTitle: string) => void;
+  onRename?: (nodeId: number, newTitle: string) => void;
   onMove?: (nodeId: number, newParentId: number | null) => void;
   onDelete?: (nodeId: number, hasChildren: boolean) => void;
 }
@@ -17,6 +17,7 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddCh
   const [menuState, setMenuState] = useState<{
     x: number; y: number; nodeId: number; nodeTitle: string; hasChildren: boolean;
   } | null>(null);
+  const [renameNodeId, setRenameNodeId] = useState<number | null>(null);
 
   const handleContextMenu = (e: React.MouseEvent, node: WikiTreeNode) => {
     e.preventDefault();
@@ -47,6 +48,8 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddCh
             onAddChild={onAddChild}
             onRename={onRename}
             onMove={onMove}
+            renameNodeId={renameNodeId}
+            onRenameStarted={() => setRenameNodeId(null)}
           />
         ))}
       </div>
@@ -64,10 +67,9 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddCh
           x={menuState.x}
           y={menuState.y}
           nodeId={menuState.nodeId}
-          nodeTitle={menuState.nodeTitle}
           hasChildren={menuState.hasChildren}
           onAddChild={onAddChild}
-          onRename={onRename}
+          onStartRename={(nodeId) => setRenameNodeId(nodeId)}
           onMove={onMove}
           onDelete={onDelete}
           onClose={() => setMenuState(null)}
@@ -84,11 +86,13 @@ interface TreeNodeProps {
   depth: number;
   onContextMenu?: (e: React.MouseEvent, node: WikiTreeNode) => void;
   onAddChild?: (parentId: number) => void;
-  onRename?: (nodeId: number, currentTitle: string) => void;
+  onRename?: (nodeId: number, newTitle: string) => void;
   onMove?: (nodeId: number, newParentId: number | null) => void;
+  renameNodeId?: number | null;
+  onRenameStarted?: () => void;
 }
 
-function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename, onMove }: TreeNodeProps) {
+function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename, onMove, renameNodeId, onRenameStarted }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -118,6 +122,14 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
       inputRef.current.select();
     }
   }, [editing]);
+
+  useEffect(() => {
+    if (renameNodeId === node.id && !editing) {
+      setEditing(true);
+      setEditTitle(node.title);
+      onRenameStarted?.();
+    }
+  }, [renameNodeId, node.id, node.title, editing, onRenameStarted]);
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -229,6 +241,8 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
               onAddChild={onAddChild}
               onRename={onRename}
               onMove={onMove}
+              renameNodeId={renameNodeId}
+              onRenameStarted={onRenameStarted}
             />
           ))}
         </div>

@@ -157,8 +157,9 @@ export function WikiPageLayout() {
   const handleConfirmPlan = async (planId: string) => {
     setConfirmingPlan(true);
     try {
-      await confirmPlan(planId);
+      const report = await confirmPlan(planId);
       setPendingPlans(prev => prev.filter(p => p.id !== planId));
+      setExecutionResults(prev => new Map(prev).set(planId, report));
       handlePageChanged();
       mutateCurrentPage();
     } catch (err) {
