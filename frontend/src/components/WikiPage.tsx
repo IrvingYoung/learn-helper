@@ -3,7 +3,7 @@ import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, confirmPlan, rejectPlan } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { WikiPage, Plan, WikiTreeNode } from '../types';
+import type { WikiPage, Plan, WikiTreeNode, ExecutionReport } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
@@ -37,7 +37,7 @@ export function WikiPageLayout() {
   const [apiKey, setApiKey] = useState('')
   const [tavilyApiKey, setTavilyApiKey] = useState('');
   const [saved, setSaved] = useState(false);
-  const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [pendingPlans, setPendingPlans] = useState<Plan[]>([]);
   const [confirmingPlan, setConfirmingPlan] = useState(false);
 
   useEffect(() => {
@@ -60,10 +60,14 @@ export function WikiPageLayout() {
   const [treeVersion, setTreeVersion] = useState(0);
 
   const { data: tree } = useSWR(['wiki-tree', treeVersion], fetchWikiTree);
-  const { data: page } = useSWR(
+  const { data: page, mutate: mutatePage } = useSWR(
     selectedSlug ? `wiki-page-${selectedSlug}` : null,
     () => selectedSlug ? fetchWikiPage(selectedSlug) : null
   );
+
+  const mutateCurrentPage = useCallback(() => {
+    mutatePage();
+  }, [mutatePage]);
 
   const { data: overviewPage } = useSWR(
     !selectedSlug ? 'wiki-overview' : null,
@@ -93,7 +97,7 @@ export function WikiPageLayout() {
   }, []);
 
   const handlePlanCreated = (plan: Plan) => {
-    setActivePlan(plan);
+    setPendingPlans(prev => [...prev, plan]);
   };
 
   const handleAskAI = useCallback((text: string, pageTitle: string) => {
@@ -104,10 +108,11 @@ export function WikiPageLayout() {
     setConfirmingPlan(true);
     try {
       await confirmPlan(planId);
-      setActivePlan(null);
+      setPendingPlans(prev => prev.filter(p => p.id !== planId));
       handlePageChanged();
-    } catch {
-      // error handled in ChatPanel
+      mutateCurrentPage();
+    } catch (err) {
+      console.error("Plan confirmation failed:", err);
     } finally {
       setConfirmingPlan(false);
     }
@@ -116,10 +121,20 @@ export function WikiPageLayout() {
   const handleRejectPlan = async (planId: string) => {
     try {
       await rejectPlan(planId);
-      setActivePlan(null);
-    } catch {
-      // error handled in ChatPanel
+      setPendingPlans(prev => prev.filter(p => p.id !== planId));
+    } catch (err) {
+      console.error("Plan rejection failed:", err);
     }
+  };
+
+  const handlePlanConfirmed = (planId: string, _report: ExecutionReport) => {
+    setPendingPlans(prev => prev.filter(p => p.id !== planId));
+    handlePageChanged();
+    mutateCurrentPage();
+  };
+
+  const handlePlanRejected = (planId: string) => {
+    setPendingPlans(prev => prev.filter(p => p.id !== planId));
   };
 
   const handleSaveConfig = async () => {
@@ -255,7 +270,19 @@ export function WikiPageLayout() {
           }}
         >
           <div className="h-full overflow-hidden">
-            <PageViewer page={displayPage} collapsed={rightCollapsed} plan={activePlan} onConfirmPlan={handleConfirmPlan} onRejectPlan={handleRejectPlan} confirmingPlan={confirmingPlan} onSelectPage={(slug) => setSelectedSlug(slug)} onAskAI={handleAskAI} />
+            <PageViewer
+              page={displayPage}
+              collapsed={rightCollapsed}
+              plan={null}
+              pendingPlans={pendingPlans}
+              onConfirmPlan={handleConfirmPlan}
+              onRejectPlan={handleRejectPlan}
+              confirmingPlan={confirmingPlan}
+              onSelectPage={(slug) => setSelectedSlug(slug)}
+              onAskAI={handleAskAI}
+              onPlanConfirmed={handlePlanConfirmed}
+              onPlanRejected={handlePlanRejected}
+            />
           </div>
         </Panel>
       </Group>
