@@ -25,12 +25,6 @@ export interface WikiTreeNode {
   children?: WikiTreeNode[];
 }
 
-export interface PendingAction {
-  type: 'create' | 'update' | 'delete';
-  preview: string;
-  details?: Record<string, unknown>;
-}
-
 export type AIRole = 'wiki_maintainer'
 export type AIContextType = 'wiki'
 
@@ -54,8 +48,6 @@ export interface ConversationMessage {
   model_provider: string | null;
   token_count: number | null;
   created_at: string;
-  pending_actions?: PendingAction[];
-  confirmed?: boolean;
   plan?: Plan;
 }
 
@@ -75,11 +67,27 @@ export interface PlanAction {
   created_at: string;
 }
 
+export interface OutlineNode {
+  id?: string;
+  title: string;
+  page_type: 'entity' | 'concept' | 'overview';
+  children?: OutlineNode[];
+}
+
+export interface Phase {
+  title: string;
+  description: string;
+}
+
 export interface Plan {
   id: string;
   conversation_id: number;
   reasoning: string;
   status: PlanStatus;
+  outline?: OutlineNode[];
+  phases?: Phase[];
+  phase_index?: number;
+  total_phases?: number;
   actions: PlanAction[];
   created_at: string;
   executed_at?: string;
@@ -88,6 +96,7 @@ export interface Plan {
 export interface ExecutionReport {
   plan_id: string;
   status: PlanStatus;
+  outline?: Record<string, unknown>;
   actions: {
     id: string;
     type: ActionType;

@@ -1,4 +1,4 @@
-import type { WikiPage, WikiTreeNode, Conversation, ConversationMessage, PendingAction, Plan, ExecutionReport } from "../types";
+import type { WikiPage, WikiTreeNode, Conversation, ConversationMessage, Plan, ExecutionReport } from "../types";
 
 const BASE = "/api";
 
@@ -32,14 +32,13 @@ export async function listConversations(): Promise<Conversation[]> {
   return data.conversations ?? [];
 }
 
-export async function createConversation(title?: string): Promise<Conversation> {
+export async function createConversation(): Promise<Conversation> {
   const res = await fetch(`${BASE}/ai/conversations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       role: "wiki_maintainer",
       context_type: "wiki",
-      title,
     }),
   });
   if (!res.ok) throw new Error("Failed to create conversation");
@@ -75,7 +74,6 @@ export interface ChatRequest {
   message: string;
   role?: string;
   context_type?: string;
-  confirmed_actions?: PendingAction[];
   plan_id?: string;
   focus_page_id?: number | null;
   current_slug?: string;
@@ -85,7 +83,7 @@ export interface ChatRequest {
 export async function streamChat(
   req: ChatRequest,
   onChunk: (content: string) => void,
-  onMeta: (data: { conversation_id?: number; pending_actions?: PendingAction[]; plan?: Plan }) => void,
+  onMeta: (data: { conversation_id?: number; plan?: Plan }) => void,
   onStatus?: (data: { step: number; max_steps: number; status: string }) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/ai/chat`, {
