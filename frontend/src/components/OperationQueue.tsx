@@ -3,6 +3,8 @@ import { confirmPlan, rejectPlan } from "../lib/api";
 
 interface OperationQueueProps {
   plans: Plan[];
+  executionResults: Map<string, ExecutionReport>;
+  onViewPage?: (slug: string) => void;
   onPlanConfirmed: (planId: string, report: ExecutionReport) => void;
   onPlanRejected: (planId: string) => void;
 }
@@ -15,8 +17,8 @@ const ACTION_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   move_page: { label: "移动", color: "bg-purple-100 text-purple-700" },
 };
 
-export function OperationQueue({ plans, onPlanConfirmed, onPlanRejected }: OperationQueueProps) {
-  if (plans.length === 0) {
+export function OperationQueue({ plans, executionResults, onViewPage, onPlanConfirmed, onPlanRejected }: OperationQueueProps) {
+  if (plans.length === 0 && executionResults.size === 0) {
     return (
       <div className="h-full flex items-center justify-center text-th-text-muted">
         <p className="text-sm">没有待确认的操作</p>
@@ -26,6 +28,13 @@ export function OperationQueue({ plans, onPlanConfirmed, onPlanRejected }: Opera
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3">
+      {Array.from(executionResults.entries()).map(([planId, report]) => (
+        <ExecutionResultCard
+          key={planId}
+          report={report}
+          onViewPage={onViewPage}
+        />
+      ))}
       {plans.map((plan) => (
         <OperationCard
           key={plan.id}
@@ -97,6 +106,86 @@ function OperationCard({
         >
           拒绝
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ExecutionResultCard({
+  report,
+  onViewPage,
+}: {
+  report: ExecutionReport;
+  onViewPage?: (slug: string) => void;
+}) {
+  const failedActions = report.actions.filter(a => a.status === "failed");
+  const succeededActions = report.actions.filter(a => a.status === "completed");
+  const hasFailures = failedActions.length > 0;
+  const allFailed = succeededActions.length === 0 && failedActions.length > 0;
+
+  const slugFromResult = (action: typeof report.actions[number]) => {
+    const result = action.result;
+    if (result && typeof result === "object" && "slug" in result) {
+      return result.slug as string;
+    }
+    return null;
+  };
+
+  const firstSlug = report.actions
+    .map(a => slugFromResult(a))
+    .find((s): s is string => s !== null);
+
+  if (allFailed) {
+    return (
+      <div className="border border-red-200 rounded-lg p-3 space-y-2 bg-red-50">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+            执行失败
+          </span>
+        </div>
+        {failedActions.map(action => (
+          <div key={action.id} className="text-xs text-red-700 pl-2 border-l-2 border-red-200">
+            <span className="font-medium">{action.type}</span>
+            {action.error && <span className="ml-1">: {action.error}</span>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (hasFailures) {
+    return (
+      <div className="border border-amber-200 rounded-lg p-3 space-y-2 bg-amber-50">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+            部分失败
+          </span>
+          <span className="text-xs text-amber-600">{failedActions.length}/{report.actions.length} 个操作失败</span>
+        </div>
+        {failedActions.map(action => (
+          <div key={action.id} className="text-xs text-amber-700 pl-2 border-l-2 border-amber-200">
+            <span className="font-medium">{action.type}</span>
+            {action.error && <span className="ml-1">: {action.error}</span>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-green-200 rounded-lg p-3 space-y-1 bg-green-50">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+          执行成功
+        </span>
+        {firstSlug && onViewPage && (
+          <button
+            onClick={() => onViewPage(firstSlug)}
+            className="text-xs text-green-700 underline hover:text-green-900"
+          >
+            查看新页面
+          </button>
+        )}
       </div>
     </div>
   );

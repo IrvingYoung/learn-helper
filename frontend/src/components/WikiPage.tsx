@@ -39,6 +39,7 @@ export function WikiPageLayout() {
   const [saved, setSaved] = useState(false);
   const [pendingPlans, setPendingPlans] = useState<Plan[]>([]);
   const [confirmingPlan, setConfirmingPlan] = useState(false);
+  const [executionResults, setExecutionResults] = useState<Map<string, ExecutionReport>>(new Map());
 
   useEffect(() => {
     fetch('/api/ai/configs')
@@ -69,7 +70,7 @@ export function WikiPageLayout() {
     mutatePage();
   }, [mutatePage]);
 
-  const { data: overviewPage } = useSWR(
+  const { data: overviewPage, mutate: mutateOverview } = useSWR(
     !selectedSlug ? 'wiki-overview' : null,
     fetchOverviewPage
   );
@@ -94,7 +95,8 @@ export function WikiPageLayout() {
 
   const handlePageChanged = useCallback(() => {
     setTreeVersion(v => v + 1);
-  }, []);
+    mutateOverview();
+  }, [mutateOverview]);
 
   const handlePlanCreated = (plan: Plan) => {
     setPendingPlans(prev => [...prev, plan]);
@@ -127,8 +129,9 @@ export function WikiPageLayout() {
     }
   };
 
-  const handlePlanConfirmed = (planId: string, _report: ExecutionReport) => {
+  const handlePlanConfirmed = (planId: string, report: ExecutionReport) => {
     setPendingPlans(prev => prev.filter(p => p.id !== planId));
+    setExecutionResults(prev => new Map(prev).set(planId, report));
     handlePageChanged();
     mutateCurrentPage();
   };
@@ -275,6 +278,8 @@ export function WikiPageLayout() {
               collapsed={rightCollapsed}
               plan={null}
               pendingPlans={pendingPlans}
+              executionResults={executionResults}
+              onViewPage={(slug) => setSelectedSlug(slug)}
               onConfirmPlan={handleConfirmPlan}
               onRejectPlan={handleRejectPlan}
               confirmingPlan={confirmingPlan}

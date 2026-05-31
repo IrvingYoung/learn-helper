@@ -9,6 +9,8 @@ interface PageViewerProps {
   collapsed: boolean;
   plan: Plan | null;
   pendingPlans: Plan[];
+  executionResults: Map<string, ExecutionReport>;
+  onViewPage?: (slug: string) => void;
   onConfirmPlan: (planId: string) => void;
   onRejectPlan: (planId: string) => void;
   confirmingPlan: boolean;
@@ -42,7 +44,7 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; border: string; 
   },
 };
 
-export function PageViewer({ page, collapsed, plan, pendingPlans, onConfirmPlan, onRejectPlan, confirmingPlan, onSelectPage, onAskAI, onPlanConfirmed, onPlanRejected }: PageViewerProps) {
+export function PageViewer({ page, collapsed, plan, pendingPlans, executionResults, onViewPage, onConfirmPlan, onRejectPlan, confirmingPlan, onSelectPage, onAskAI, onPlanConfirmed, onPlanRejected }: PageViewerProps) {
   const [activeTab, setActiveTab] = useState<"content" | "operations">("content");
   const [selectionTooltip, setSelectionTooltip] = useState<{
     text: string;
@@ -200,6 +202,8 @@ export function PageViewer({ page, collapsed, plan, pendingPlans, onConfirmPlan,
         {activeTab === "operations" && (
           <OperationQueue
             plans={pendingPlans}
+            executionResults={executionResults}
+            onViewPage={onViewPage}
             onPlanConfirmed={onPlanConfirmed}
             onPlanRejected={onPlanRejected}
           />
