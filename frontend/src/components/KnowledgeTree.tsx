@@ -1,14 +1,35 @@
 import { useState } from 'react';
 import type { WikiTreeNode } from '../types';
+import { TreeNodeMenu } from './TreeNodeMenu';
 
 interface KnowledgeTreeProps {
   tree: WikiTreeNode[];
   selectedSlug: string | null;
   onSelect: (slug: string) => void;
   collapsed: boolean;
+  onAddChild?: (parentId: number) => void;
+  onRename?: (nodeId: number, currentTitle: string) => void;
+  onMove?: (nodeId: number, newParentId: number | null) => void;
+  onDelete?: (nodeId: number, hasChildren: boolean) => void;
 }
 
-export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed }: KnowledgeTreeProps) {
+export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddChild, onRename, onMove, onDelete }: KnowledgeTreeProps) {
+  const [menuState, setMenuState] = useState<{
+    x: number; y: number; nodeId: number; nodeTitle: string; hasChildren: boolean;
+  } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent, node: WikiTreeNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuState({
+      x: e.clientX,
+      y: e.clientY,
+      nodeId: node.id,
+      nodeTitle: node.title,
+      hasChildren: !!(node.children && node.children.length > 0),
+    });
+  };
+
   if (collapsed) return null;
 
   return (
@@ -22,6 +43,9 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed }: Knowl
             selectedSlug={selectedSlug}
             onSelect={onSelect}
             depth={0}
+            onContextMenu={handleContextMenu}
+            onAddChild={onAddChild}
+            onRename={onRename}
           />
         ))}
       </div>
@@ -34,6 +58,20 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed }: Knowl
           <p className="text-xs opacity-60">和 AI 对话创建知识树</p>
         </div>
       )}
+      {menuState && onAddChild && onRename && onMove && onDelete && (
+        <TreeNodeMenu
+          x={menuState.x}
+          y={menuState.y}
+          nodeId={menuState.nodeId}
+          nodeTitle={menuState.nodeTitle}
+          hasChildren={menuState.hasChildren}
+          onAddChild={onAddChild}
+          onRename={onRename}
+          onMove={onMove}
+          onDelete={onDelete}
+          onClose={() => setMenuState(null)}
+        />
+      )}
     </div>
   );
 }
@@ -43,9 +81,12 @@ interface TreeNodeProps {
   selectedSlug: string | null;
   onSelect: (slug: string) => void;
   depth: number;
+  onContextMenu?: (e: React.MouseEvent, node: WikiTreeNode) => void;
+  onAddChild?: (parentId: number) => void;
+  onRename?: (nodeId: number, currentTitle: string) => void;
 }
 
-function TreeNode({ node, selectedSlug, onSelect, depth }: TreeNodeProps) {
+function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = node.slug === selectedSlug;
@@ -75,6 +116,7 @@ function TreeNode({ node, selectedSlug, onSelect, depth }: TreeNodeProps) {
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
+        onContextMenu={(e) => onContextMenu?.(e, node)}
       >
         {hasChildren ? (
           <button
@@ -106,6 +148,9 @@ function TreeNode({ node, selectedSlug, onSelect, depth }: TreeNodeProps) {
               selectedSlug={selectedSlug}
               onSelect={onSelect}
               depth={depth + 1}
+              onContextMenu={onContextMenu}
+              onAddChild={onAddChild}
+              onRename={onRename}
             />
           ))}
         </div>
