@@ -88,6 +88,7 @@ interface TreeNodeProps {
 
 function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
+  const [hovered, setHovered] = useState(false);
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = node.slug === selectedSlug;
 
@@ -117,6 +118,8 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
         onContextMenu={(e) => onContextMenu?.(e, node)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
         {hasChildren ? (
           <button
@@ -138,6 +141,14 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
         {node.page_type === 'overview' && (
           <span className="text-xs text-th-text-muted shrink-0 font-mono tracking-tight">概览</span>
         )}
+        {hovered && onContextMenu && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onContextMenu(e, node); }}
+            className="w-4 h-4 flex items-center justify-center text-th-text-muted hover:text-th-text-secondary shrink-0"
+          >
+            ⋯
+          </button>
+        )}
       </div>
       {expanded && hasChildren && (
         <div className="transition-all duration-200">
@@ -154,6 +165,16 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
             />
           ))}
         </div>
+      )}
+      {expanded && onAddChild && (
+        <button
+          onClick={() => onAddChild(node.id)}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-th-text-muted hover:text-th-text-secondary hover:bg-th-bg-primary transition-colors border border-dashed border-transparent hover:border-th-border"
+          style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
+        >
+          <span className="w-4 shrink-0" />
+          <span className="text-xs">+ 添加子页面</span>
+        </button>
       )}
     </div>
   );
