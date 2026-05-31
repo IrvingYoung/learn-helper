@@ -313,6 +313,9 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	var convRole string
 	h.db.QueryRowContext(ctx, `SELECT role FROM conversations WHERE id = ?`, req.ConversationID).Scan(&convRole)
 
+	// Save original message before modification (for DB persistence)
+	originalMessage := req.Message
+
 	// Merge selected text into user message so AI sees it directly
 	if req.SelectedText != "" {
 		prefix := fmt.Sprintf("关于选中的内容「%s」", req.SelectedText)
@@ -323,24 +326,18 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Add current page context to user message
-	if req.CurrentSlug != "" {
-		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
-		if err == nil {
-			req.Message += fmt.Sprintf("\n\n[当前页面：%s (ID=%d)]", page.Title, page.ID)
-		} else {
-			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
-		}
-	}
-
-	// Save user message (only when there's actual text)
-	if req.Message != "" {
+	// Save original user message (before context modifications) to DB
+	if originalMessage != "" {
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
+			req.ConversationID, originalMessage, config.Provider)
+	} else if req.SelectedText != "" && req.Message != "" {
+		// When only selected text was provided (no manual input), save the contextual message
 		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
 			req.ConversationID, req.Message, config.Provider)
 	}
 
 	// Auto-title: only on first user message with actual content
-	var needsTitle bool
+	needsTitle := false
 	if req.Message != "" {
 		var currentTitle sql.NullString
 		h.db.QueryRowContext(ctx, `SELECT title FROM conversations WHERE id = ?`, req.ConversationID).Scan(&currentTitle)
@@ -429,7 +426,10 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	if req.CurrentSlug != "" {
 		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
 		if err == nil {
-			wikiContext += "\n当用户询问关于\"这个页面\"或\"当前页面\"的问题时，请使用 read_page 读取当前页面内容后再回答。不要发起空搜索。\n"
+			wikiContext += fmt.Sprintf(
+					"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n当用户询问关于\"这个页面\"或\"当前页面\"的问题时，请使用 read_page 读取当前页面内容后再回答。不要发起空搜索。\n",
+					page.Title, page.Slug, page.ID,
+				)
 			log.Printf("[AIChat] injected current page context: %s (slug=%s)", page.Title, page.Slug)
 		} else {
 			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
@@ -490,15 +490,14 @@ reactLoop:
 			log.Printf("[ReAct]   tool_call[%d]: name=%s input_len=%d", i, tc.Name, len(tc.Input))
 		}
 
-		// Accumulate streamed content
-		if respContent != "" {
-			fullContent.WriteString(respContent)
-			fullContent.WriteString("\n\n")
-		}
-
 		// No tool calls → AI is done reasoning
 		toolCalls := respToolCalls
 		if len(toolCalls) == 0 {
+			// Accumulate streamed content before breaking
+			if respContent != "" {
+				fullContent.WriteString(respContent)
+				fullContent.WriteString("\n\n")
+			}
 			log.Printf("[ReAct] iteration=%d no tool calls, done", iteration)
 			break reactLoop
 		}
@@ -514,6 +513,15 @@ reactLoop:
 			}
 		}
 		log.Printf("[ReAct] iteration=%d auto_calls=%d plan_call=%v", iteration, len(autoCalls), planCall != nil)
+
+		// For propose_plan iterations, skip content accumulation —
+		// the plan outline is shown in the right panel via PlanPreview,
+		// not in the chat message. For auto-tools-only iterations,
+		// accumulate as normal so the text is saved as the assistant message.
+		if planCall == nil && respContent != "" {
+			fullContent.WriteString(respContent)
+			fullContent.WriteString("\n\n")
+		}
 
 		// Build structured content for this assistant turn
 		var blocks []ai.ContentBlock
@@ -565,7 +573,7 @@ reactLoop:
 
 			// Save assistant message with plan info
 			planSummary := ""
-			if plan.Outline != nil && *plan.Outline != "" && len(plan.Actions) == 0 {
+			if len(plan.Outline) > 0 && len(plan.Actions) == 0 {
 				planSummary = fmt.Sprintf("[操作计划 - 大纲] %s\n大纲已生成，请在右侧查看。", plan.Reasoning)
 			} else {
 				planSummary = fmt.Sprintf("[操作计划] %s\n共 %d 个操作待确认。", plan.Reasoning, len(plan.Actions))
@@ -878,6 +886,30 @@ func (h *AIHandler) buildWikiContext(ctx context.Context, focusPageID *int64) st
 
 // createPlanFromToolCall creates a Plan from a propose_plan tool call input.
 // Supports both old format (single "params" field) and new format (type-specific "*_params" fields).
+
+// extractFirstJSON finds the first balanced JSON object {...} in a string.
+// This strips any non-JSON prefix (e.g. function call wrappers like
+// propose_plan({...}) or explanatory text before code fences).
+func extractFirstJSON(s string) string {
+	start := strings.Index(s, "{")
+	if start < 0 {
+		return s
+	}
+	depth := 0
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return s // no balanced closing brace; return as-is
+}
+
 func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (*model.Plan, error) {
 	var proposal struct {
 		Reasoning   string          `json:"reasoning"`
@@ -897,28 +929,69 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 			DependsOn        []string       `json:"depends_on"`
 		} `json:"actions"`
 	}
-	// Try to parse input, handling cases where AI returns extra content after the JSON object
-	if err := json.Unmarshal([]byte(input), &proposal); err != nil {
-		// Extract first valid JSON object if AI appended extra content
-		decoder := json.NewDecoder(strings.NewReader(input))
-		var raw json.RawMessage
-		if rawErr := decoder.Decode(&raw); rawErr == nil {
-			if retryErr := json.Unmarshal(raw, &proposal); retryErr != nil {
-				return nil, fmt.Errorf("parse propose_plan input: %w (raw: %s)", err, input[:min(len(input), 200)])
-			}
-		} else {
-			return nil, fmt.Errorf("parse propose_plan input: %w (raw: %s)", err, input[:min(len(input), 200)])
+	// Clean input: strip whitespace, code fences, and function-call wrappers
+	raw := strings.TrimSpace(input)
+
+	// Strip markdown code fences if present
+	if strings.HasPrefix(raw, "```") || strings.HasPrefix(raw, "~~~") {
+		if idx := strings.Index(raw, "\n"); idx >= 0 {
+			raw = raw[idx+1:]
+		}
+		if idx := strings.LastIndex(raw, "```"); idx >= 0 {
+			raw = strings.TrimSpace(raw[:idx])
+		} else if idx := strings.LastIndex(raw, "~~~"); idx >= 0 {
+			raw = strings.TrimSpace(raw[:idx])
 		}
 	}
 
+	// Extract the first balanced JSON object (handles function-call wrappers like propose_plan({...}))
+	jsonStr := extractFirstJSON(raw)
+
+	// Store display value before goto (cannot jump over variable declarations in Go)
+	display := jsonStr
+	if len(display) > 500 {
+		display = display[:500]
+	}
+
+	fixed := jsonStr
+	var rawMsg json.RawMessage
+	var decoder *json.Decoder
+
+	// Strategy 1: direct parse
+	if err := json.Unmarshal([]byte(jsonStr), &proposal); err == nil {
+		goto parsed
+	}
+
+	// Strategy 2: decode first value (ignores trailing garbage)
+	decoder = json.NewDecoder(strings.NewReader(jsonStr))
+	if decodeErr := decoder.Decode(&rawMsg); decodeErr == nil {
+		if retryErr := json.Unmarshal(rawMsg, &proposal); retryErr == nil {
+			goto parsed
+		}
+	}
+
+	// Strategy 3: fix trailing commas before ] or } (common AI habit)
+	fixed = strings.ReplaceAll(jsonStr, ",]", "]")
+	fixed = strings.ReplaceAll(fixed, ",}", "}")
+	if err := json.Unmarshal([]byte(fixed), &proposal); err == nil {
+		goto parsed
+	}
+	if decodeErr := json.NewDecoder(strings.NewReader(fixed)).Decode(&rawMsg); decodeErr == nil {
+		if retryErr := json.Unmarshal(rawMsg, &proposal); retryErr == nil {
+			goto parsed
+		}
+	}
+
+	// All recovery attempts failed
+	return nil, fmt.Errorf("parse propose_plan input: invalid JSON (display: %s)", display)
+
+parsed:
 	planID := fmt.Sprintf("plan-%d", time.Now().UnixNano())
 	now := time.Now().Format("2006-01-02 15:04:05")
 
-	// Serialize outline to string if present
-	var outlineStr *string
-	if len(proposal.Outline) > 0 && string(proposal.Outline) != "null" {
-		s := string(proposal.Outline)
-		outlineStr = &s
+	// Convert outline to json.RawMessage (preserves raw JSON when marshaling)
+	if len(proposal.Outline) > 0 && string(proposal.Outline) == "null" {
+		proposal.Outline = nil
 	}
 
 	plan := &model.Plan{
@@ -926,7 +999,7 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 		ConversationID: &conversationID,
 		Reasoning:      proposal.Reasoning,
 		Status:         "pending",
-		Outline:        outlineStr,
+		Outline:        proposal.Outline,
 		PhaseIndex:     proposal.PhaseIndex,
 		TotalPhases:    proposal.TotalPhases,
 		CreatedAt:      now,
@@ -1005,6 +1078,66 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 	}
 
 	return plan, nil
+}
+
+// cleanProposalJSON attempts to fix common AI JSON generation errors,
+// specifically extra closing braces/brackets inside the JSON structure.
+// It counts braces/brackets outside string literals and removes excess
+// closing characters from the end.
+func cleanProposalJSON(input string) string {
+	// Count braces outside string literals to handle content like "text{}"
+	openBraces, closeBraces := countBraces(input)
+	for closeBraces > openBraces {
+		lastIdx := strings.LastIndex(input, "}")
+		if lastIdx < 0 {
+			break
+		}
+		input = input[:lastIdx] + input[lastIdx+1:]
+		closeBraces--
+	}
+
+	// Remove excess closing brackets (inside or outside strings — rare enough)
+	openBrackets := strings.Count(input, "[")
+	closeBrackets := strings.Count(input, "]")
+	for closeBrackets > openBrackets {
+		lastIdx := strings.LastIndex(input, "]")
+		if lastIdx < 0 {
+			break
+		}
+		input = input[:lastIdx] + input[lastIdx+1:]
+		closeBrackets--
+	}
+
+	return input
+}
+
+// countBraces counts '{' and '}' outside JSON string literals.
+func countBraces(s string) (open, close int) {
+	inString := false
+	escape := false
+	for _, r := range s {
+		if escape {
+			escape = false
+			continue
+		}
+		if inString {
+			if r == '"' {
+				inString = false
+			} else if r == '\\' {
+				escape = true
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			inString = true
+		case '{':
+			open++
+		case '}':
+			close++
+		}
+	}
+	return
 }
 
 func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string {

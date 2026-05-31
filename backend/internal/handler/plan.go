@@ -101,9 +101,9 @@ func (h *PlanHandler) ConfirmPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if plan.Outline != nil && *plan.Outline != "" && len(plan.Actions) == 0 {
+	if len(plan.Outline) > 0 && len(plan.Actions) == 0 {
 		// Outline-only: create skeleton pages
-		result, err := h.engine.ExecOutline(r.Context(), *plan.Outline, nil)
+		result, err := h.engine.ExecOutline(r.Context(), string(plan.Outline), nil)
 		if err != nil {
 			http.Error(w, "outline execution failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -240,7 +240,7 @@ func (h *PlanHandler) loadPlan(ctx context.Context, planID string) (*model.Plan,
 	}
 	if outline.Valid {
 		s := outline.String
-		plan.Outline = &s
+		plan.Outline = json.RawMessage(s)
 	}
 
 	// Load actions

@@ -197,6 +197,7 @@ func main() {
 		r.Post("/wiki", wikiHandler.CreateWikiPage)
 		r.Put("/wiki/{id}", wikiHandler.UpdateWikiPage)
 		r.Delete("/wiki/{id}", wikiHandler.DeleteWikiPage)
+		r.Put("/wiki/{id}/confirm", wikiHandler.ConfirmPageContent)
 
 		// Wiki structure operations (no confirmation needed)
 			r.Patch("/wiki/{id}/rename", wikiHandler.RenameWikiPage)

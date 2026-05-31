@@ -13,15 +13,14 @@ import { MarkdownContent } from "./MarkdownContent";
 const STORAGE_KEY = "llm-wiki-active-conversation-id";
 
 interface ChatPanelProps {
-  onPageChanged?: () => void;
-  onPlanCreated?: (plan: Plan) => void;
   focusPageId?: number | null;
   currentSlug?: string;
   currentPageTitle?: string;
+  onPlanReceived?: (plan: Plan) => void;
 }
 
 export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle: string) => void }, ChatPanelProps>(
-  function ChatPanel({ onPageChanged: _onPageChanged, onPlanCreated, focusPageId, currentSlug, currentPageTitle }, ref) {
+  function ChatPanel({ focusPageId, currentSlug, currentPageTitle, onPlanReceived }, ref) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -230,8 +229,42 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
           if (meta.conversation_id && meta.conversation_id !== conv.id) {
             newConvId = meta.conversation_id;
           }
-          if (meta.plan && onPlanCreated) {
-            onPlanCreated(meta.plan);
+          if (meta.plan) {
+            onPlanReceived?.(meta.plan);
+            // Replace the assistant message with a summary pointing to the right panel
+            if ((meta.plan.outline && meta.plan.outline.length > 0)) {
+              const summary = meta.plan.reasoning
+                ? `## 📋 知识大纲
+
+${meta.plan.reasoning}
+
+大纲已生成，请在右侧面板中查看并确认。`
+                : '## 📋 知识大纲\n\n大纲已生成，请在右侧面板中查看并确认。';
+              setMessages((prev) => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === "assistant") {
+                  msgs[msgs.length - 1] = { ...last, content: summary };
+                }
+                return msgs;
+              });
+            } else if (meta.plan.actions && meta.plan.actions.length > 0) {
+              const summary = meta.plan.reasoning
+                ? `## 📋 操作计划
+
+${meta.plan.reasoning}
+
+共 ${meta.plan.actions.length} 个操作待确认，请在右侧面板中查看。`
+                : `## 📋 操作计划\n\n共 ${meta.plan.actions.length} 个操作待确认，请在右侧面板中查看。`;
+              setMessages((prev) => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === "assistant") {
+                  msgs[msgs.length - 1] = { ...last, content: summary };
+                }
+                return msgs;
+              });
+            }
           }
         },
         (data) => {
@@ -280,7 +313,7 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
 
       return (
         <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-          <div className={`max-w-[85%] ${msg.role === "user" ? "bg-th-accent text-white rounded-2xl rounded-br-md px-3 py-2" : ""}`}>
+          <div className={`max-w-[85%] ${msg.role === "user" ? "bg-th-accent bg-th-user-bubble text-white rounded-2xl rounded-br-md px-3 py-2" : ""}`}>
             {msg.role === "user" ? (
               <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
             ) : (
@@ -472,6 +505,7 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
         </div>
       )}
 
+      
       {/* Input */}
       <div className="p-3 border-t border-th-border shrink-0">
         {currentPageTitle && (

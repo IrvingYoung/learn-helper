@@ -1,314 +1,253 @@
-import { useState } from "react";
-import type { Plan, PlanAction, ActionType, OutlineNode } from "../types";
+import type { Plan, OutlineNode, PlanAction } from "../types";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface PlanPreviewProps {
   plan: Plan;
   onConfirm: (planId: string) => void;
-  onReject: (planId: string) => void;
   confirming: boolean;
 }
 
-const ACTION_ICONS: Record<ActionType, { char: string; color: string }> = {
-  create_page: { char: '+', color: '#d97706' },
-  update_page: { char: '~', color: '#d97706' },
-  delete_page: { char: '×', color: '#dc2626' },
-  link_pages: { char: '→', color: '#d97706' },
-  move_page: { char: '↗', color: '#d97706' },
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: '待确认',
-  confirmed: '已确认',
-  executing: '执行中',
-  completed: '已完成',
-  rejected: '已拒绝',
-  completed_with_failures: '部分失败',
-};
-
-const PAGE_TYPE_ICONS: Record<string, string> = {
-  entity: '📄',
-  concept: '💡',
-  overview: '📋',
-};
-
-// Resolve {{action:ID.prop}} placeholders in param values to human-readable labels
-function resolveRef(value: unknown, actions: PlanAction[]): string {
-  if (typeof value === 'number') {
-    return `Page #${value}`;
-  }
-  if (typeof value !== 'string') {
-    return String(value ?? '');
-  }
-  return value.replace(/\{\{action:([^}]+)\.([^}]+)\}\}/g, (_match, refId, _prop) => {
-    const ref = actions.find(a => a.id === refId);
-    if (!ref) return '?';
-    const title = (ref.params.title as string) || '新页面';
-    return `「${title}」`;
-  });
-}
-
-// Resolve a depends_on action ID to the referenced action's title
-function depLabel(depId: string, actions: PlanAction[]): string {
-  const dep = actions.find(a => a.id === depId);
-  if (!dep) return depId;
-  return (dep.params.title as string) || dep.type;
-}
-
-function ActionPreview({ action, actions }: { action: PlanAction; actions: PlanAction[] }) {
-  const params = action.params;
-
-  switch (action.type) {
-    case 'create_page': {
-      const title = (params.title as string) || '未命名';
-      const parentId = params.parent_id as number | undefined;
-      const content = (params.content as string) || '';
-      const contentPreview = content.slice(0, 200);
-      return (
-        <div>
-          <div className="font-medium text-th-text">{resolveRef(title, actions)}</div>
-          {parentId !== undefined && parentId !== null && (
-            <div className="text-xs text-th-muted">→ parent: {resolveRef(parentId, actions)}</div>
-          )}
-          {contentPreview && (
-            <div className="text-sm text-th-muted line-clamp-3 mt-1">{resolveRef(contentPreview, actions)}</div>
-          )}
-        </div>
-      );
-    }
-
-    case 'update_page': {
-      const pageId = params.page_id as number | undefined;
-      const title = params.title as string | undefined;
-      const content = (params.content as string) || '';
-      const contentPreview = content.slice(0, 200);
-      return (
-        <div>
-          <div className="font-medium text-th-text">
-            {pageId !== undefined ? resolveRef(pageId, actions) : '?'}
-            {title && <span> → {resolveRef(title, actions)}</span>}
-          </div>
-          {contentPreview && (
-            <div className="text-sm text-th-muted line-clamp-3 mt-1">{resolveRef(contentPreview, actions)}</div>
-          )}
-        </div>
-      );
-    }
-
-    case 'delete_page': {
-      const pageId = params.page_id as number | undefined;
-      return (
-        <div>
-          <span className="font-medium text-red-600">{pageId !== undefined ? resolveRef(pageId, actions) : '?'}</span>
-          <span className="text-th-muted"> 将被删除</span>
-        </div>
-      );
-    }
-
-    case 'link_pages': {
-      const sourceId = params.source_page_id as number | undefined;
-      const targetId = params.target_page_id as number | undefined;
-      const linkText = params.link_text as string | undefined;
-      return (
-        <div className="text-th-text">
-          {sourceId !== undefined ? resolveRef(sourceId, actions) : '?'} → {targetId !== undefined ? resolveRef(targetId, actions) : '?'}
-          {linkText && <span className="text-th-muted"> [{resolveRef(linkText, actions)}]</span>}
-        </div>
-      );
-    }
-
-    case 'move_page': {
-      const pageId = params.page_id as number | undefined;
-      const newParentId = params.new_parent_id as number | undefined;
-      return (
-        <div className="text-th-text">
-          {pageId !== undefined ? resolveRef(pageId, actions) : '?'} → {newParentId !== undefined ? resolveRef(newParentId, actions) : '?'}
-        </div>
-      );
-    }
-
-    default:
-      return <div className="text-th-muted">未知操作类型</div>;
-  }
-}
-
-// ── OutlineTree component ────────────────────────────────────────
-
-function OutlineNodeRow({ node, depth }: { node: OutlineNode; depth: number }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const hasChildren = node.children && node.children.length > 0;
-
+function OutlineTree({ node, depth }: { node: OutlineNode; depth: number }) {
+  const typeLabel: Record<string, string> = {
+    entity: "实体",
+    concept: "概念",
+    overview: "概览",
+  };
   return (
-    <div>
+    <li className="select-none">
       <div
-        className="flex items-center gap-2 py-1.5 px-1 rounded hover:bg-th-hover cursor-pointer transition-colors"
-        style={{ paddingLeft: `${depth * 20 + 4}px` }}
-        onClick={() => hasChildren && setCollapsed(!collapsed)}
+        className="flex items-center gap-1.5 py-1 text-sm"
+        style={{ paddingLeft: depth * 16 }}
       >
-        {hasChildren ? (
-          <span className="text-xs text-th-muted w-4 text-center flex-shrink-0">
-            {collapsed ? '▶' : '▼'}
-          </span>
-        ) : (
-          <span className="w-4 flex-shrink-0" />
-        )}
-        <span className="text-sm flex-shrink-0">{PAGE_TYPE_ICONS[node.page_type] || '📄'}</span>
-        <span className="text-sm text-th-text font-medium">{node.title}</span>
+        <span className="text-th-text-muted shrink-0">
+          {node.children && node.children.length > 0 ? (
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          ) : (
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          )}
+        </span>
+        <span className="text-th-text-primary font-medium truncate">{node.title}</span>
         {node.page_type && (
-          <span className="text-xs text-th-muted ml-1">{node.page_type}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-th-bg-tertiary text-th-text-muted ml-1 shrink-0">
+            {typeLabel[node.page_type] || node.page_type}
+          </span>
         )}
       </div>
-      {hasChildren && !collapsed && (
-        <div>
-          {node.children!.map((child, i) => (
-            <OutlineNodeRow key={child.id || i} node={child} depth={depth + 1} />
+      {node.children && node.children.length > 0 && (
+        <ul className="list-none">
+          {node.children.map((child, i) => (
+            <OutlineTree key={child.id || i} node={child} depth={depth + 1} />
           ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+// Extract a display label from action params, falling back gracefully
+function getActionLabel(action: PlanAction): string {
+  const p = action.params ?? {};
+  switch (action.type) {
+    case "create_page":
+      return (p.title as string) || (p.page_type as string) || "新页面";
+    case "update_page":
+      return (p.title as string) || `页面 #${p.page_id ?? "?"}`;
+    case "delete_page":
+      return (p.title as string) || `页面 #${p.page_id ?? "?"}`;
+    case "link_pages":
+      return `${p.source_title || p.source_page_id || "?"} → ${p.target_title || p.target_page_id || "?"}`;
+    case "move_page":
+      return (p.title as string) || `页面 #${p.page_id ?? "?"}`;
+    default:
+      return action.type;
+  }
+}
+
+function ActionRow({ action }: { action: PlanAction }) {
+  const typeColors: Record<string, string> = {
+    create_page: "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20",
+    update_page: "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20",
+    delete_page: "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20",
+    link_pages: "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20",
+    move_page: "text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20",
+  };
+  const typeLabels: Record<string, string> = {
+    create_page: "创建",
+    update_page: "更新",
+    delete_page: "删除",
+    link_pages: "链接",
+    move_page: "移动",
+  };
+  const statusIcons: Record<string, string> = {
+    pending: "○",
+    running: "◌",
+    completed: "✓",
+    failed: "✗",
+    skipped: "–",
+  };
+
+  const label = getActionLabel(action);
+  const content = (action.params?.content as string) || undefined;
+  const showContent = (action.type === "create_page" || action.type === "update_page") && !!content;
+
+  return (
+    <div className="py-1.5 text-sm">
+      <div className="flex items-center gap-2">
+        <span className="text-th-text-muted w-4 text-center shrink-0">
+          {statusIcons[action.status] || "○"}
+        </span>
+        <span
+          className={`text-[11px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
+            typeColors[action.type] || "text-th-text-muted bg-th-bg-tertiary"
+          }`}
+        >
+          {typeLabels[action.type] || action.type}
+        </span>
+        <span className="text-th-text-primary font-medium truncate flex-1 min-w-0">
+          {label}
+        </span>
+      </div>
+      {showContent && (
+        <div className="mt-2">
+          <MarkdownContent content={content} />
         </div>
       )}
     </div>
   );
 }
 
-function OutlineTree({ outline }: { outline: OutlineNode[] }) {
+function ActionList({ actions }: { actions: PlanAction[] }) {
+  if (!actions || actions.length === 0) return null;
   return (
-    <div className="py-2">
-      {outline.map((node, i) => (
-        <OutlineNodeRow key={node.id || i} node={node} depth={0} />
+    <div className="divide-y divide-th-border/50">
+      {actions.map((action) => (
+        <ActionRow key={action.id} action={action} />
       ))}
     </div>
   );
 }
 
-// ── ActionList component ─────────────────────────────────────────
+export function PlanPreview({ plan, onConfirm, confirming }: PlanPreviewProps) {
+  const hasOutline = plan.outline && plan.outline.length > 0;
+  const hasActions = plan.actions && plan.actions.length > 0;
 
-function ActionList({ plan }: { plan: Plan }) {
   return (
-    <div className="space-y-3">
-      {plan.actions.map((action) => {
-        const actionIcon = ACTION_ICONS[action.type];
-        return (
-          <div
-            key={action.id}
-            className="p-3 rounded-lg border border-th-separator bg-th-surface"
-          >
-            <div className="flex items-start gap-2">
-              <div
-                className="text-lg font-mono w-6 text-center flex-shrink-0"
-                style={{ color: actionIcon.color }}
-              >
-                {actionIcon.char}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs text-th-muted mb-1">
-                  {action.type}
-                  {action.depends_on && action.depends_on.length > 0 && (
-                    <span> · 依赖 {action.depends_on.map(id => depLabel(id, plan.actions)).join('、')}</span>
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-th-border bg-th-bg-secondary/50 shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-th-accent animate-pulse" />
+          <h2 className="text-sm font-semibold text-th-text-primary">
+            {hasOutline ? "知识大纲" : "操作计划"}
+          </h2>
+        </div>
+        {plan.reasoning && (
+          <p className="text-xs text-th-text-muted mt-2 leading-relaxed line-clamp-3">
+            {plan.reasoning}
+          </p>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {plan.phases && plan.phases.length > 0 && (
+          <div className="px-4 py-3 border-b border-th-border/50">
+            <h3 className="text-xs font-semibold text-th-text-secondary uppercase tracking-wider mb-2">阶段</h3>
+            <div className="space-y-2">
+              {plan.phases.map((phase, i) => (
+                <div
+                  key={i}
+                  className={`p-2 rounded text-sm ${
+                    plan.phase_index === i
+                      ? "bg-th-accent-bg border border-th-accent/30"
+                      : "bg-th-bg-tertiary"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-th-text-muted">#{i + 1}</span>
+                    <span className="font-medium text-th-text-primary text-xs">{phase.title}</span>
+                  </div>
+                  {phase.description && (
+                    <p className="text-[11px] text-th-text-muted mt-1">{phase.description}</p>
                   )}
                 </div>
-                <ActionPreview action={action} actions={plan.actions} />
-              </div>
+              ))}
             </div>
           </div>
-        );
-      })}
-    </div>
-  );
-}
+        )}
 
-// ── PhaseProgress component ──────────────────────────────────────
-
-function PhaseProgress({ plan }: { plan: Plan }) {
-  if (!plan.phases || plan.phases.length === 0) return null;
-
-  const current = plan.phase_index ?? 0;
-  const total = plan.total_phases ?? plan.phases.length;
-
-  return (
-    <div className="mb-4 p-3 rounded-lg bg-th-surface border border-th-separator">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-th-muted">阶段进度</span>
-        <div className="flex-1 h-1.5 bg-th-bg-tertiary rounded-full overflow-hidden">
-          <div
-            className="h-full bg-th-accent rounded-full transition-all"
-            style={{ width: `${((current + 1) / total) * 100}%` }}
-          />
-        </div>
-        <span className="text-xs text-th-muted font-mono">{current + 1}/{total}</span>
-      </div>
-      <div className="space-y-1">
-        {plan.phases.map((phase, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            {i < current ? (
-              <span className="text-th-accent">✓</span>
-            ) : i === current ? (
-              <span className="text-th-accent font-bold">●</span>
-            ) : (
-              <span className="text-th-muted">○</span>
-            )}
-            <span className={i === current ? 'text-th-text font-medium' : i < current ? 'text-th-muted' : 'text-th-muted'}>
-              {phase.title}
-            </span>
+        {hasOutline && (
+          <div className="px-4 py-3">
+            <h3 className="text-xs font-semibold text-th-text-secondary uppercase tracking-wider mb-2">
+              大纲 ({plan.outline!.length} 个顶级节点)
+            </h3>
+            <ul className="list-none">
+              {plan.outline!.map((node, i) => (
+                <OutlineTree key={node.id || i} node={node} depth={0} />
+              ))}
+            </ul>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+        )}
 
-// ── Main PlanPreview ─────────────────────────────────────────────
+        {/* Show actions when there's no outline OR alongside outline */}
+        {hasActions && !hasOutline && (
+          <div className="px-4 py-3">
+            <h3 className="text-xs font-semibold text-th-text-secondary uppercase tracking-wider mb-2">
+              操作 ({plan.actions.length} 项)
+            </h3>
+            <ActionList actions={plan.actions} />
+          </div>
+        )}
 
-export function PlanPreview({ plan, onConfirm, onReject, confirming }: PlanPreviewProps) {
-  const isOutlineOnly = plan.outline && plan.outline.length > 0 && plan.actions.length === 0;
+        {!hasOutline && !hasActions && (
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="text-center">
+              <svg className="w-8 h-8 mx-auto text-th-text-muted mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-sm text-th-text-muted">暂无可预览的内容</p>
+            </div>
+          </div>
+        )}
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-6 border-b border-th-separator">
-        <h2 className="text-xl font-display text-th-text">
-          {isOutlineOnly ? '知识大纲' : '操作计划'}
-        </h2>
-        <p className="text-th-muted text-sm leading-relaxed mt-2">{plan.reasoning}</p>
-        <div className="text-xs text-th-muted mt-2">
-          {isOutlineOnly ? (
-            <span>大纲模式 · 确认后将创建所有骨架页面</span>
-          ) : (
-            <>
-              {plan.actions.length} 个操作 · 状态: {STATUS_LABELS[plan.status] || plan.status}
-              {plan.phases && plan.phases.length > 0 && ' · 多阶段计划'}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {isOutlineOnly ? (
-          <OutlineTree outline={plan.outline || []} />
-        ) : (
-          <>
-            <PhaseProgress plan={plan} />
-            <ActionList plan={plan} />
-          </>
+        {hasActions && hasOutline && (
+          <div className="px-4 py-3 border-t border-th-border/50">
+            <h3 className="text-xs font-semibold text-th-text-secondary uppercase tracking-wider mb-2">
+              执行操作 ({plan.actions.length} 项)
+            </h3>
+            <ActionList actions={plan.actions} />
+          </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-th-separator flex gap-3">
+      {/* Footer with confirm button */}
+      <div className="px-4 py-3 border-t border-th-border bg-th-bg-secondary/50 shrink-0">
         <button
           onClick={() => onConfirm(plan.id)}
-          disabled={confirming || plan.status !== 'pending'}
-          className="flex-1 px-4 py-2.5 rounded-lg bg-th-accent text-white font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+          disabled={confirming}
+          className="w-full px-4 py-2 bg-th-accent text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150 active:scale-[0.98] flex items-center justify-center gap-2"
         >
-          {confirming ? '执行中...' : (isOutlineOnly ? '确认大纲' : '确认执行')}
+          {confirming ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              执行中...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              {hasOutline ? "确认大纲" : "确认执行"}
+            </>
+          )}
         </button>
-        {!isOutlineOnly && (
-          <button
-            onClick={() => onReject(plan.id)}
-            disabled={confirming}
-            className="px-4 py-2.5 rounded-lg border border-th-separator text-th-muted hover:bg-th-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            拒绝
-          </button>
-        )}
       </div>
     </div>
   );

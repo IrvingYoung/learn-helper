@@ -804,3 +804,45 @@ func slugify(title string) string {
 	}
 	return strings.Trim(result, "-")
 }
+
+// ConfirmPageContent marks a page's content as confirmed (published).
+// PUT /api/wiki/{id}/confirm
+func (h *WikiHandler) ConfirmPageContent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid page ID", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	page, err := h.queries.GetWikiPageByID(ctx, id)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Page not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Failed to fetch page", http.StatusInternalServerError)
+		return
+	}
+
+	// Update content_status to "published" while keeping everything else the same
+	err = h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
+		Title:         page.Title,
+		Slug:          page.Slug,
+		PageType:      page.PageType,
+		Content:       page.Content,
+		Tags:          page.Tags,
+		ParentID:      page.ParentID,
+		ContentStatus: "published",
+		SortOrder:     page.SortOrder,
+		ID:            id,
+	})
+	if err != nil {
+		http.Error(w, "Failed to confirm page content", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "id": id, "content_status": "published"})
+}

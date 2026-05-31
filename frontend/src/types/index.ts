@@ -79,6 +79,11 @@ export interface Phase {
   description: string;
 }
 
+export interface CalibrationQuestion {
+  question: string;
+  options?: string[];
+}
+
 export interface Plan {
   id: string;
   conversation_id: number;
@@ -88,6 +93,7 @@ export interface Plan {
   phases?: Phase[];
   phase_index?: number;
   total_phases?: number;
+  calibration_question?: CalibrationQuestion;
   actions: PlanAction[];
   created_at: string;
   executed_at?: string;

@@ -98,6 +98,11 @@ func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string) (*Exec
 		}
 
 		_ = e.updateActionStatus(ctx, action.ID, "running", "")
+		// Since this is a user-confirmed plan execution, inject published content_status
+		// so pages skip the draft confirmation step.
+		if action.Type == "create_page" || action.Type == "update_page" {
+			resolvedParams = injectContentStatus(resolvedParams, "published")
+		}
 
 		// Execute the action
 		result, err := e.executeAction(ctx, action.Type, resolvedParams)
@@ -392,7 +397,7 @@ func (e *ExecutionEngine) execCreatePage(ctx context.Context, params map[string]
 	pageType := strVal(params, "page_type", "entity")
 	content := strVal(params, "content", "")
 	contentStatus := strVal(params, "content_status", "empty")
-	if content != "" {
+	if content != "" && contentStatus == "empty" {
 		contentStatus = "draft"
 	}
 	sortOrder := int64Val(params, "sort_order", 0)
@@ -989,4 +994,18 @@ func int64Val(params map[string]any, key string, defaultVal int64) int64 {
 		return v
 	}
 	return defaultVal
+}
+
+// injectContentStatus sets content_status in the params JSON for create_page/update_page
+// actions during user-confirmed plan execution, so pages skip the draft confirmation step.
+func injectContentStatus(paramsJSON string, status string) string {
+	if strings.Contains(paramsJSON, `"content_status"`) {
+		return paramsJSON // already set, don't override
+	}
+	// Insert content_status before the closing brace
+	idx := strings.LastIndex(paramsJSON, "}")
+	if idx < 0 {
+		return paramsJSON
+	}
+	return paramsJSON[:idx] + `,"content_status":"` + status + `"` + paramsJSON[idx:]
 }

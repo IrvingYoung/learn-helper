@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
-import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, confirmPlan, rejectPlan, createEmptyWikiPage, renameWikiPage, moveWikiPage, createPlan } from '../lib/api';
+import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, createEmptyWikiPage, renameWikiPage, moveWikiPage, deleteWikiPage } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { WikiPage, Plan, WikiTreeNode, ExecutionReport } from '../types';
+import type { WikiPage, WikiTreeNode, Plan } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
+import { PlanPreview } from './PlanPreview';
+import { confirmPlan } from '../lib/api';
 
 const LAYOUT_KEY = 'wiki-layout';
 const DEFAULT_LAYOUT: Record<string, number> = { left: 20, center: 50, right: 30 };
@@ -31,15 +33,14 @@ export function WikiPageLayout() {
   const rightPanelRef = useRef<PanelImperativeHandle>(null);
   const chatPanelRef = useRef<{ setSelectedText: (text: string, pageTitle: string) => void }>(null);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [pendingOutlinePlan, setPendingOutlinePlan] = useState<Plan | null>(null);
+  const [confirmingOutline, setConfirmingOutline] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [provider, setProvider] = useState('claude');
   const [model, setModel] = useState('claude-sonnet-4-7-20250514');
   const [apiKey, setApiKey] = useState('')
   const [tavilyApiKey, setTavilyApiKey] = useState('');
   const [saved, setSaved] = useState(false);
-  const [pendingPlans, setPendingPlans] = useState<Plan[]>([]);
-  const [confirmingPlan, setConfirmingPlan] = useState(false);
-  const [executionResults, setExecutionResults] = useState<Map<string, ExecutionReport>>(new Map());
 
   useEffect(() => {
     fetch('/api/ai/configs')
@@ -98,9 +99,28 @@ export function WikiPageLayout() {
     mutateOverview();
   }, [mutateOverview]);
 
-  const handlePlanCreated = (plan: Plan) => {
-    setPendingPlans(prev => [...prev, plan]);
-  };
+  const handleContentConfirmed = useCallback((_pageId: number) => {
+    mutateCurrentPage();
+    handlePageChanged();
+  }, [mutateCurrentPage, handlePageChanged]);
+
+  const handleConfirmOutline = useCallback(async (planId: string) => {
+    setConfirmingOutline(true);
+    try {
+      await confirmPlan(planId);
+      setPendingOutlinePlan(null);
+      handlePageChanged();
+    } catch (err) {
+      console.error("Outline confirmation failed:", err);
+    } finally {
+      setConfirmingOutline(false);
+    }
+  }, [handlePageChanged]);
+
+  const handlePlanReceived = useCallback((plan: Plan) => {
+    setPendingOutlinePlan(plan);
+  }, []);
+
 
   const handleAskAI = useCallback((text: string, pageTitle: string) => {
     chatPanelRef.current?.setSelectedText(text, pageTitle);
@@ -139,55 +159,18 @@ export function WikiPageLayout() {
     }
   };
 
-  const handleDelete = async (nodeId: number, hasChildren: boolean) => {
+  const handleDelete = async (nodeId: number, _hasChildren: boolean) => {
     try {
-      const plan = await createPlan({
-        reasoning: hasChildren ? `删除页面及其子树` : `删除页面`,
-        actions: [{
-          type: "delete_page",
-          params: { page_id: nodeId },
-        }],
-      });
-      setPendingPlans(prev => [...prev, plan]);
-    } catch (err) {
-      console.error("Failed to create delete plan:", err);
-    }
-  };
-
-  const handleConfirmPlan = async (planId: string) => {
-    setConfirmingPlan(true);
-    try {
-      const report = await confirmPlan(planId);
-      setPendingPlans(prev => prev.filter(p => p.id !== planId));
-      setExecutionResults(prev => new Map(prev).set(planId, report));
+      await deleteWikiPage(nodeId);
       handlePageChanged();
-      mutateCurrentPage();
     } catch (err) {
-      console.error("Plan confirmation failed:", err);
-    } finally {
-      setConfirmingPlan(false);
+      console.error("Failed to delete page:", err);
     }
   };
 
-  const handleRejectPlan = async (planId: string) => {
-    try {
-      await rejectPlan(planId);
-      setPendingPlans(prev => prev.filter(p => p.id !== planId));
-    } catch (err) {
-      console.error("Plan rejection failed:", err);
-    }
-  };
 
-  const handlePlanConfirmed = (planId: string, report: ExecutionReport) => {
-    setPendingPlans(prev => prev.filter(p => p.id !== planId));
-    setExecutionResults(prev => new Map(prev).set(planId, report));
-    handlePageChanged();
-    mutateCurrentPage();
-  };
 
-  const handlePlanRejected = (planId: string) => {
-    setPendingPlans(prev => prev.filter(p => p.id !== planId));
-  };
+
 
   const handleSaveConfig = async () => {
     const resp = await fetch('/api/ai/configs', {
@@ -308,7 +291,7 @@ export function WikiPageLayout() {
 
         {/* Center: Chat */}
         <Panel id="center" minSize={300}>
-          <ChatPanel ref={chatPanelRef} onPageChanged={handlePageChanged} onPlanCreated={handlePlanCreated} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? displayPage?.slug ?? undefined} currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined} />
+          <ChatPanel ref={chatPanelRef} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? displayPage?.slug ?? undefined} currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined} onPlanReceived={handlePlanReceived} />
         </Panel>
 
         <Separator />
@@ -326,21 +309,22 @@ export function WikiPageLayout() {
           }}
         >
           <div className="h-full overflow-hidden">
-            <PageViewer
-              page={displayPage}
-              collapsed={rightCollapsed}
-              plan={null}
-              pendingPlans={pendingPlans}
-              executionResults={executionResults}
-              onViewPage={(slug) => setSelectedSlug(slug)}
-              onConfirmPlan={handleConfirmPlan}
-              onRejectPlan={handleRejectPlan}
-              confirmingPlan={confirmingPlan}
-              onSelectPage={(slug) => setSelectedSlug(slug)}
-              onAskAI={handleAskAI}
-              onPlanConfirmed={handlePlanConfirmed}
-              onPlanRejected={handlePlanRejected}
-            />
+            {pendingOutlinePlan ? (
+              <PlanPreview
+                plan={pendingOutlinePlan}
+                onConfirm={handleConfirmOutline}
+                confirming={confirmingOutline}
+              />
+            ) : (
+              <PageViewer
+                page={displayPage}
+                collapsed={rightCollapsed}
+                onViewPage={(slug) => setSelectedSlug(slug)}
+                onSelectPage={(slug) => setSelectedSlug(slug)}
+                onAskAI={handleAskAI}
+                onContentConfirmed={handleContentConfirmed}
+              />
+            )}
           </div>
         </Panel>
       </Group>

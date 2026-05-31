@@ -251,3 +251,13 @@ export async function moveWikiPage(pageId: number, newParentId: number | null): 
   });
   if (!res.ok) throw new Error("Failed to move page");
 }
+
+export async function deleteWikiPage(id: number): Promise<void> {
+  const res = await fetch(`/api/wiki/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete wiki page");
+}
+
+export async function confirmPageContent(pageId: number): Promise<void> {
+  const res = await fetch(`/api/wiki/${pageId}/confirm`, { method: "PUT" });
+  if (!res.ok) throw new Error("Failed to confirm page content");
+}

@@ -38,7 +38,7 @@ func NewProvider(providerType ProviderType, apiKey, model string) (AIProvider, e
 
 // RoleDisplayNames maps role constants to display names.
 var RoleDisplayNames = map[string]string{
-	RoleWikiMaintainer: "Wiki 管理员",
+	RoleWikiMaintainer: "学习助手",
 }
 
 // SystemPromptTemplates is kept for backward compatibility; wiki_maintainer uses BuildSystemPrompt instead.
@@ -65,7 +65,7 @@ func WikiTools() []Tool {
 	return []Tool{
 		{
 			Name:        "propose_plan",
-			Description: "提出对知识库的操作计划。当你需要创建、更新、删除页面或建立链接时，使用此工具一次性提出所有操作。系统会按依赖顺序执行。用户确认后才会真正执行。",
+			Description: "提出对知识库的操作计划。用于创建、更新、删除页面、建立链接，或生成知识大纲树。系统会按依赖顺序执行。用户确认后才会真正执行。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -118,6 +118,22 @@ func WikiTools() []Tool {
 					"total_phases": map[string]any{
 						"type":        "integer",
 						"description": "总阶段数。首次调用时必填",
+					},
+					"calibration_question": map[string]any{
+						"type":        "object",
+						"description": "可选。在写内容前，如果方向不确定，先提一个校准问题让用户决定方向",
+						"properties": map[string]any{
+							"question": map[string]any{
+								"type":        "string",
+								"description": "你的问题，如'关于变量声明，你是想和 Python 对比学，还是注重底层原理？'",
+							},
+							"options": map[string]any{
+								"type":        "array",
+								"items":       map[string]any{"type": "string"},
+								"description": "选项列表，如 ['和 Python 对比', '底层原理', '实际踩坑']",
+							},
+						},
+						"required": []string{"question"},
 					},
 					"actions": map[string]any{
 						"type":        "array",
@@ -271,43 +287,48 @@ func BuildSystemPrompt(role string, wikiContext string) string {
 }
 
 func buildWikiMaintainerPrompt(wikiContext string) string {
-	treeContext := ""
-	if wikiContext != "" {
-		treeContext = wikiContext
-	} else {
+	treeContext := wikiContext
+	if treeContext == "" {
 		treeContext = "（暂无页面）"
 	}
 
-	wikiMaintainerPrompt := `你是 LLM Wiki 的知识库维护者。你的职责是管理知识树，包括创建、更新、删除页面和建立页面间的链接。
+	wikiMaintainerPrompt := `你是 LLM Wiki 的学习助手。你的职责是协助用户构建和维护个人知识库。
 
-## 工作方式
+## 协作方式
 
-1. **快速调查，果断行动** — 最多用 1-2 次 search_pages/lookup_page 查看现有内容，然后立即调用 propose_plan 提出操作
-2. **选择合适的操作方式** — 单页知识（1-2 个页面）直接 propose_plan(actions=[...])，一次确认执行；复杂知识体系（3+ 页面）先用 outline 从大纲开始
-3. **一次性提出计划** — 当需要修改知识库时，调用 propose_plan 工具，一次性提出所有当前阶段需要的操作
-4. **操作有依赖关系** — 如果创建子页面依赖父页面，在 depends_on 中声明，使用 {{action:ID.page_id}} 引用依赖结果
+1. **用户决定记什么** — 用户说有收获时说"记下来"，你再写入知识库。不要自动判断什么内容应该入库。
+2. **大纲 = 页面内容 + 子目录** — 生成大纲时，直接在页面内写大纲内容，同时创建子页面目录。大纲和知识树是同一个东西。
+3. **先问再写** — 写内容前先用 1-2 个问题校准方向（目标读者水平、想要什么深度、注重什么角度）。
+4. **记下来后在页面里展示** — 内容写在页面上，不在聊天里展示大段文字。页面顶部会显示确认条让用户确认。
+5. **迭代优先** — 用户说"这里改一下"、"重写"、"补充"时，直接修改页面内容，不需要重新走提案流程。
+6. **主动建议，但不擅自改动** — 发现知识体系不完整时在聊天中提建议，由用户决定。
+7. **接受结构调整** — 用户可以在聊天中直接调整结构："把 X 放到 Y 下面"，你理解意图后执行。
 
-## 关键：何时调用 propose_plan
+## 调用 propose_plan 的场景
 
-- 用户要求创建/修改/删除页面 → 立即调用 propose_plan
-- 知识库为空时 → 直接创建首页和分类，不需要反复搜索
-- 已经搜索过且没有重复 → 立即 propose_plan，不要再次搜索
+propose_plan 是你操作知识库的主要工具。以下场景使用它：
 
-## propose_plan 调用示例
+- 用户说"帮我生成大纲" → 使用 outline 字段生成知识大纲树
+- 用户说"记下来" → 创建或更新页面，写入内容
+- 用户说"改这里"、"补充"、"重写" → 更新页面内容
+- 用户要求删除页面 → 使用 delete_page
+- 用户在聊结构调整 → 使用 move_page 或 create_page
 
-当 type 为某种操作时，使用对应的 *_params 字段填入参数：
-- type="create_page" → 使用 create_page_params: {"title": "...", "content": "..."}
-- type="update_page" → 使用 update_page_params: {"page_id": 1, "content": "..."}
-- type="delete_page" → 使用 delete_page_params: {"page_id": 1}
-- type="link_pages" → 使用 link_pages_params: {"source_page_id": 1, "target_page_id": 2}
-- type="move_page" → 使用 move_page_params: {"page_id": 1, "new_parent_id": 2}
+## 行为规则
 
-## 规则
+- **记下来**：write content to the current page or the most relevant page. Use update_page if the page exists, create_page if it doesn't.
+- **生成大纲**：write outline content into the current page AND create child pages as skeleton pages (empty content).
+- **改写**：直接 update_page，不需要重新提案。内容在页面内展示，用户通过页面确认条确认。
+- **用户不操作** → AI 不自行创建内容。不要主动写入知识库。
+- **提问或聊天** → 不需要调用 propose_plan，直接对话即可。
+- 在页面内容中使用 [[页面标题]] 语法创建链接。
 
-- 创建页面时提供有意义的内容，不要留空
-- 修改内容时先 read_page 查看现有内容
-- 如果用户只是提问或聊天，不需要调用 propose_plan
-- 在页面内容中使用 [[页面标题]] 语法创建链接
+## 内容质量
+
+- 内容要有深度，不要泛泛而谈。如果用户要求对比、原理、实践等方向，展开详细写。
+- 写内容前如果方向不确定，先用 1-2 个校准问题问用户（通过 propose_plan 的 calibration_question 字段）。
+- 回答校准问题后，再正式调用 propose_plan 写入内容。
+- 不要在校准问题和正式写入之间插入其他内容。
 
 ` + treeContext
 
