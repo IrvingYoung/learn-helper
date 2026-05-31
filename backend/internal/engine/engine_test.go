@@ -277,9 +277,9 @@ func TestReplacePlaceholders(t *testing.T) {
 
 func TestTopoSort_ModelPlanAction_NoDeps(t *testing.T) {
 	actions := []model.PlanAction{
-		{ID: "a1", DependsOn: "[]"},
-		{ID: "a2", DependsOn: "[]"},
-		{ID: "a3", DependsOn: "[]"},
+		{ID: "a1", DependsOn: json.RawMessage("[]")},
+		{ID: "a2", DependsOn: json.RawMessage("[]")},
+		{ID: "a3", DependsOn: json.RawMessage("[]")},
 	}
 
 	sorted, err := topoSort(actions)
@@ -303,10 +303,10 @@ func TestTopoSort_ModelPlanAction_NoDeps(t *testing.T) {
 
 func TestTopoSort_ModelPlanAction_Diamond(t *testing.T) {
 	actions := []model.PlanAction{
-		{ID: "a1", DependsOn: "[]"},
-		{ID: "a2", DependsOn: `["a1"]`},
-		{ID: "a3", DependsOn: `["a1"]`},
-		{ID: "a4", DependsOn: `["a2","a3"]`},
+		{ID: "a1", DependsOn: json.RawMessage("[]")},
+		{ID: "a2", DependsOn: json.RawMessage(`["a1"]`)},
+		{ID: "a3", DependsOn: json.RawMessage(`["a1"]`)},
+		{ID: "a4", DependsOn: json.RawMessage(`["a2","a3"]`)},
 	}
 
 	sorted, err := topoSort(actions)
@@ -335,9 +335,9 @@ func TestTopoSort_ModelPlanAction_Diamond(t *testing.T) {
 
 func TestTopoSort_ModelPlanAction_Circular(t *testing.T) {
 	actions := []model.PlanAction{
-		{ID: "a1", DependsOn: `["a3"]`},
-		{ID: "a2", DependsOn: `["a1"]`},
-		{ID: "a3", DependsOn: `["a2"]`},
+		{ID: "a1", DependsOn: json.RawMessage(`["a3"]`)},
+		{ID: "a2", DependsOn: json.RawMessage(`["a1"]`)},
+		{ID: "a3", DependsOn: json.RawMessage(`["a2"]`)},
 	}
 
 	_, err := topoSort(actions)

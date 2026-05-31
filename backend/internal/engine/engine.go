@@ -87,7 +87,7 @@ func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string) (*Exec
 		}
 
 		// Replace placeholders in params
-		resolvedParams, err := e.replacePlaceholders(action.Params, actionResultMap)
+		resolvedParams, err := e.replacePlaceholders(string(action.Params), actionResultMap)
 		if err != nil {
 			ar.Status = "failed"
 			ar.Error = fmt.Sprintf("replace placeholders: %v", err)
@@ -159,7 +159,7 @@ func topoSort(actions []model.PlanAction) ([]model.PlanAction, error) {
 
 	for i := range actions {
 		a := &actions[i]
-		nodes[a.ID] = &topoSortNode{ID: a.ID, DependsOn: parseDependsOn(a.DependsOn)}
+		nodes[a.ID] = &topoSortNode{ID: a.ID, DependsOn: parseDependsOn(string(a.DependsOn))}
 		actionMap[a.ID] = a
 		inDegree[a.ID] = 0
 		adj[a.ID] = nil
@@ -270,6 +270,89 @@ func resolveField(result any, field string) any {
 		return nil
 	}
 	return v
+}
+
+// ---------------------------------------------------------------------------
+// Outline execution
+// ---------------------------------------------------------------------------
+
+// OutlineNode represents a node in the knowledge outline tree.
+type OutlineNode struct {
+	ID        string         `json:"id,omitempty"`
+	Title     string         `json:"title"`
+	PageType  string         `json:"page_type"`
+	Children  []OutlineNode  `json:"children,omitempty"`
+}
+
+// ExecOutline recursively creates skeleton pages from an outline tree.
+// Each page is created with empty content and content_status=empty.
+// Returns a map of node ID -> create result (page_id, slug).
+func (e *ExecutionEngine) ExecOutline(ctx context.Context, outlineJSON string, parentID *int64) (map[string]any, error) {
+	if outlineJSON == "" {
+		return nil, fmt.Errorf("exec_outline: empty outline")
+	}
+
+	var nodes []OutlineNode
+	if err := json.Unmarshal([]byte(outlineJSON), &nodes); err != nil {
+		return nil, fmt.Errorf("exec_outline: parse outline: %w", err)
+	}
+
+	results := make(map[string]any)
+	for _, node := range nodes {
+		nodeResults, err := e.execOutlineNode(ctx, node, parentID)
+		if err != nil {
+			return nil, fmt.Errorf("exec_outline: create %q: %w", node.Title, err)
+		}
+		for k, v := range nodeResults {
+			results[k] = v
+		}
+	}
+	return results, nil
+}
+
+// execOutlineNode creates a single outline node and its children recursively.
+func (e *ExecutionEngine) execOutlineNode(ctx context.Context, node OutlineNode, parentID *int64) (map[string]any, error) {
+	results := make(map[string]any)
+
+	// Create the page for this node
+	params := map[string]any{
+		"title":    node.Title,
+		"page_type": node.PageType,
+	}
+	if parentID != nil {
+		params["parent_id"] = *parentID
+	}
+
+	createResult, err := e.execCreatePage(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("create %q: %w", node.Title, err)
+	}
+
+	pageID := int64(0)
+	if resultMap, ok := createResult.(map[string]any); ok {
+		if id, ok := resultMap["page_id"].(int64); ok {
+			pageID = id
+		}
+	}
+
+	// Record result by node ID if specified
+	if node.ID != "" {
+		results[node.ID] = createResult
+	}
+
+	// Recursively process children
+	newParentID := &pageID
+	for _, child := range node.Children {
+		childResults, err := e.execOutlineNode(ctx, child, newParentID)
+		if err != nil {
+			return nil, fmt.Errorf("child %q of %q: %w", child.Title, node.Title, err)
+		}
+		for k, v := range childResults {
+			results[k] = v
+		}
+	}
+
+	return results, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -832,7 +915,7 @@ func (e *ExecutionEngine) updateActionStatus(ctx context.Context, actionID, stat
 }
 
 func (e *ExecutionEngine) dependsOnFailed(action model.PlanAction, failedSet map[string]bool) bool {
-	deps := parseDependsOn(action.DependsOn)
+	deps := parseDependsOn(string(action.DependsOn))
 	for _, dep := range deps {
 		if failedSet[dep] {
 			return true

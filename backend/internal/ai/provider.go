@@ -2,8 +2,9 @@ package ai
 
 import (
 	"bufio"
-	"context"
+	"time"
 	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -64,13 +65,59 @@ func WikiTools() []Tool {
 	return []Tool{
 		{
 			Name:        "propose_plan",
-			Description: "提出对知识库的操作计划。当你需要创建、更新、删除页面或建立链接时，使用此工具一次性提出所有操作。系统会按依赖顺序执行。",
+			Description: "提出对知识库的操作计划。当你需要创建、更新、删除页面或建立链接时，使用此工具一次性提出所有操作。系统会按依赖顺序执行。用户确认后才会真正执行。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"reasoning": map[string]any{
 						"type":        "string",
 						"description": "为什么建议这些操作，向用户解释你的思路",
+					},
+					"outline": map[string]any{
+						"type":        "array",
+						"description": "知识大纲树（可选）。展示为可折叠树状结构，确认后自动创建所有骨架页面（内容为空）。适用于 3+ 页面的复杂体系建设",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"id": map[string]any{
+									"type":        "string",
+									"description": "节点标识符，可选，供后续 action 通过 {{action:id.page_id}} 引用",
+								},
+								"title": map[string]any{
+									"type":        "string",
+									"description": "页面标题",
+								},
+								"page_type": map[string]any{
+									"type":        "string",
+									"enum":        []string{"entity", "concept", "overview"},
+									"description": "页面类型",
+								},
+								"children": map[string]any{
+									"type":        "array",
+									"items":       map[string]any{"$ref": "#"},
+									"description": "子节点，递归结构",
+								},
+							},
+						},
+					},
+					"phases": map[string]any{
+						"type":        "array",
+						"description": "整体路线图（可选）。首次 propose_plan 时让用户了解全貌。纯信息字段，不做系统级追踪",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"title":       map[string]any{"type": "string", "description": "阶段标题"},
+								"description": map[string]any{"type": "string", "description": "阶段简述"},
+							},
+						},
+					},
+					"phase_index": map[string]any{
+						"type":        "integer",
+						"description": "当前阶段序号，从 0 开始。首次调用传 0",
+					},
+					"total_phases": map[string]any{
+						"type":        "integer",
+						"description": "总阶段数。首次调用时必填",
 					},
 					"actions": map[string]any{
 						"type":        "array",
@@ -87,17 +134,62 @@ func WikiTools() []Tool {
 									"enum":        []string{"create_page", "update_page", "delete_page", "link_pages", "move_page"},
 									"description": "操作类型",
 								},
-								"params": map[string]any{
-									"type":        "object",
-									"description": "操作参数。create_page: {title, slug?, parent_id, content?, page_type?}; update_page: {page_id, content, title?}; delete_page: {page_id}; link_pages: {source_page_id, target_page_id, link_text?}; move_page: {page_id, new_parent_id}",
+								"create_page_params": map[string]any{
+									"type": "object",
+									"description": "create_page 的参数（type 为 create_page 时使用）",
+									"properties": map[string]any{
+										"title":     map[string]any{"type": "string", "description": "页面标题"},
+										"slug":      map[string]any{"type": "string", "description": "URL slug，可选，默认自动生成"},
+										"parent_id": map[string]any{"type": "integer", "description": "父页面 ID，顶级页面不需要"},
+										"content":   map[string]any{"type": "string", "description": "页面 Markdown 内容"},
+										"page_type": map[string]any{"type": "string", "description": "页面类型，默认 wiki"},
+									},
+									"required": []string{"title"},
+								},
+								"update_page_params": map[string]any{
+									"type": "object",
+									"description": "update_page 的参数（type 为 update_page 时使用）",
+									"properties": map[string]any{
+										"page_id": map[string]any{"type": "integer", "description": "要更新的页面 ID"},
+										"content": map[string]any{"type": "string", "description": "新的页面内容"},
+										"title":   map[string]any{"type": "string", "description": "新标题，可选"},
+									},
+									"required": []string{"page_id", "content"},
+								},
+								"delete_page_params": map[string]any{
+									"type": "object",
+									"description": "delete_page 的参数（type 为 delete_page 时使用）",
+									"properties": map[string]any{
+										"page_id": map[string]any{"type": "integer", "description": "要删除的页面 ID"},
+									},
+									"required": []string{"page_id"},
+								},
+								"link_pages_params": map[string]any{
+									"type": "object",
+									"description": "link_pages 的参数（type 为 link_pages 时使用）",
+									"properties": map[string]any{
+										"source_page_id": map[string]any{"type": "integer", "description": "源页面 ID"},
+										"target_page_id": map[string]any{"type": "integer", "description": "目标页面 ID"},
+										"link_text":      map[string]any{"type": "string", "description": "链接显示文本，可选"},
+									},
+									"required": []string{"source_page_id", "target_page_id"},
+								},
+								"move_page_params": map[string]any{
+									"type": "object",
+									"description": "move_page 的参数（type 为 move_page 时使用）",
+									"properties": map[string]any{
+										"page_id":      map[string]any{"type": "integer", "description": "要移动的页面 ID"},
+										"new_parent_id": map[string]any{"type": "integer", "description": "新的父页面 ID"},
+									},
+									"required": []string{"page_id", "new_parent_id"},
 								},
 								"depends_on": map[string]any{
 									"type":        "array",
 									"items":       map[string]any{"type": "string"},
-									"description": "依赖的操作ID列表。例如创建子页面依赖父页面的创建。依赖的操作中生成的page_id可通过 {{action:ID.page_id}} 在params中引用",
+									"description": "依赖的操作ID列表。例如创建子页面依赖父页面的创建。依赖的操作中生成的page_id可通过 {{action:ID.page_id}} 在参数中引用",
 								},
 							},
-							"required": []string{"id", "type", "params"},
+							"required": []string{"id", "type"},
 						},
 					},
 				},
@@ -190,26 +282,37 @@ func buildWikiMaintainerPrompt(wikiContext string) string {
 
 ## 工作方式
 
-1. **先调查后行动** — 在提出操作计划前，先用 lookup_page、search_pages、read_page 查看现有内容，避免重复创建
-2. **一次性提出计划** — 当需要修改知识库时，调用 propose_plan 工具，一次性提出所有需要的操作
-3. **操作有依赖关系** — 如果创建子页面依赖父页面，在 depends_on 中声明，使用 {{action:ID.page_id}} 引用依赖结果
+1. **快速调查，果断行动** — 最多用 1-2 次 search_pages/lookup_page 查看现有内容，然后立即调用 propose_plan 提出操作
+2. **选择合适的操作方式** — 单页知识（1-2 个页面）直接 propose_plan(actions=[...])，一次确认执行；复杂知识体系（3+ 页面）先用 outline 从大纲开始
+3. **一次性提出计划** — 当需要修改知识库时，调用 propose_plan 工具，一次性提出所有当前阶段需要的操作
+4. **操作有依赖关系** — 如果创建子页面依赖父页面，在 depends_on 中声明，使用 {{action:ID.page_id}} 引用依赖结果
+
+## 关键：何时调用 propose_plan
+
+- 用户要求创建/修改/删除页面 → 立即调用 propose_plan
+- 知识库为空时 → 直接创建首页和分类，不需要反复搜索
+- 已经搜索过且没有重复 → 立即 propose_plan，不要再次搜索
+
+## propose_plan 调用示例
+
+当 type 为某种操作时，使用对应的 *_params 字段填入参数：
+- type="create_page" → 使用 create_page_params: {"title": "...", "content": "..."}
+- type="update_page" → 使用 update_page_params: {"page_id": 1, "content": "..."}
+- type="delete_page" → 使用 delete_page_params: {"page_id": 1}
+- type="link_pages" → 使用 link_pages_params: {"source_page_id": 1, "target_page_id": 2}
+- type="move_page" → 使用 move_page_params: {"page_id": 1, "new_parent_id": 2}
 
 ## 规则
 
-- 查看知识树结构后再决定操作，不要凭空创建
-- 创建页面时必须指定 parent_id（顶级页面不需要）
 - 创建页面时提供有意义的内容，不要留空
 - 修改内容时先 read_page 查看现有内容
 - 如果用户只是提问或聊天，不需要调用 propose_plan
-- 同一个操作不要重复提出
-
-## 链接
-
-- 在页面内容中使用 [[页面标题]] 语法创建到其他页面的链接
-- 链接让知识库形成网络，方便发现关联知识
-- 创建新页面时，考虑是否应该链接到已有页面
+- 在页面内容中使用 [[页面标题]] 语法创建链接
 
 ` + treeContext
+
+	dateStr := time.Now().Format("2006-01-02")
+	wikiMaintainerPrompt += fmt.Sprintf("\n[Request Timestamp: %s]\n[Context Notice: The user's query was issued at the timestamp above. Ensure search results are current and relevant to the query date.]\n", dateStr)
 
 	return wikiMaintainerPrompt
 }
@@ -467,15 +570,13 @@ func ParseDeepSeekSSE(body io.Reader, callback func(ChatChunk)) error {
 			}
 		}
 
-		// On finish, flush tool calls
+		// On finish, flush tool calls and signal done
 		if choice.FinishReason == "tool_calls" || choice.FinishReason == "stop" {
 			for _, tc := range toolCalls {
 				callback(ChatChunk{ToolCall: tc})
 			}
-			toolCalls = make(map[int]*ToolCall)
-			if choice.FinishReason == "stop" {
-				callback(ChatChunk{Done: true})
-			}
+			toolCalls = make(map[int]*ToolCall) // prevent double-flush on [DONE]
+			callback(ChatChunk{Done: true})
 		}
 	}
 
