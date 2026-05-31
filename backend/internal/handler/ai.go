@@ -25,14 +25,14 @@ import (
 type AIHandler struct {
 	db      *sql.DB
 	queries *model.Queries
-			}
+}
 
 func NewAIHandler(db *sql.DB) *AIHandler {
 	return &AIHandler{
 		db:      db,
 		queries: model.New(db),
 	}
-			}
+}
 
 // --- Conversation handlers (direct SQL, schema has role column) ---
 
@@ -65,7 +65,7 @@ func (h *AIHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"conversations": result})
-			}
+}
 
 func (h *AIHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -97,7 +97,7 @@ func (h *AIHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 		"title": req.Title,
 		"role":  req.Role,
 	})
-			}
+}
 
 func (h *AIHandler) UpdateConversationTitle(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -119,7 +119,7 @@ func (h *AIHandler) UpdateConversationTitle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-			}
+}
 
 func (h *AIHandler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -134,7 +134,7 @@ func (h *AIHandler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-			}
+}
 
 func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -172,7 +172,7 @@ func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"messages": result})
-			}
+}
 
 // --- AI Config handlers ---
 
@@ -203,15 +203,15 @@ func (h *AIHandler) GetAIConfigs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"configs": []map[string]any{{
-			"id":              config.ID,
-			"provider":        config.Provider,
-			"model_name":      config.ModelName,
-			"is_active":       config.IsActive.Int64 == 1,
-			"api_key":         config.ApiKey,
-			"tavily_api_key":  tavilyKey,
+			"id":             config.ID,
+			"provider":       config.Provider,
+			"model_name":     config.ModelName,
+			"is_active":      config.IsActive.Int64 == 1,
+			"api_key":        config.ApiKey,
+			"tavily_api_key": tavilyKey,
 		}},
 	})
-			}
+}
 
 func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -279,18 +279,18 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-			}
+}
 
 // --- AI Chat (SSE streaming) ---
 
 func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ConversationID int64   `json:"conversation_id"`
-		Message        string  `json:"message"`
-		PlanID         string  `json:"plan_id"`
-		FocusPageID    *int64  `json:"focus_page_id"`
-		CurrentSlug    string  `json:"current_slug"`
-		SelectedText   string  `json:"selected_text"`
+		ConversationID int64  `json:"conversation_id"`
+		Message        string `json:"message"`
+		PlanID         string `json:"plan_id"`
+		FocusPageID    *int64 `json:"focus_page_id"`
+		CurrentSlug    string `json:"current_slug"`
+		SelectedText   string `json:"selected_text"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -439,7 +439,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[AIChat] wikiContext excerpt: %s", wikiContext[:min(len(wikiContext), 500)])
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
 
-		// ====== ReAct Loop ======
+	// ====== ReAct Loop ======
 	// Uses token-by-token streaming Chat(), auto-executes read-only tools,
 	// injects results, then lets the AI see them and reason further,
 	// until it stops calling tools, requests user confirmation, or hits max iterations.
@@ -637,7 +637,7 @@ reactLoop:
 	if convRole == ai.RoleWikiMaintainer {
 		go h.updateOverviewPage()
 	}
-			}
+}
 
 // --- File Upload ---
 
@@ -675,7 +675,7 @@ func (h *AIHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		"filename": header.Filename,
 		"size":     len(content),
 	})
-			}
+}
 
 // --- Helpers ---
 
@@ -724,7 +724,7 @@ func (h *AIHandler) renderTreeContext(pages []model.GetWikiPageTreeRow, header s
 	}
 	render(roots, "")
 	return b.String()
-			}
+}
 
 func (h *AIHandler) buildWikiContext(ctx context.Context, focusPageID *int64) string {
 	var b strings.Builder
@@ -874,18 +874,18 @@ func (h *AIHandler) buildWikiContext(ctx context.Context, focusPageID *int64) st
 	}
 
 	return b.String()
-			}
+}
 
 // createPlanFromToolCall creates a Plan from a propose_plan tool call input.
 // Supports both old format (single "params" field) and new format (type-specific "*_params" fields).
 func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (*model.Plan, error) {
 	var proposal struct {
-		Reasoning    string          `json:"reasoning"`
-		Outline      json.RawMessage `json:"outline"`
-		Phases       json.RawMessage `json:"phases"`
-		PhaseIndex   *int64          `json:"phase_index"`
-		TotalPhases  *int64          `json:"total_phases"`
-		Actions      []struct {
+		Reasoning   string          `json:"reasoning"`
+		Outline     json.RawMessage `json:"outline"`
+		Phases      json.RawMessage `json:"phases"`
+		PhaseIndex  *int64          `json:"phase_index"`
+		TotalPhases *int64          `json:"total_phases"`
+		Actions     []struct {
 			ID               string         `json:"id"`
 			Type             string         `json:"type"`
 			Params           map[string]any `json:"params"`
@@ -952,40 +952,40 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 		}
 		paramsJSON, _ := json.Marshal(params)
 
-			// Replace {{action:a1.page_id}} → {{action:planID-a1.page_id}} in params
-			// so the engine can resolve placeholders against the prefixed action IDs
-			paramsStr := string(paramsJSON)
-			for _, a2 := range proposal.Actions {
-				if a2.ID != "" {
-					paramsStr = strings.ReplaceAll(paramsStr,
-						fmt.Sprintf("{{action:%s.", a2.ID),
-						fmt.Sprintf("{{action:%s-%s.", planID, a2.ID))
-				}
+		// Replace {{action:a1.page_id}} → {{action:planID-a1.page_id}} in params
+		// so the engine can resolve placeholders against the prefixed action IDs
+		paramsStr := string(paramsJSON)
+		for _, a2 := range proposal.Actions {
+			if a2.ID != "" {
+				paramsStr = strings.ReplaceAll(paramsStr,
+					fmt.Sprintf("{{action:%s.", a2.ID),
+					fmt.Sprintf("{{action:%s-%s.", planID, a2.ID))
 			}
+		}
 
-			// Make depends_on IDs globally unique by prefixing with planID
-			var dependsOn []string
-			for _, dep := range a.DependsOn {
-				dependsOn = append(dependsOn, planID+"-"+dep)
-			}
-			// json.Marshal(nil) returns "null", column expects valid JSON array
-			dependsOnJSON := []byte("[]")
-			if len(dependsOn) > 0 {
-				dependsOnJSON, _ = json.Marshal(dependsOn)
-			}
+		// Make depends_on IDs globally unique by prefixing with planID
+		var dependsOn []string
+		for _, dep := range a.DependsOn {
+			dependsOn = append(dependsOn, planID+"-"+dep)
+		}
+		// json.Marshal(nil) returns "null", column expects valid JSON array
+		dependsOnJSON := []byte("[]")
+		if len(dependsOn) > 0 {
+			dependsOnJSON, _ = json.Marshal(dependsOn)
+		}
 
-			// Use planID prefix to make action ID globally unique (avoids UNIQUE constraint collision)
-			actionID := planID + "-" + a.ID
-			plan.Actions = append(plan.Actions, model.PlanAction{
-				ID:        actionID,
-				PlanID:    planID,
-				Type:      a.Type,
-				Params:    json.RawMessage(paramsStr),
-				DependsOn: json.RawMessage(dependsOnJSON),
-				Status:    "pending",
-				SortOrder: int64(i),
-				CreatedAt: now,
-			})
+		// Use planID prefix to make action ID globally unique (avoids UNIQUE constraint collision)
+		actionID := planID + "-" + a.ID
+		plan.Actions = append(plan.Actions, model.PlanAction{
+			ID:        actionID,
+			PlanID:    planID,
+			Type:      a.Type,
+			Params:    json.RawMessage(paramsStr),
+			DependsOn: json.RawMessage(dependsOnJSON),
+			Status:    "pending",
+			SortOrder: int64(i),
+			CreatedAt: now,
+		})
 	}
 
 	// Save to database using PlanHandler
@@ -995,7 +995,7 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 	}
 
 	return plan, nil
-			}
+}
 
 func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string {
 	switch tc.Name {
@@ -1012,7 +1012,7 @@ func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string 
 	default:
 		return fmt.Sprintf("[系统] 未知工具: %s", tc.Name)
 	}
-			}
+}
 
 func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1041,7 +1041,7 @@ func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) strin
 		"[系统] 工具 lookup_page 已执行完毕，查询「%s」结果：%s\n\n%s",
 		details.Title, string(result), subtreeContext,
 	)
-			}
+}
 
 func (h *AIHandler) executeSearchPages(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1084,7 +1084,7 @@ func (h *AIHandler) executeSearchPages(ctx context.Context, tc ai.ToolCall) stri
 	}
 
 	return b.String()
-			}
+}
 
 func (h *AIHandler) executeReadPage(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1103,7 +1103,7 @@ func (h *AIHandler) executeReadPage(ctx context.Context, tc ai.ToolCall) string 
 		"[系统] 工具 read_page 已执行完毕，读取页面「%s」(ID=%d) 内容：\n\n%s",
 		page.Title, page.ID, page.Content,
 	)
-			}
+}
 
 func (h *AIHandler) getTavilyAPIKey(ctx context.Context) string {
 	// Check env var first (for quick dev setup)
@@ -1122,7 +1122,7 @@ func (h *AIHandler) getTavilyAPIKey(ctx context.Context) string {
 		return ""
 	}
 	return cfg.TavilyAPIKey
-			}
+}
 
 func (h *AIHandler) executeWebSearch(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1189,7 +1189,7 @@ func (h *AIHandler) executeWebSearch(ctx context.Context, tc ai.ToolCall) string
 	}
 
 	return b.String()
-			}
+}
 
 func (h *AIHandler) executeWebFetch(ctx context.Context, tc ai.ToolCall) string {
 	var details struct {
@@ -1229,7 +1229,7 @@ func (h *AIHandler) executeWebFetch(ctx context.Context, tc ai.ToolCall) string 
 	}
 
 	return fmt.Sprintf("[系统] 成功获取页面「%s」内容（共 %d 字符）：\n\n%s", details.URL, len(runes), text)
-			}
+}
 
 func extractHTMLText(htmlContent string) string {
 	doc, err := html.Parse(strings.NewReader(htmlContent))
@@ -1276,8 +1276,7 @@ func extractHTMLText(htmlContent string) string {
 		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
 	}
 	return result
-			}
-
+}
 
 func (h *AIHandler) updateOverviewPage() {
 	ctx := context.Background()
@@ -1335,7 +1334,7 @@ func (h *AIHandler) updateOverviewPage() {
 		Content: b.String(), Tags: overview.Tags, ParentID: overview.ParentID,
 		ContentStatus: "published", SortOrder: overview.SortOrder, ID: overview.ID,
 	})
-			}
+}
 
 func sseWrite(w http.ResponseWriter, eventType, data string, canFlush bool, flusher http.Flusher) {
 	fmt.Fprintf(w, "event: %s\n", eventType)
@@ -1346,11 +1345,11 @@ func sseWrite(w http.ResponseWriter, eventType, data string, canFlush bool, flus
 	if canFlush {
 		flusher.Flush()
 	}
-			}
+}
 
 func boolToInt64(b bool) int64 {
 	if b {
 		return 1
 	}
 	return 0
-			}
+}
