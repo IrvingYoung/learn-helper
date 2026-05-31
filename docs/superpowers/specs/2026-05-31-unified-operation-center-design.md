@@ -163,7 +163,7 @@ POST /api/plans/{id}/reject
 
 - `PageViewer.tsx` 改为 Tab 布局，新增「待确认操作」Tab
 - 新增 `OperationQueue` 组件，显示待确认操作列表
-- 新增 `usePendingPlans` SWR hook，轮询或 SSE 获取待确认 Plan
+- 新增 `usePendingPlans` SWR hook，通过 SSE `plan_created` 事件获取新 Plan（复用现有 SSE 连接）
 - `KnowledgeTree` 删除操作调用 `POST /api/plans` 创建 Plan
 
 ### 后端实现要点
@@ -204,7 +204,7 @@ POST /api/plans/{id}/reject
 #### 3. Overview 更新通知
 
 - Overview 页面更新完成后，在聊天区显示轻量 Toast：「Overview 已更新」
-- 后端 `updateOverviewPage()` 完成后通过 SSE 发送 `overview_updated` 事件
+- 实现方式：`updateOverviewPage()` 完成后写入 `overview_updates` 表，前端通过 SWR 轮询检测新记录（间隔 5 秒），显示后标记已读。不依赖 SSE，因为 `updateOverviewPage()` 运行在独立 goroutine 无法访问当前 SSE 连接。
 
 #### 4. SSE 错误处理
 
@@ -229,7 +229,7 @@ case 'error':
 
 ### 后端实现要点
 
-- `updateOverviewPage()` 完成后通过 SSE 发送 `overview_updated` 事件
+- `updateOverviewPage()` 完成后写入 `overview_updates` 表，前端 SWR 轮询检测
 - `ExecutionEngine` 返回详细的错误信息（已有 `ExecutionReport`）
 
 ## 实现顺序
