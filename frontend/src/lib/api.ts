@@ -200,3 +200,16 @@ export async function getPlan(planId: string): Promise<Plan> {
   if (!res.ok) throw new Error("Failed to get plan");
   return res.json();
 }
+
+export async function createPlan(params: {
+  reasoning: string;
+  actions: { type: string; params: Record<string, unknown> }[];
+}): Promise<Plan> {
+  const res = await fetch(`${BASE}/plans`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error("Failed to create plan");
+  return res.json();
+}
