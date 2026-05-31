@@ -898,18 +898,16 @@ func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (
 		} `json:"actions"`
 	}
 	// Try to parse input, handling cases where AI returns extra content after the JSON object
-	var proposal PlanProposal
-	inputBytes := []byte(input)
-	if err := json.Unmarshal(inputBytes, &proposal); err != nil {
+	if err := json.Unmarshal([]byte(input), &proposal); err != nil {
 		// Extract first valid JSON object if AI appended extra content
 		decoder := json.NewDecoder(strings.NewReader(input))
 		var raw json.RawMessage
 		if rawErr := decoder.Decode(&raw); rawErr == nil {
 			if retryErr := json.Unmarshal(raw, &proposal); retryErr != nil {
-				return nil, fmt.Errorf("parse propose_plan input: %w (raw: %s)", err, input[:min(len(input), 100)])
+				return nil, fmt.Errorf("parse propose_plan input: %w (raw: %s)", err, input[:min(len(input), 200)])
 			}
 		} else {
-			return nil, fmt.Errorf("parse propose_plan input: %w (raw: %s)", err, input[:min(len(input), 100)])
+			return nil, fmt.Errorf("parse propose_plan input: %w (raw: %s)", err, input[:min(len(input), 200)])
 		}
 	}
 
