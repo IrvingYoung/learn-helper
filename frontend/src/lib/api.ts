@@ -85,6 +85,7 @@ export async function streamChat(
   onChunk: (content: string) => void,
   onMeta: (data: { conversation_id?: number; plan?: Plan }) => void,
   onStatus?: (data: { step: number; max_steps: number; status: string }) => void,
+  onError?: (error: string) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/ai/chat`, {
     method: "POST",
@@ -132,7 +133,14 @@ export async function streamChat(
       return;
     }
 
-    // Unknown events (done, error, etc.) — ignore
+    if (currentEvent === "error" && onError) {
+      try { onError(currentData); } catch { /* ignore */ }
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    // Unknown events (done, etc.) — ignore
     currentEvent = "";
     currentData = "";
   };

@@ -36,6 +36,7 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
     maxSteps: number;
     running: boolean;
   } | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -166,6 +167,8 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
     const userContent = input.trim();
     if (!userContent) return;
 
+    setStreamError(null);
+
     // Auto-create conversation if none active
     let conv = activeConv;
     if (!conv) {
@@ -187,7 +190,7 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
     }
 
     setLoading(true);
-    setAgentStatus({ step: 0, maxSteps: 20, running: true });
+    setAgentStatus({ step: 0, maxSteps: 10, running: true });
 
     const assistantMsg: ConversationMessage = {
       id: Date.now() + 1,
@@ -233,6 +236,10 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
         },
         (data) => {
           setAgentStatus({ step: data.step, maxSteps: data.max_steps, running: data.status !== "done" });
+        },
+        (error) => {
+          setStreamError(error);
+          setLoading(false);
         }
       );
 
@@ -457,6 +464,13 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
         {renderedMessages}
         <div ref={messagesEndRef} />
       </div>
+
+      {streamError && (
+        <div className="mx-4 mb-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+          {streamError}
+          <button onClick={() => setStreamError(null)} className="ml-2 underline">关闭</button>
+        </div>
+      )}
 
       {/* Input */}
       <div className="p-3 border-t border-th-border shrink-0">
