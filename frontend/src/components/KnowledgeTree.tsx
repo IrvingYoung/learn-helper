@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { WikiTreeNode } from '../types';
 import { TreeNodeMenu } from './TreeNodeMenu';
 
@@ -89,6 +89,9 @@ interface TreeNodeProps {
 function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChild, onRename }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const [hovered, setHovered] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(node.title);
+  const inputRef = useRef<HTMLInputElement>(null);
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = node.slug === selectedSlug;
 
@@ -105,6 +108,20 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     setExpanded(!expanded);
+  };
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (node.page_type === 'overview') return;
+    setEditing(true);
+    setEditTitle(node.title);
   };
 
   return (
@@ -135,9 +152,34 @@ function TreeNode({ node, selectedSlug, onSelect, depth, onContextMenu, onAddChi
           <span className="w-4 shrink-0" />
         )}
         <span className={`w-2 h-2 rounded-full ${statusColor} shrink-0 transition-transform duration-150 ${isSelected ? 'scale-125' : ''}`} />
-        <span className={`flex-1 text-sm truncate ${isSelected ? 'font-medium' : ''}`}>
-          {node.title}
-        </span>
+        {editing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && editTitle.trim() && editTitle.trim() !== node.title) {
+                onRename?.(node.id, editTitle.trim());
+                setEditing(false);
+              }
+              if (e.key === 'Escape') {
+                setEditing(false);
+                setEditTitle(node.title);
+              }
+            }}
+            onBlur={() => {
+              setEditing(false);
+              setEditTitle(node.title);
+            }}
+            className="flex-1 text-sm bg-th-bg-primary border border-th-accent rounded px-1 py-0 outline-none"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className={`flex-1 text-sm truncate ${isSelected ? 'font-medium' : ''}`} onDoubleClick={handleDoubleClick}>
+            {node.title}
+          </span>
+        )}
         {node.page_type === 'overview' && (
           <span className="text-xs text-th-text-muted shrink-0 font-mono tracking-tight">概览</span>
         )}
