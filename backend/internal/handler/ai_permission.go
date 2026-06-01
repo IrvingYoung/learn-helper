@@ -57,26 +57,34 @@ func (r *PermissionRegistry) Register(requestID string, capacity int) chan []Per
 }
 
 // Resolve sends the decisions to the registered channel. No-op if unknown.
+// The mutex is released before the (potentially blocking) channel send and
+// close so a slow consumer cannot stall Pending/Register or other
+// Resolve/CancelAll calls on unrelated requests.
 func (r *PermissionRegistry) Resolve(requestID string, decisions []PermissionDecision) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	ch, ok := r.channels[requestID]
 	if !ok {
+		r.mu.Unlock()
 		return
 	}
+	delete(r.channels, requestID)
+	r.mu.Unlock()
 	ch <- decisions
 	close(ch)
-	delete(r.channels, requestID)
 }
 
 // CancelAll drops every pending channel. Used on SSE disconnect.
 // Decisions are NOT sent — callers default to reject on cancel.
 func (r *PermissionRegistry) CancelAll() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	for id, ch := range r.channels {
+	chans := make([]chan []PermissionDecision, 0, len(r.channels))
+	for _, ch := range r.channels {
+		chans = append(chans, ch)
+	}
+	r.channels = map[string]chan []PermissionDecision{}
+	r.mu.Unlock()
+	for _, ch := range chans {
 		close(ch)
-		delete(r.channels, id)
 	}
 }
 

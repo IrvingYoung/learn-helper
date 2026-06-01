@@ -256,3 +256,32 @@ func TestPermissionRegistry(t *testing.T) {
 	// Resolve unknown id is a no-op (no panic)
 	r.Resolve("perm-unknown", nil)
 }
+
+func TestPermissionRegistry_CancelAll(t *testing.T) {
+	r := NewPermissionRegistry()
+	chA := r.Register("perm-A", 5)
+	chB := r.Register("perm-B", 5)
+	if r.Pending() != 2 {
+		t.Fatalf("Pending = %d, want 2", r.Pending())
+	}
+
+	r.CancelAll()
+	if r.Pending() != 0 {
+		t.Errorf("after CancelAll, Pending = %d, want 0", r.Pending())
+	}
+
+	// Both channels should be closed (receive returns zero value with ok=false)
+	for i, ch := range []chan []PermissionDecision{chA, chB} {
+		select {
+		case got, ok := <-ch:
+			if ok {
+				t.Errorf("ch[%d] received a value after CancelAll: %v", i, got)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("ch[%d] did not return after CancelAll", i)
+		}
+	}
+
+	// Idempotent: second CancelAll is a no-op
+	r.CancelAll()
+}
