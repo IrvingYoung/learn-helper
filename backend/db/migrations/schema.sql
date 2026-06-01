@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     model_provider TEXT,
     token_count INTEGER,
+    tool_calls TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -104,6 +105,33 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Migration 008: Per-page summary columns
+ALTER TABLE wiki_pages ADD COLUMN summary TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki_pages ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'empty';
+ALTER TABLE wiki_pages ADD COLUMN summary_generated_at DATETIME;
+ALTER TABLE wiki_pages ADD COLUMN summary_content_hash TEXT;
+ALTER TABLE wiki_pages ADD COLUMN link_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE wiki_pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE wiki_pages ADD COLUMN tags_normalized TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_summary_status ON wiki_pages(summary_status);
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_tags_normalized ON wiki_pages(tags_normalized);
+
+-- Migration 009: Wiki write log
+CREATE TABLE IF NOT EXISTS wiki_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    page_id INTEGER,
+    page_title TEXT NOT NULL,
+    page_path TEXT,
+    source TEXT NOT NULL DEFAULT 'plan',
+    summary TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_log_created_at ON wiki_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wiki_log_page_id ON wiki_log(page_id);
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_id);

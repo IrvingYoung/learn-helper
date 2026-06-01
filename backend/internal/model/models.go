@@ -71,7 +71,33 @@ type Message struct {
 	Content        string
 	ModelProvider  sql.NullString
 	TokenCount     sql.NullInt64
+	ToolCalls      sql.NullString
 	CreatedAt      sql.NullTime
+}
+
+type Plan struct {
+	ID             string          `json:"id"`
+	ConversationID *int64          `json:"conversation_id,omitempty"`
+	Reasoning      string          `json:"reasoning"`
+	Status         string          `json:"status"`
+	Outline        json.RawMessage `json:"outline,omitempty"`
+	PhaseIndex     *int64          `json:"phase_index,omitempty"`
+	TotalPhases    *int64          `json:"total_phases,omitempty"`
+	Actions        []PlanAction    `json:"actions,omitempty"`
+	CreatedAt      string          `json:"created_at"`
+	ExecutedAt     *string         `json:"executed_at,omitempty"`
+}
+
+type PlanAction struct {
+	ID        string          `json:"id"`
+	PlanID    string          `json:"plan_id"`
+	Type      string          `json:"type"`
+	Params    json.RawMessage `json:"params"`
+	DependsOn json.RawMessage `json:"depends_on"`
+	Status    string          `json:"status"`
+	Result    *string         `json:"result,omitempty"`
+	SortOrder int64           `json:"sort_order"`
+	CreatedAt string          `json:"created_at"`
 }
 
 type Topic struct {
@@ -90,44 +116,37 @@ type Topic struct {
 	UpdatedAt      sql.NullTime
 }
 
+type WikiLog struct {
+	ID        int64
+	Action    string
+	PageID    sql.NullInt64
+	PageTitle string
+	PagePath  sql.NullString
+	Source    string
+	Summary   sql.NullString
+	CreatedAt time.Time
+}
+
 type WikiPage struct {
-	ID            int64
-	Title         string
-	Slug          string
-	PageType      string
-	Content       string
-	Tags          sql.NullString
-	ParentID      sql.NullInt64
-	Path          string
-	Links         string
-	Backlinks     string
-	ContentStatus string
-	SortOrder     int64
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-}
-
-type Plan struct {
-	ID             string       `json:"id"`
-	ConversationID *int64       `json:"conversation_id,omitempty"`
-	Reasoning      string       `json:"reasoning"`
-	Status         string       `json:"status"`
-	Outline        json.RawMessage `json:"outline,omitempty"`
-	PhaseIndex     *int64       `json:"phase_index,omitempty"`
-	TotalPhases    *int64       `json:"total_phases,omitempty"`
-	Actions        []PlanAction `json:"actions,omitempty"`
-	CreatedAt      string       `json:"created_at"`
-	ExecutedAt     *string      `json:"executed_at,omitempty"`
-}
-
-type PlanAction struct {
-	ID        string          `json:"id"`
-	PlanID    string          `json:"plan_id"`
-	Type      string          `json:"type"`
-	Params    json.RawMessage `json:"params"`
-	DependsOn json.RawMessage `json:"depends_on"`
-	Status    string          `json:"status"`
-	Result    *string         `json:"result,omitempty"`
-	SortOrder int64           `json:"sort_order"`
-	CreatedAt string          `json:"created_at"`
+	ID                 int64
+	Title              string
+	Slug               string
+	PageType           string
+	Content            string
+	Tags               sql.NullString
+	ParentID           sql.NullInt64
+	Path               string
+	Links              string
+	Backlinks          string
+	ContentStatus      string
+	SortOrder          int64
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	Summary            string
+	SummaryStatus      string
+	SummaryGeneratedAt sql.NullTime
+	SummaryContentHash sql.NullString
+	LinkCount          int64
+	BacklinkCount      int64
+	TagsNormalized     string
 }

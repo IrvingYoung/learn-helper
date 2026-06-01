@@ -203,3 +203,44 @@ UPDATE wiki_pages SET path = REPLACE(path, @old_prefix, @new_prefix) WHERE path 
 
 -- name: GetWikiPageByTitle :one
 SELECT id, title, slug, page_type, content, tags, parent_id, path, links, backlinks, content_status, sort_order, created_at, updated_at FROM wiki_pages WHERE title = ? LIMIT 1;
+
+-- name: UpdatePageSummary :exec
+UPDATE wiki_pages
+SET summary = ?,
+    summary_status = 'ready',
+    summary_content_hash = ?,
+    summary_generated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: MarkSummaryEmpty :exec
+UPDATE wiki_pages
+SET summary_status = 'empty',
+    summary_content_hash = NULL,
+    summary_generated_at = NULL
+WHERE id = ?;
+
+-- name: MarkSummaryPending :exec
+UPDATE wiki_pages
+SET summary_status = 'pending',
+    summary_content_hash = NULL
+WHERE id = ?;
+
+-- name: MarkSummaryFailed :exec
+UPDATE wiki_pages
+SET summary_status = 'failed',
+    summary_generated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: ListPendingSummaries :many
+SELECT id, title, content
+FROM wiki_pages
+WHERE summary_status IN ('pending', 'failed')
+ORDER BY summary_status DESC, id
+LIMIT ?;
+
+-- name: GetPagesNeedingSummary :many
+SELECT id, title, content
+FROM wiki_pages
+WHERE summary_status = 'empty' AND content != ''
+ORDER BY id
+LIMIT ?;
