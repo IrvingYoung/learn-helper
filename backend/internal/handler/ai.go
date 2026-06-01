@@ -292,6 +292,18 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 // --- AI Chat (SSE streaming) ---
 
 func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
+	// Cancel any pending permission/ask_user gates when this SSE stream ends
+	// (normal return, error, panic, or client disconnect). CancelAll is a
+	// no-op when nothing is pending, so it is safe on every request.
+	defer func() {
+		if h.permissions != nil {
+			h.permissions.CancelAll()
+		}
+		if h.askUsers != nil {
+			h.askUsers.CancelAll()
+		}
+	}()
+
 	var req struct {
 		ConversationID int64  `json:"conversation_id"`
 		Message        string `json:"message"`
