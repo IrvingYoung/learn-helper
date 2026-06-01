@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAskUserAnswerJSON(t *testing.T) {
@@ -298,5 +299,62 @@ func TestAskUserRequestJSON_OmitsNilContextAndEmptyHeader(t *testing.T) {
 	}
 	if _, present := got["header"]; present {
 		t.Errorf("expected header key to be absent, got %v", got)
+	}
+}
+
+func TestAskUserRegistry(t *testing.T) {
+	r := NewAskUserRegistry()
+
+	ch := r.Register("ask-1")
+	if ch == nil {
+		t.Fatal("Register returned nil")
+	}
+	if r.Pending() != 1 {
+		t.Errorf("Pending = %d, want 1", r.Pending())
+	}
+
+	r.Resolve("ask-1", AskUserResponse{Answer: "底层原理"})
+	select {
+	case got := <-ch:
+		if got.Answer != "底层原理" {
+			t.Errorf("Answer = %v, want 底层原理", got.Answer)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("resolve did not unblock")
+	}
+	if r.Pending() != 0 {
+		t.Errorf("after resolve Pending = %d, want 0", r.Pending())
+	}
+}
+
+func TestAskUserRegistry_CancelAll(t *testing.T) {
+	r := NewAskUserRegistry()
+	chA := r.Register("ask-A")
+	chB := r.Register("ask-B")
+	if r.Pending() != 2 {
+		t.Fatalf("Pending = %d, want 2", r.Pending())
+	}
+
+	r.CancelAll()
+	if r.Pending() != 0 {
+		t.Errorf("after CancelAll, Pending = %d, want 0", r.Pending())
+	}
+
+	// Both channels should be closed (receive returns zero value with ok=false)
+	for i, ch := range []chan AskUserResponse{chA, chB} {
+		select {
+		case got, ok := <-ch:
+			if ok {
+				t.Errorf("ch[%d] received a value after CancelAll: %+v", i, got)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("ch[%d] did not return after CancelAll", i)
+		}
+	}
+
+	// Idempotent: second CancelAll is a no-op
+	r.CancelAll()
+	if r.Pending() != 0 {
+		t.Errorf("after second CancelAll, Pending = %d, want 0", r.Pending())
 	}
 }
