@@ -1,19 +1,23 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	_ "modernc.org/sqlite"
 
+	"learn-helper/internal/ai"
 	"learn-helper/internal/engine"
 	"learn-helper/internal/handler"
 	"learn-helper/internal/model"
+	"learn-helper/internal/worker"
 )
 
 const schemaSQL = `
@@ -175,8 +179,69 @@ func main() {
 
 	wikiHandler := handler.NewWikiHandler(db)
 	aiHandler := handler.NewAIHandler(db)
-	eng := engine.NewExecutionEngine(db, model.New(db))
-	planHandler := handler.NewPlanHandler(db, model.New(db), eng)
+	queries := model.New(db)
+	eng := engine.NewExecutionEngine(db, queries)
+	planHandler := handler.NewPlanHandler(db, queries, eng)
+
+	// --- Summary worker: generates AI summaries for wiki pages asynchronously ---
+	// We try to load the active AI config and start the worker. If no config is
+	// set up yet (e.g. fresh install before user configures the API key), the
+	// worker is skipped — the server still starts and serves other routes.
+	{
+		startupCtx, startupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		aiConfig, cfgErr := queries.GetActiveAIConfig(startupCtx)
+		startupCancel()
+		if cfgErr != nil {
+			log.Printf("[summary-worker] no active AI config; worker disabled until API key is configured: %v", cfgErr)
+		} else {
+			aiProvider, provErr := ai.NewProvider(ai.ProviderType(aiConfig.Provider), aiConfig.ApiKey, aiConfig.ModelName)
+			if provErr != nil {
+				log.Printf("[summary-worker] failed to create provider: %v", provErr)
+			} else {
+				// Build a function the worker can call to invoke the AI provider's Chat.
+				summaryChat := func(ctx context.Context, prompt, system string) (string, error) {
+					resp, err := aiProvider.Chat(ctx, ai.ChatRequest{
+						Messages:     []ai.Message{{Role: "user", Content: prompt}},
+						SystemPrompt: system,
+						MaxTokens:    256,
+					})
+					if err != nil {
+						return "", err
+					}
+					return resp.Content, nil
+				}
+
+				summaryWorker := worker.NewSummaryWorker(
+					worker.NewProviderAdapter(summaryChat),
+					worker.NewSQLDBAdapter(queries),
+				)
+
+				workerCtx, workerCancel := context.WithCancel(context.Background())
+				defer workerCancel()
+
+				// Backfill pending/failed summaries on startup.
+				if os.Getenv("SKIP_SUMMARY_BACKFILL") != "1" {
+					go func() {
+						for {
+							if err := summaryWorker.BackfillOnce(workerCtx, 10); err != nil {
+								log.Printf("[summary-worker] backfill: %v", err)
+							}
+							// Check if more remain; if not, exit the backfill loop.
+							rows, err := queries.ListPendingSummaries(workerCtx, 1000)
+							if err != nil || len(rows) == 0 {
+								return
+							}
+							time.Sleep(1 * time.Second)
+						}
+					}()
+				}
+
+				// Start the worker loop.
+				go summaryWorker.Run(workerCtx)
+				log.Printf("[summary-worker] started (provider=%s model=%s)", aiConfig.Provider, aiConfig.ModelName)
+			}
+		}
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)

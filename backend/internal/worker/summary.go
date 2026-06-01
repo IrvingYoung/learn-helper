@@ -172,3 +172,37 @@ func (a *sqlDBAdapter) ListPendingSummaries(ctx context.Context, limit int) ([]i
 	}
 	return ids, nil
 }
+
+// ProviderAdapter wraps an existing AI provider so it satisfies SummaryProvider.
+// This is a thin shim to avoid coupling worker package to the ai package's full
+// interface (which has streaming methods we don't need here).
+type ProviderAdapter struct {
+	chat func(ctx context.Context, prompt, system string) (string, error)
+}
+
+// NewProviderAdapter creates an adapter from a function that performs a single chat completion.
+func NewProviderAdapter(chat func(ctx context.Context, prompt, system string) (string, error)) *ProviderAdapter {
+	return &ProviderAdapter{chat: chat}
+}
+
+// GenerateSummary returns a 1-2 sentence summary of the page content.
+func (a *ProviderAdapter) GenerateSummary(ctx context.Context, title, content string) (string, error) {
+	// Truncate content to ~3000 chars to stay under token limits.
+	truncated := content
+	if len([]rune(truncated)) > 3000 {
+		truncated = string([]rune(truncated)[:3000])
+	}
+
+	prompt := fmt.Sprintf(
+		"为以下 Wiki 页面生成 1-2 句中文摘要（50-150 字）。说明这页讲什么、适合谁看。\n\n标题：%s\n\n内容：\n%s",
+		title, truncated,
+	)
+
+	system := "你是一个 Wiki 摘要生成器。只输出摘要本身，不要解释、不要标题前缀。"
+
+	summary, err := a.chat(ctx, prompt, system)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(summary), nil
+}
