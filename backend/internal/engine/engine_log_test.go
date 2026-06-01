@@ -280,6 +280,39 @@ func TestExecutionEngine_LogsMovePage(t *testing.T) {
 	}
 }
 
+func TestExecutionEngine_LinkPagesUpdatesCounts(t *testing.T) {
+	db := newTestDB(t)
+	q := model.New(db)
+	eng := NewExecutionEngine(db, q)
+	ctx := context.Background()
+
+	sourceID := seedParentPage(t, db, "源页")
+	targetID := seedParentPage(t, db, "目标页")
+
+	params := map[string]any{
+		"source_page_id": sourceID,
+		"target_page_id": targetID,
+		"link_text":      "目标页",
+	}
+	if _, err := eng.execLinkPages(ctx, params); err != nil {
+		t.Fatalf("execLinkPages: %v", err)
+	}
+
+	var aLinkCount, bBacklinkCount int
+	if err := db.QueryRow("SELECT link_count FROM wiki_pages WHERE id=?", sourceID).Scan(&aLinkCount); err != nil {
+		t.Fatalf("read source link_count: %v", err)
+	}
+	if err := db.QueryRow("SELECT backlink_count FROM wiki_pages WHERE id=?", targetID).Scan(&bBacklinkCount); err != nil {
+		t.Fatalf("read target backlink_count: %v", err)
+	}
+	if aLinkCount != 1 {
+		t.Errorf("source link_count = %d, want 1", aLinkCount)
+	}
+	if bBacklinkCount != 1 {
+		t.Errorf("target backlink_count = %d, want 1", bBacklinkCount)
+	}
+}
+
 func TestExecutionEngine_FailedActionDoesNotLog(t *testing.T) {
 	db := newTestDB(t)
 	q := model.New(db)

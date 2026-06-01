@@ -789,11 +789,11 @@ func (e *ExecutionEngine) updatePageLinks(ctx context.Context, pageID int64, con
 		e.addBacklink(ctx, resolved.ID, pageID)
 	}
 
-	// Update this page's links array
+	// Update this page's links array and denormalized link_count.
 	linksJSON, _ := json.Marshal(linkIDs)
 	if _, err := e.db.ExecContext(ctx,
-		`UPDATE wiki_pages SET links = ? WHERE id = ?`,
-		string(linksJSON), pageID); err != nil {
+		`UPDATE wiki_pages SET links = ?, link_count = ? WHERE id = ?`,
+		string(linksJSON), len(linkIDs), pageID); err != nil {
 		log.Printf("WARN: failed to update links for page %d: %v", pageID, err)
 	}
 }
@@ -820,8 +820,8 @@ func (e *ExecutionEngine) addBacklink(ctx context.Context, targetID, pageID int6
 	ids = append(ids, pageID)
 	idsJSON, _ := json.Marshal(ids)
 	if _, err := e.db.ExecContext(ctx,
-		`UPDATE wiki_pages SET backlinks = ? WHERE id = ?`,
-		string(idsJSON), targetID); err != nil {
+		`UPDATE wiki_pages SET backlinks = ?, backlink_count = ? WHERE id = ?`,
+		string(idsJSON), len(ids), targetID); err != nil {
 		log.Printf("WARN: failed to add backlink %d->%d: %v", pageID, targetID, err)
 	}
 }
