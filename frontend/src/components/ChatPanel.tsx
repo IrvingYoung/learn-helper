@@ -471,7 +471,11 @@ ${meta.plan.reasoning}
             ) : (
               <div className="min-w-0">
                 {msg.content ? (
-                  <MarkdownContent content={msg.content} compact />
+                  isLast && loading ? (
+                    <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words text-th-text-primary">{msg.content}</p>
+                  ) : (
+                    <MarkdownContent content={msg.content} compact />
+                  )
                 ) : isLast && loading ? (
                   <div className="flex items-center gap-1 py-1 text-th-text-muted">
                     <span className="block w-1 h-3.5 bg-th-accent rounded-sm animate-cursor-scan" />
