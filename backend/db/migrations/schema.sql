@@ -146,7 +146,9 @@ CREATE TABLE IF NOT EXISTS plans (
     executed_at TEXT,
     outline TEXT,
     phase_index INTEGER,
-    total_phases INTEGER
+    total_phases INTEGER,
+    focus_page_id INTEGER REFERENCES wiki_pages(id),
+    calibration_question TEXT
 );
 
 CREATE TABLE IF NOT EXISTS plan_actions (

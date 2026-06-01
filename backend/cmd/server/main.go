@@ -124,6 +124,8 @@ CREATE TABLE IF NOT EXISTS plans (
     outline TEXT,
     phase_index INTEGER,
     total_phases INTEGER,
+    focus_page_id INTEGER REFERENCES wiki_pages(id),
+    calibration_question TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     executed_at TEXT
 );
