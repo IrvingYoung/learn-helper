@@ -377,27 +377,37 @@ func (h *WikiHandler) CreateWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, _ := result.LastInsertId()
+	var pagePath string
 	if id > 0 {
-		var path string
 		if req.ParentID != nil && *req.ParentID > 0 {
 			parentPath, err := h.queries.GetWikiPagePathByID(ctx, *req.ParentID)
 			if err != nil {
 				log.Printf("Failed to fetch parent path: %v", err)
 			} else {
-				path = parentPath + fmt.Sprintf("%d/", id)
+				pagePath = parentPath + fmt.Sprintf("%d/", id)
 			}
 		} else {
-			path = fmt.Sprintf("%d/", id)
+			pagePath = fmt.Sprintf("%d/", id)
 		}
-		if path != "" {
+		if pagePath != "" {
 			h.queries.UpdateWikiPagePath(ctx, model.UpdateWikiPagePathParams{
-				Path: path,
+				Path: pagePath,
 				ID:   id,
 			})
 		}
 		// Update links/backlinks based on content
 		h.updatePageLinks(id, req.Content)
 	}
+
+	// Log the create action with source="manual".
+	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "create",
+		PageID:    sql.NullInt64{Int64: id, Valid: id > 0},
+		PageTitle: req.Title,
+		PagePath:  sql.NullString{String: pagePath, Valid: pagePath != ""},
+		Source:    "manual",
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "slug": req.Slug})
@@ -453,6 +463,14 @@ func (h *WikiHandler) UpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 	// Update links/backlinks based on content
 	h.updatePageLinks(id, req.Content)
 
+	// Log the update action with source="manual".
+	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "update",
+		PageID:    sql.NullInt64{Int64: id, Valid: true},
+		PageTitle: req.Title,
+		Source:    "manual",
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -503,6 +521,16 @@ func (h *WikiHandler) DeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 			LikePrefix: sql.NullString{String: page.Path, Valid: true},
 		})
 	}
+
+	// Log the delete action with source="manual".
+	// page_id is NULL (the row is gone) but page_title is preserved.
+	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "delete",
+		PageID:    sql.NullInt64{}, // explicitly invalid
+		PageTitle: page.Title,
+		PagePath:  sql.NullString{String: page.Path, Valid: page.Path != ""},
+		Source:    "manual",
+	})
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -621,6 +649,14 @@ func (h *WikiHandler) RenameWikiPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Log the rename action with source="manual".
+	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "rename",
+		PageID:    sql.NullInt64{Int64: id, Valid: true},
+		PageTitle: req.Title,
+		Source:    "manual",
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"id": id, "title": req.Title, "slug": newSlug})
 }
@@ -718,6 +754,14 @@ func (h *WikiHandler) MoveWikiPage(w http.ResponseWriter, r *http.Request) {
 			LikePrefix: sql.NullString{String: page.Path, Valid: true},
 		})
 	}
+
+	// Log the move action with source="manual".
+	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "move",
+		PageID:    sql.NullInt64{Int64: id, Valid: true},
+		PageTitle: page.Title,
+		Source:    "manual",
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
