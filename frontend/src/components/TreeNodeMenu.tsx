@@ -7,14 +7,14 @@ interface TreeNodeMenuProps {
   hasChildren: boolean;
   onAddChild: (parentId: number) => void;
   onStartRename: (nodeId: number) => void;
-  onMove: (nodeId: number, newParentId: number | null) => void;
+  onAskAIMove: (nodeId: number) => void;
   onDelete: (nodeId: number, hasChildren: boolean) => void;
   onClose: () => void;
 }
 
 export function TreeNodeMenu({
   x, y, nodeId, hasChildren,
-  onAddChild, onStartRename, onMove, onDelete, onClose,
+  onAddChild, onStartRename, onAskAIMove, onDelete, onClose,
 }: TreeNodeMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -52,7 +52,7 @@ export function TreeNodeMenu({
         label="重命名"
       />
       <MenuButton
-        onClick={() => { onMove(nodeId, null); onClose(); }}
+        onClick={() => { onAskAIMove(nodeId); onClose(); }}
         icon={
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
         }

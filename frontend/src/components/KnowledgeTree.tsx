@@ -30,16 +30,17 @@ interface KnowledgeTreeProps {
   selectedSlug: string | null;
   onSelect: (slug: string) => void;
   collapsed: boolean;
-  onAddChild?: (parentId: number) => void;
+  onAddChild?: (parentId: number | null) => void;
   onRename?: (nodeId: number, newTitle: string) => void;
   onMove?: (nodeId: number, newParentId: number | null) => void;
+  onAskAIMove?: (nodeId: number) => void;
   onDelete?: (nodeId: number, hasChildren: boolean) => void;
   newNodeId?: number | null;
 }
 
 export function KnowledgeTree({
   tree, selectedSlug, onSelect, collapsed,
-  onAddChild, onRename, onMove, onDelete, newNodeId,
+  onAddChild, onRename, onMove, onAskAIMove, onDelete, newNodeId,
 }: KnowledgeTreeProps) {
   const [menuState, setMenuState] = useState<{
     x: number; y: number; nodeId: number; nodeTitle: string; hasChildren: boolean;
@@ -220,7 +221,20 @@ export function KnowledgeTree({
 
   return (
     <div className="h-full overflow-y-auto p-4 bg-th-bg-tertiary custom-scroll">
-      <div className="text-sm font-medium text-th-text-muted mb-3 tracking-wide uppercase text-xs">知识库</div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-medium text-th-text-muted tracking-wide uppercase text-xs">知识库</div>
+        {onAddChild && (
+          <button
+            onClick={() => onAddChild(null)}
+            className="w-5 h-5 flex items-center justify-center text-th-text-muted hover:text-th-text-primary hover:bg-th-hover rounded transition-colors"
+            title="新建顶层页面"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        )}
+      </div>
       <div className="relative mb-2">
         <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-th-text-muted pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
@@ -289,7 +303,7 @@ export function KnowledgeTree({
           </div>
         )}
       </div>
-      {!searchQuery && menuState && onAddChild && onRename && onMove && onDelete && (
+      {!searchQuery && menuState && onAddChild && onRename && onMove && onAskAIMove && onDelete && (
         <TreeNodeMenu
           x={menuState.x}
           y={menuState.y}
@@ -297,7 +311,7 @@ export function KnowledgeTree({
           hasChildren={menuState.hasChildren}
           onAddChild={onAddChild}
           onStartRename={(nodeId) => setRenameNodeId(nodeId)}
-          onMove={onMove}
+          onAskAIMove={onAskAIMove}
           onDelete={onDelete}
           onClose={() => setMenuState(null)}
         />
@@ -314,7 +328,7 @@ interface TreeNodeProps {
   expandedIds: Set<number>;
   onToggle: (nodeId: number) => void;
   onContextMenu?: (e: React.MouseEvent, node: WikiTreeNode) => void;
-  onAddChild?: (parentId: number) => void;
+  onAddChild?: (parentId: number | null) => void;
   onRename?: (nodeId: number, newTitle: string) => void;
   onMove?: (nodeId: number, newParentId: number | null) => void;
   renameNodeId?: number | null;

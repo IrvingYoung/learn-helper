@@ -191,7 +191,7 @@ export function WikiPageLayout() {
     chatPanelRef.current?.setSelectedText(text, pageTitle);
   }, []);
 
-  const handleAddChild = async (parentId: number) => {
+  const handleAddChild = async (parentId: number | null) => {
     try {
       const page = await createEmptyWikiPage("新页面", parentId);
       setSelectedSlug(page.slug);
@@ -213,17 +213,16 @@ export function WikiPageLayout() {
   };
 
   const handleMove = async (nodeId: number, newParentId: number | null) => {
-    if (newParentId === null) {
-      // "Move to..." context menu item - prompt user via chat
-      chatPanelRef.current?.setSelectedText(`请将页面 ID ${nodeId} 移动到合适的位置`, "");
-      return;
-    }
     try {
       await moveWikiPage(nodeId, newParentId);
       handlePageChanged();
     } catch (err) {
       console.error("Failed to move page:", err);
     }
+  };
+
+  const handleAskAIMove = (nodeId: number) => {
+    chatPanelRef.current?.setSelectedText(`请将页面 ID ${nodeId} 移动到合适的位置`, "");
   };
 
   const handleDelete = async (nodeId: number, _hasChildren: boolean) => {
@@ -335,6 +334,7 @@ export function WikiPageLayout() {
               onAddChild={handleAddChild}
               onRename={handleRename}
               onMove={handleMove}
+              onAskAIMove={handleAskAIMove}
               onDelete={handleDelete}
               newNodeId={newPageNodeId}
             />
