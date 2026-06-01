@@ -32,13 +32,21 @@ type ActionResult struct {
 // ExecutionEngine orchestrates plan execution with topological ordering,
 // placeholder replacement, and wiki page mutations.
 type ExecutionEngine struct {
-	db      *sql.DB
-	queries *model.Queries
+	db            *sql.DB
+	queries       *model.Queries
+	onPageWritten func(pageID int64) // optional; called after a successful create/update; nil-safe
 }
 
 // NewExecutionEngine creates a new engine backed by the given database.
 func NewExecutionEngine(db *sql.DB, queries *model.Queries) *ExecutionEngine {
 	return &ExecutionEngine{db: db, queries: queries}
+}
+
+// SetOnPageWritten registers a callback to be invoked after a successful
+// create or update action. Used by main.go to wire the SummaryWorker.
+// Passing nil clears the callback.
+func (e *ExecutionEngine) SetOnPageWritten(fn func(pageID int64)) {
+	e.onPageWritten = fn
 }
 
 // placeholderPattern matches {{action:a1.page_id}} style references.
@@ -464,6 +472,12 @@ func (e *ExecutionEngine) execCreatePage(ctx context.Context, params map[string]
 		Summary:   sql.NullString{String: "通过 plan 创建页面", Valid: true},
 	})
 
+	// Trigger summary regeneration (best-effort, non-blocking).
+	_ = e.queries.MarkSummaryPending(ctx, pageID)
+	if e.onPageWritten != nil {
+		e.onPageWritten(pageID)
+	}
+
 	return map[string]any{
 		"page_id": pageID,
 		"slug":    slug,
@@ -542,6 +556,12 @@ func (e *ExecutionEngine) execUpdatePage(ctx context.Context, params map[string]
 		Source:    "plan",
 		Summary:   sql.NullString{String: "通过 plan 更新页面", Valid: true},
 	})
+
+	// Trigger summary regeneration (best-effort, non-blocking).
+	_ = e.queries.MarkSummaryPending(ctx, pageID)
+	if e.onPageWritten != nil {
+		e.onPageWritten(pageID)
+	}
 
 	return map[string]any{
 		"page_id": pageID,

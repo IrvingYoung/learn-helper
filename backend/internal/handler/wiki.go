@@ -17,8 +17,9 @@ import (
 )
 
 type WikiHandler struct {
-	db      *sql.DB
-	queries *model.Queries
+	db            *sql.DB
+	queries       *model.Queries
+	onPageWritten func(pageID int64) // optional; called after a successful create/update; nil-safe
 }
 
 func NewWikiHandler(db *sql.DB) *WikiHandler {
@@ -26,6 +27,13 @@ func NewWikiHandler(db *sql.DB) *WikiHandler {
 		db:      db,
 		queries: model.New(db),
 	}
+}
+
+// SetOnPageWritten registers a callback to be invoked after a successful
+// create or update action. Used by main.go to wire the SummaryWorker.
+// Passing nil clears the callback.
+func (h *WikiHandler) SetOnPageWritten(fn func(pageID int64)) {
+	h.onPageWritten = fn
 }
 
 type WikiTreeNode struct {
@@ -442,6 +450,14 @@ func (h *WikiHandler) CreateWikiPage(w http.ResponseWriter, r *http.Request) {
 		Source:    "manual",
 	})
 
+	// Trigger summary regeneration (best-effort, non-blocking).
+	if id > 0 {
+		_ = h.queries.MarkSummaryPending(ctx, id)
+		if h.onPageWritten != nil {
+			h.onPageWritten(id)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "slug": req.Slug})
@@ -510,6 +526,12 @@ func (h *WikiHandler) UpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 		PageTitle: req.Title,
 		Source:    "manual",
 	})
+
+	// Trigger summary regeneration (best-effort, non-blocking).
+	_ = h.queries.MarkSummaryPending(ctx, id)
+	if h.onPageWritten != nil {
+		h.onPageWritten(id)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

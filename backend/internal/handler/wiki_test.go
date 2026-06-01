@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -310,5 +311,134 @@ func TestNormalizeTags(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("normalizeTags(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// onPageWritten callback wiring (C1/C3 fix)
+// ---------------------------------------------------------------------------
+
+// recordingCallback appends every pageID it receives.
+type recordingCallback struct {
+	mu    sync.Mutex
+	calls []int64
+}
+
+func (r *recordingCallback) fn() func(pageID int64) {
+	return func(pageID int64) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.calls = append(r.calls, pageID)
+	}
+}
+
+func (r *recordingCallback) snapshot() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]int64, len(r.calls))
+	copy(out, r.calls)
+	return out
+}
+
+func readSummaryStatus(t *testing.T, db *sql.DB, pageID int64) string {
+	t.Helper()
+	var status string
+	if err := db.QueryRow(`SELECT summary_status FROM wiki_pages WHERE id = ?`, pageID).Scan(&status); err != nil {
+		t.Fatalf("read summary_status for page %d: %v", pageID, err)
+	}
+	return status
+}
+
+func TestCreateWikiPage_InvokesOnPageWritten(t *testing.T) {
+	h, db := newTestHandler(t)
+
+	rec := &recordingCallback{}
+	h.SetOnPageWritten(rec.fn())
+
+	recResp := doRequest(h.CreateWikiPage, "POST", "/api/wiki", "/api/wiki",
+		[]byte(`{"title":"回调测试","slug":"cb-test","page_type":"entity","content":"hello","content_status":"published"}`))
+	if recResp.Code != http.StatusCreated {
+		t.Fatalf("CreateWikiPage: expected 201, got %d body=%s", recResp.Code, recResp.Body.String())
+	}
+
+	calls := rec.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("onPageWritten called %d times, want 1", len(calls))
+	}
+	if calls[0] <= 0 {
+		t.Errorf("onPageWritten received non-positive pageID %d", calls[0])
+	}
+
+	if status := readSummaryStatus(t, db, calls[0]); status != "pending" {
+		t.Errorf("summary_status after create = %q, want %q", status, "pending")
+	}
+}
+
+func TestUpdateWikiPage_InvokesOnPageWritten(t *testing.T) {
+	h, db := newTestHandler(t)
+	pageID := seedPage(t, db, "原标题")
+
+	rec := &recordingCallback{}
+	h.SetOnPageWritten(rec.fn())
+
+	target := "/api/wiki/" + pathInt(pageID)
+	route := "/api/wiki/{id}"
+	recResp := doRequest(h.UpdateWikiPage, "PUT", target, route,
+		[]byte(`{"title":"新标题","slug":"new-slug","content":"新内容","content_status":"published"}`))
+	if recResp.Code != http.StatusOK {
+		t.Fatalf("UpdateWikiPage: expected 200, got %d body=%s", recResp.Code, recResp.Body.String())
+	}
+
+	calls := rec.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("onPageWritten called %d times, want 1", len(calls))
+	}
+	if calls[0] != pageID {
+		t.Errorf("onPageWritten received pageID=%d, want %d", calls[0], pageID)
+	}
+
+	if status := readSummaryStatus(t, db, pageID); status != "pending" {
+		t.Errorf("summary_status after update = %q, want %q", status, "pending")
+	}
+}
+
+func TestRenameWikiPage_DoesNotInvokeOnPageWritten(t *testing.T) {
+	h, db := newTestHandler(t)
+	pageID := seedPage(t, db, "原标题")
+
+	rec := &recordingCallback{}
+	h.SetOnPageWritten(rec.fn())
+
+	target := "/api/wiki/" + pathInt(pageID) + "/rename"
+	route := "/api/wiki/{id}/rename"
+	recResp := doRequest(h.RenameWikiPage, "PATCH", target, route,
+		[]byte(`{"title":"新标题"}`))
+	if recResp.Code != http.StatusOK {
+		t.Fatalf("RenameWikiPage: expected 200, got %d body=%s", recResp.Code, recResp.Body.String())
+	}
+
+	// Rename is title-only; summary is preserved. Callback should not fire.
+	if calls := rec.snapshot(); len(calls) != 0 {
+		t.Errorf("onPageWritten called %d times on rename, want 0", len(calls))
+	}
+}
+
+func TestWikiHandler_OnPageWrittenNilSafe(t *testing.T) {
+	h, db := newTestHandler(t)
+
+	// No callback set — should not panic.
+	recResp := doRequest(h.CreateWikiPage, "POST", "/api/wiki", "/api/wiki",
+		[]byte(`{"title":"no-cb","slug":"no-cb","content":"hi","content_status":"published"}`))
+	if recResp.Code != http.StatusCreated {
+		t.Fatalf("CreateWikiPage with nil callback: expected 201, got %d body=%s", recResp.Code, recResp.Body.String())
+	}
+
+	pageID := seedPage(t, db, "no-cb-2")
+	target := "/api/wiki/" + pathInt(pageID)
+	route := "/api/wiki/{id}"
+	recResp = doRequest(h.UpdateWikiPage, "PUT", target, route,
+		[]byte(`{"title":"no-cb-2b","slug":"no-cb-2b","content":"hi","content_status":"published"}`))
+	if recResp.Code != http.StatusOK {
+		t.Fatalf("UpdateWikiPage with nil callback: expected 200, got %d body=%s", recResp.Code, recResp.Body.String())
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -382,5 +383,151 @@ func TestExecutionEngine_FailedActionDoesNotLog(t *testing.T) {
 	}
 	if n := countLogEntries(t, db); n != 0 {
 		t.Errorf("failed action should not log; got %d entries", n)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// onPageWritten callback wiring (C1/C3 fix)
+// ---------------------------------------------------------------------------
+
+// recordingCallback returns a callback that appends every pageID it receives.
+type recordingCallback struct {
+	mu    sync.Mutex
+	calls []int64
+}
+
+func (r *recordingCallback) fn() func(pageID int64) {
+	return func(pageID int64) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.calls = append(r.calls, pageID)
+	}
+}
+
+func (r *recordingCallback) snapshot() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]int64, len(r.calls))
+	copy(out, r.calls)
+	return out
+}
+
+func readSummaryStatus(t *testing.T, db *sql.DB, pageID int64) string {
+	t.Helper()
+	var status string
+	if err := db.QueryRow(`SELECT summary_status FROM wiki_pages WHERE id = ?`, pageID).Scan(&status); err != nil {
+		t.Fatalf("read summary_status for page %d: %v", pageID, err)
+	}
+	return status
+}
+
+func TestExecutionEngine_ExecCreatePageInvokesOnPageWritten(t *testing.T) {
+	db := newTestDB(t)
+	q := model.New(db)
+	eng := NewExecutionEngine(db, q)
+	ctx := context.Background()
+
+	rec := &recordingCallback{}
+	eng.SetOnPageWritten(rec.fn())
+
+	params := map[string]any{
+		"title":   "回调测试页",
+		"content": "一些内容",
+	}
+	res, err := eng.execCreatePage(ctx, params)
+	if err != nil {
+		t.Fatalf("execCreatePage: %v", err)
+	}
+	resultMap, ok := res.(map[string]any)
+	if !ok {
+		t.Fatalf("execCreatePage returned non-map result: %T", res)
+	}
+	pageID, ok := resultMap["page_id"].(int64)
+	if !ok {
+		t.Fatalf("execCreatePage result missing page_id: %v", resultMap)
+	}
+
+	calls := rec.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("onPageWritten called %d times, want 1", len(calls))
+	}
+	if calls[0] != pageID {
+		t.Errorf("onPageWritten received pageID=%d, want %d", calls[0], pageID)
+	}
+
+	if status := readSummaryStatus(t, db, pageID); status != "pending" {
+		t.Errorf("summary_status after create = %q, want %q", status, "pending")
+	}
+}
+
+func TestExecutionEngine_ExecUpdatePageInvokesOnPageWritten(t *testing.T) {
+	db := newTestDB(t)
+	q := model.New(db)
+	eng := NewExecutionEngine(db, q)
+	ctx := context.Background()
+
+	pageID := seedParentPage(t, db, "原标题")
+
+	rec := &recordingCallback{}
+	eng.SetOnPageWritten(rec.fn())
+
+	params := map[string]any{
+		"page_id": pageID,
+		"title":   "新标题",
+		"content": "更新内容",
+	}
+	if _, err := eng.execUpdatePage(ctx, params); err != nil {
+		t.Fatalf("execUpdatePage: %v", err)
+	}
+
+	calls := rec.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("onPageWritten called %d times, want 1", len(calls))
+	}
+	if calls[0] != pageID {
+		t.Errorf("onPageWritten received pageID=%d, want %d", calls[0], pageID)
+	}
+
+	if status := readSummaryStatus(t, db, pageID); status != "pending" {
+		t.Errorf("summary_status after update = %q, want %q", status, "pending")
+	}
+}
+
+func TestExecutionEngine_OnPageWrittenNilSafe(t *testing.T) {
+	db := newTestDB(t)
+	q := model.New(db)
+	eng := NewExecutionEngine(db, q)
+	ctx := context.Background()
+
+	// No callback set — should not panic on create or update.
+	if _, err := eng.execCreatePage(ctx, map[string]any{"title": "X"}); err != nil {
+		t.Fatalf("execCreatePage with nil callback: %v", err)
+	}
+	pageID := seedParentPage(t, db, "Y")
+	if _, err := eng.execUpdatePage(ctx, map[string]any{"page_id": pageID, "title": "Y2"}); err != nil {
+		t.Fatalf("execUpdatePage with nil callback: %v", err)
+	}
+}
+
+func TestExecutionEngine_SetOnPageWrittenClearWithNil(t *testing.T) {
+	db := newTestDB(t)
+	q := model.New(db)
+	eng := NewExecutionEngine(db, q)
+	ctx := context.Background()
+
+	rec := &recordingCallback{}
+	eng.SetOnPageWritten(rec.fn())
+	if _, err := eng.execCreatePage(ctx, map[string]any{"title": "first"}); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	// Clear the callback.
+	eng.SetOnPageWritten(nil)
+	if _, err := eng.execCreatePage(ctx, map[string]any{"title": "second"}); err != nil {
+		t.Fatalf("second create: %v", err)
+	}
+
+	if calls := rec.snapshot(); len(calls) != 1 {
+		t.Errorf("onPageWritten called %d times after clear, want 1", len(calls))
 	}
 }

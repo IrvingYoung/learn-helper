@@ -216,8 +216,27 @@ func main() {
 					worker.NewSQLDBAdapter(queries),
 				)
 
+				// Wire engine + handlers to enqueue page summaries on write.
+				eng.SetOnPageWritten(func(pageID int64) {
+					summaryWorker.Enqueue(pageID)
+				})
+				wikiHandler.SetOnPageWritten(func(pageID int64) {
+					summaryWorker.Enqueue(pageID)
+				})
+
 				workerCtx, workerCancel := context.WithCancel(context.Background())
 				defer workerCancel()
+
+				// On startup, transition all 'empty' pages with content to 'pending'
+				// so the backfill loop picks them up. This is a one-shot per server start.
+				{
+					res, err := db.Exec(`UPDATE wiki_pages SET summary_status='pending', summary_content_hash=NULL WHERE summary_status='empty' AND content != ''`)
+					if err != nil {
+						log.Printf("[summary-worker] failed to transition empty→pending: %v", err)
+					} else if n, _ := res.RowsAffected(); n > 0 {
+						log.Printf("[summary-worker] marked %d pages as pending for backfill", n)
+					}
+				}
 
 				// Backfill pending/failed summaries on startup.
 				if os.Getenv("SKIP_SUMMARY_BACKFILL") != "1" {
