@@ -389,6 +389,8 @@ func main() {
 		r.Route("/ai", func(r chi.Router) {
 			r.Post("/chat", aiHandler.AIChat)
 			r.Post("/upload", aiHandler.UploadFile)
+			r.Post("/permission_response", aiHandler.HandlePermissionResponse)
+			r.Post("/ask_user_response", aiHandler.HandleAskUserResponse)
 			r.Get("/conversations", aiHandler.ListConversations)
 			r.Post("/conversations", aiHandler.CreateConversation)
 			r.Patch("/conversations/{id}", aiHandler.UpdateConversationTitle)
