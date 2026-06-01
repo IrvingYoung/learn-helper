@@ -454,6 +454,16 @@ func (e *ExecutionEngine) execCreatePage(ctx context.Context, params map[string]
 		e.updatePageLinks(ctx, pageID, content)
 	}
 
+	// Log the create action (best-effort: don't fail the action on log error).
+	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "create",
+		PageID:    sql.NullInt64{Int64: pageID, Valid: true},
+		PageTitle: title,
+		PagePath:  sql.NullString{String: path, Valid: true},
+		Source:    "plan",
+		Summary:   sql.NullString{String: "通过 plan 创建页面", Valid: true},
+	})
+
 	return map[string]any{
 		"page_id": pageID,
 		"slug":    slug,
@@ -524,6 +534,15 @@ func (e *ExecutionEngine) execUpdatePage(ctx context.Context, params map[string]
 	// Re-parse links
 	e.updatePageLinks(ctx, pageID, content)
 
+	// Log the update action.
+	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "update",
+		PageID:    sql.NullInt64{Int64: pageID, Valid: true},
+		PageTitle: title,
+		Source:    "plan",
+		Summary:   sql.NullString{String: "通过 plan 更新页面", Valid: true},
+	})
+
 	return map[string]any{
 		"page_id": pageID,
 	}, nil
@@ -536,6 +555,15 @@ func (e *ExecutionEngine) execDeletePage(ctx context.Context, params map[string]
 	if !ok {
 		return nil, fmt.Errorf("delete_page: page_id is required")
 	}
+
+	// Capture the page title before we delete it (needed for the wiki_log entry
+	// since page_id will be NULL after deletion).
+	page, err := e.queries.GetWikiPageByID(ctx, pageID)
+	if err != nil {
+		return nil, fmt.Errorf("get page %d for delete: %w", pageID, err)
+	}
+	pageTitle := page.Title
+	pagePath := page.Path
 
 	// 1. Remove all link/backlink references to this page
 	e.removeLinksForPage(ctx, pageID)
@@ -554,6 +582,18 @@ func (e *ExecutionEngine) execDeletePage(ctx context.Context, params map[string]
 	if err := e.queries.DeleteWikiPage(ctx, pageID); err != nil {
 		return nil, fmt.Errorf("delete page %d: %w", pageID, err)
 	}
+
+	// 4. Log the delete action.
+	//    On delete, page_id is NULL (the row is gone) but page_title is preserved
+	//    so the AI can still see what was just removed.
+	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "delete",
+		PageID:    sql.NullInt64{}, // explicitly invalid
+		PageTitle: pageTitle,
+		PagePath:  sql.NullString{String: pagePath, Valid: pagePath != ""},
+		Source:    "plan",
+		Summary:   sql.NullString{String: "通过 plan 删除页面", Valid: true},
+	})
 
 	return map[string]any{
 		"deleted": true,
@@ -586,6 +626,14 @@ func (e *ExecutionEngine) execLinkPages(ctx context.Context, params map[string]a
 	if strings.Contains(source.Content, linkMarkup) {
 		// Link already present; just update the link arrays
 		e.updatePageLinks(ctx, sourceID, source.Content)
+		// Log the link action so the AI sees the user added/refreshed a link.
+		_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+			Action:    "link",
+			PageID:    sql.NullInt64{Int64: sourceID, Valid: true},
+			PageTitle: source.Title,
+			Source:    "plan",
+			Summary:   sql.NullString{String: fmt.Sprintf("通过 plan 添加链接 [[%s]]", linkText), Valid: true},
+		})
 		return map[string]any{
 			"source_page_id": sourceID,
 			"target_page_id": targetID,
@@ -615,6 +663,15 @@ func (e *ExecutionEngine) execLinkPages(ctx context.Context, params map[string]a
 
 	// Update links/backlinks arrays
 	e.updatePageLinks(ctx, sourceID, newContent)
+
+	// Log the link action.
+	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "link",
+		PageID:    sql.NullInt64{Int64: sourceID, Valid: true},
+		PageTitle: source.Title,
+		Source:    "plan",
+		Summary:   sql.NullString{String: fmt.Sprintf("通过 plan 添加链接 [[%s]]", linkText), Valid: true},
+	})
 
 	return map[string]any{
 		"source_page_id": sourceID,
@@ -686,6 +743,16 @@ func (e *ExecutionEngine) execMovePage(ctx context.Context, params map[string]an
 			log.Printf("WARN: failed to migrate subtree paths: %v", err)
 		}
 	}
+
+	// Log the move action.
+	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		Action:    "move",
+		PageID:    sql.NullInt64{Int64: pageID, Valid: true},
+		PageTitle: page.Title,
+		PagePath:  sql.NullString{String: newPath, Valid: true},
+		Source:    "plan",
+		Summary:   sql.NullString{String: "通过 plan 移动页面", Valid: true},
+	})
 
 	return map[string]any{
 		"page_id":  pageID,
