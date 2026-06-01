@@ -290,3 +290,25 @@ func TestDeleteWikiPage_LogsToWikiLog(t *testing.T) {
 func pathInt(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
+
+func TestNormalizeTags(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{`["Go", "算法", "Go"]`, "go,算法"},
+		{`Go,  go , 算法,Go`, "go,算法"},
+		{``, ""},
+		{`[]`, ""},
+		{`[""]`, ""},
+		{`[ ]`, ""},
+		{`Go,算法`, "go,算法"},
+		{`["a","B","A","b"]`, "a,b"},
+	}
+	for _, tt := range tests {
+		got := normalizeTags(tt.in)
+		if got != tt.want {
+			t.Errorf("normalizeTags(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

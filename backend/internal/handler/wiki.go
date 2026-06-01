@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -337,6 +338,34 @@ type CreateWikiPageRequest struct {
 	SortOrder     int64  `json:"sort_order"`
 }
 
+// normalizeTags accepts tags in either JSON array form (e.g. `["Go","算法"]`)
+// or comma-separated form (`Go, 算法, Go`), and returns a normalized
+// comma-separated string: trimmed, lowercased, deduped, sorted.
+func normalizeTags(tags string) string {
+	if tags == "" {
+		return ""
+	}
+
+	var tagList []string
+	// Try JSON array first.
+	if err := json.Unmarshal([]byte(tags), &tagList); err != nil {
+		// Fallback: treat as comma-separated.
+		tagList = strings.Split(tags, ",")
+	}
+
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(tagList))
+	for _, t := range tagList {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t != "" && !seen[t] {
+			seen[t] = true
+			result = append(result, t)
+		}
+	}
+	sort.Strings(result)
+	return strings.Join(result, ",")
+}
+
 func (h *WikiHandler) CreateWikiPage(w http.ResponseWriter, r *http.Request) {
 	var req CreateWikiPageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -394,6 +423,11 @@ func (h *WikiHandler) CreateWikiPage(w http.ResponseWriter, r *http.Request) {
 				Path: pagePath,
 				ID:   id,
 			})
+		}
+		// Compute and persist tags_normalized.
+		tagsNormalized := normalizeTags(req.Tags)
+		if _, err := h.db.Exec("UPDATE wiki_pages SET tags_normalized = ? WHERE id = ?", tagsNormalized, id); err != nil {
+			log.Printf("Failed to update tags_normalized for page %d: %v", id, err)
 		}
 		// Update links/backlinks based on content
 		h.updatePageLinks(id, req.Content)
@@ -458,6 +492,12 @@ func (h *WikiHandler) UpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Failed to update page", http.StatusInternalServerError)
 		return
+	}
+
+	// Recompute tags_normalized from the supplied tags.
+	tagsNormalized := normalizeTags(req.Tags)
+	if _, err := h.db.Exec("UPDATE wiki_pages SET tags_normalized = ? WHERE id = ?", tagsNormalized, id); err != nil {
+		log.Printf("Failed to update tags_normalized for page %d: %v", id, err)
 	}
 
 	// Update links/backlinks based on content
