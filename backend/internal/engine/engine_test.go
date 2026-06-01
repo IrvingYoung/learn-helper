@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -73,9 +74,11 @@ type circularError struct{}
 func (e *circularError) Error() string { return "circular dependency detected" }
 
 // testReplacePlaceholders mirrors the engine's placeholder replacement
-// using a simple map[string]any result store.
-func testReplacePlaceholders(input string, results map[string]any) string {
-	return placeholderPattern.ReplaceAllStringFunc(input, func(match string) string {
+// using a simple map[string]any result store. It returns an error
+// when any placeholder cannot be resolved (mirrors production behavior).
+func testReplacePlaceholders(input string, results map[string]any) (string, error) {
+	var unresolved []string
+	out := placeholderPattern.ReplaceAllStringFunc(input, func(match string) string {
 		subs := placeholderPattern.FindStringSubmatch(match)
 		if len(subs) < 3 {
 			return match
@@ -85,14 +88,20 @@ func testReplacePlaceholders(input string, results map[string]any) string {
 
 		res, ok := results[actionID]
 		if !ok {
+			unresolved = append(unresolved, actionID+"."+field)
 			return match
 		}
 		val := resolveField(res, field)
 		if val == nil {
+			unresolved = append(unresolved, actionID+"."+field)
 			return match
 		}
 		return fmtVal(val)
 	})
+	if len(unresolved) > 0 {
+		return "", fmt.Errorf("unresolved placeholders: %s", strings.Join(unresolved, ", "))
+	}
+	return out, nil
 }
 
 func fmtVal(v any) string {
@@ -233,6 +242,7 @@ func TestReplacePlaceholders(t *testing.T) {
 		name     string
 		input    string
 		expected string
+		expectErr string
 	}{
 		{
 			name:     "single replacement",
@@ -255,15 +265,27 @@ func TestReplacePlaceholders(t *testing.T) {
 			expected: `{"title": "hello"}`,
 		},
 		{
-			name:     "unresolved placeholder left as-is",
+			name:     "unresolved placeholder returns error",
 			input:    `{"parent_id": {{action:a3.page_id}}}`,
-			expected: `{"parent_id": {{action:a3.page_id}}}`,
+			expectErr: "unresolved placeholders: a3.page_id",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := testReplacePlaceholders(tt.input, results)
+			got, err := testReplacePlaceholders(tt.input, results)
+			if tt.expectErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tt.expectErr)
+				}
+				if !strings.Contains(err.Error(), tt.expectErr) {
+					t.Errorf("expected error to contain %q, got %q", tt.expectErr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
 			if got != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, got)
 			}
@@ -404,5 +426,189 @@ func TestToInt64(t *testing.T) {
 		if ok && got != tt.expected {
 			t.Errorf("toInt64(%v) = %d, want %d", tt.input, got, tt.expected)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for fix-plan-parent-id-resolution (tasks 1.2-1.12)
+// ---------------------------------------------------------------------------
+
+// isPlaceholderString is defined in engine.go; tests use it directly.
+
+func TestHasParentID_RejectsPlaceholder(t *testing.T) {
+	params := json.RawMessage(`{"parent_id": "{{action:a1.page_id}}"}`)
+	if hasParentID(params) {
+		t.Error("hasParentID should return false for placeholder string value")
+	}
+}
+
+func TestHasParentID_AcceptsInteger(t *testing.T) {
+	params := json.RawMessage(`{"parent_id": 42}`)
+	if !hasParentID(params) {
+		t.Error("hasParentID should return true for integer parent_id")
+	}
+}
+
+func TestHasParentID_AcceptsMissing(t *testing.T) {
+	params := json.RawMessage(`{"title": "hello"}`)
+	if hasParentID(params) {
+		t.Error("hasParentID should return false when parent_id absent")
+	}
+}
+
+func TestInferDependencies(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "single placeholder",
+			input:    `{"parent_id": "{{action:a1.page_id}}"}`,
+			expected: []string{"a1"},
+		},
+		{
+			name:     "multiple placeholders",
+			input:    `{"parent_id": "{{action:a1.page_id}}", "title": "x {{action:a2.slug}}"}`,
+			expected: []string{"a1", "a2"},
+		},
+		{
+			name:     "no placeholders",
+			input:    `{"title": "x"}`,
+			expected: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferDependencies(tt.input)
+			if !stringSlicesEqualUnordered(got, tt.expected) {
+				t.Errorf("inferDependencies(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func stringSlicesEqualUnordered(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := map[string]int{}
+	for _, s := range a {
+		m[s]++
+	}
+	for _, s := range b {
+		m[s]--
+		if m[s] < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func TestInferPlanStage_MainPage(t *testing.T) {
+	p := &planProposalLite{
+		Actions: []planActionLite{
+			{Type: "create_page"},
+		},
+	}
+	stage, err := inferPlanStage(p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stage != StageMain {
+		t.Errorf("expected stage=main, got %q", stage)
+	}
+}
+
+func TestInferPlanStage_Outline(t *testing.T) {
+	p := &planProposalLite{
+		Outline: json.RawMessage(`[{"title": "X", "page_type": "concept"}]`),
+	}
+	stage, err := inferPlanStage(p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stage != StageOutline {
+		t.Errorf("expected stage=outline, got %q", stage)
+	}
+}
+
+func TestInferPlanStage_Content(t *testing.T) {
+	p := &planProposalLite{
+		Actions: []planActionLite{
+			{Type: "update_page"},
+			{Type: "patch_page"},
+		},
+	}
+	stage, err := inferPlanStage(p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stage != StageContent {
+		t.Errorf("expected stage=content, got %q", stage)
+	}
+}
+
+func TestRejectPlan_MainStageTooManyCreate(t *testing.T) {
+	p := &planProposalLite{
+		Actions: []planActionLite{
+			{Type: "create_page"},
+			{Type: "create_page"},
+		},
+	}
+	_, err := inferPlanStage(p)
+	if err == nil {
+		t.Fatal("expected error for main stage with 2 create_pages")
+	}
+}
+
+func TestRejectPlan_OutlineTooManyNodes(t *testing.T) {
+	// Build outline with 50 leaves
+	children := []map[string]any{}
+	for i := 0; i < 50; i++ {
+		children = append(children, map[string]any{"title": fmt.Sprintf("n%d", i), "page_type": "concept"})
+	}
+	outline, _ := json.Marshal([]map[string]any{
+		{"title": "root", "children": children},
+	})
+	p := &planProposalLite{Outline: outline}
+	_, err := inferPlanStage(p)
+	if err == nil {
+		t.Fatal("expected error for outline with 50 nodes")
+	}
+}
+
+func TestRejectPlan_ContentStageHasCreate(t *testing.T) {
+	p := &planProposalLite{
+		Actions: []planActionLite{
+			{Type: "update_page"},
+			{Type: "create_page", HasContent: true},
+		},
+	}
+	_, err := inferPlanStage(p)
+	if err == nil {
+		t.Fatal("expected error for content stage with create_page")
+	}
+}
+
+func TestRejectPlan_OutlineAndActionsMixed(t *testing.T) {
+	p := &planProposalLite{
+		Outline: json.RawMessage(`[{"title": "x"}]`),
+		Actions: []planActionLite{
+			{Type: "update_page"},
+		},
+	}
+	_, err := inferPlanStage(p)
+	if err == nil {
+		t.Fatal("expected error for outline + actions both non-empty")
+	}
+}
+
+func TestFocusFallback_PlaceholderAndFocus(t *testing.T) {
+	// Simulate the engine's focus fallback: with placeholder parent_id and a focusID,
+	// hasParentID should return false so the fallback kicks in.
+	params := json.RawMessage(`{"parent_id": "{{action:a1.page_id}}"}`)
+	if hasParentID(params) {
+		t.Error("placeholder parent_id should be treated as missing so focusPageID fallback fires")
 	}
 }

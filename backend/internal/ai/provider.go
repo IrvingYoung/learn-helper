@@ -279,7 +279,7 @@ func WikiTools() []Tool {
 		},
 		{
 			Name:        "websearch",
-			Description: "搜索网络获取相关信息，返回结构化结果列表（标题、URL、摘要）。可自动执行，无需用户确认。",
+			Description: fmt.Sprintf("搜索网络获取相关信息，返回结构化结果列表（标题、URL、摘要）。可自动执行，无需用户确认。当前是 %d 年，注意搜索内容的时效性。", time.Now().Year()),
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -395,22 +395,23 @@ func buildWikiMaintainerPrompt(wikiContext string) string {
 - [ ] 避免无意义的中间层（单个子页面的分类）
 - [ ] 命名风格与同级页面一致
 
-## 工作节奏（强制遵守）
+## 工作节奏（强制遵守 — 三阶段分离）
 
-复杂任务必须分步完成，不要试图一次做完。每次 propose_plan 不超过 3-5 个 action。
+每个 propose_plan 只能属于一个阶段。**禁止混阶段**，后端会拒绝。
 
-### 建立知识体系的标准流程
+**阶段一：建主页（main）** — actions 恰好 1 个 create_page，必须设 parent_id（用 lookup_page 先查父页 ID）。允许带 overview content，禁止带子章节内容。
 
-当用户说"我想学 X"、"帮我建一个关于 X 的知识体系"时，严格按以下步骤执行：
+**阶段二：生成目录（outline）** — outline 非空，actions 必须为空。每个节点有 id/title/page_type/children，禁止带 content。节点数 ≤ 30。
 
-1. **讨论阶段** — 先和用户对话，了解：想学到什么深度？有哪些前置知识？关注哪些方面？这个阶段不调用 propose_plan，只聊天。
-2. **建结构** — 达成共识后，调用 propose_plan 只创建一个主页面（如"数据结构与算法"），放在合适的位置。用 reasoning 向用户说明计划的子主题结构，但不要同时创建子页面。用户确认后只生成这一个页面。
-3. **生成目录** — 在后续对话中，用户说"生成目录"或"建子页面"时，再用 propose_plan 的 outline 创建空子页面（无 content）。
-4. **填充内容** — 之后逐个 topic 填充内容，每次 propose_plan 只写 1-2 个页面的内容。
+**阶段三：填充内容（content）** — outline 为空，actions 只含 update_page/patch_page/link_pages/move_page，数量 ≤ 2。禁止 create_page。
 
-### 简单任务
+**占位符规则** — 引用 {{action:X.field}} 时必须把 X 加入 depends_on。引用不存在的 action 会让 plan 失败报错，不会脏写。
 
-用户说"记这里"、"改这段"等简单操作，直接 propose_plan 执行，不需要分步。
+**自检清单** — 提交前逐项确认：阶段正确 / actions 和 outline 互斥 / main 1 个 create_page + parent_id / outline ≤ 30 节点 / content ≤ 2 mutation 无 create_page / 占位符对应 depends_on。
+
+**简单任务** — 「记这里」「改这段」单页操作：单个 update_page/patch_page，无需分阶段。
+
+**用户协作流程** — 用户说"想学 X"时：讨论 → 建主页（阶段一）→ 用户说"生成目录"时建 outline（阶段二）→ 用户说"写 1.1"时逐页填（阶段三）。每个阶段独立 plan、独立 confirm。
 
 ## 调用 propose_plan 的场景
 

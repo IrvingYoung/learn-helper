@@ -148,13 +148,14 @@ CREATE TABLE IF NOT EXISTS plans (
     phase_index INTEGER,
     total_phases INTEGER,
     focus_page_id INTEGER REFERENCES wiki_pages(id),
-    calibration_question TEXT
+    calibration_question TEXT,
+    stage TEXT NOT NULL DEFAULT 'main' CHECK(stage IN ('main', 'outline', 'content'))
 );
 
 CREATE TABLE IF NOT EXISTS plan_actions (
     id TEXT PRIMARY KEY,
     plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK(type IN ('create_page', 'update_page', 'delete_page', 'link_pages', 'move_page')),
+    type TEXT NOT NULL CHECK(type IN ('create_page', 'update_page', 'patch_page', 'delete_page', 'link_pages', 'move_page')),
     params TEXT NOT NULL DEFAULT '{}',
     depends_on TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'failed', 'skipped')),
@@ -165,4 +166,5 @@ CREATE TABLE IF NOT EXISTS plan_actions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_plans_conversation ON plans(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_plans_stage ON plans(stage);
 CREATE INDEX IF NOT EXISTS idx_plan_actions_plan ON plan_actions(plan_id);

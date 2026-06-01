@@ -64,17 +64,56 @@ func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string, focusP
 		return &ExecutionReport{PlanID: planID, Status: "completed"}, nil
 	}
 
+	// 1.4 Re-validate stage rules against the persisted plan (defense for
+	// legacy data that may have been created before stage rules shipped).
+	if err := e.validatePersistedPlanStage(ctx, planID, actions); err != nil {
+		return nil, err
+	}
+
 	// 1.5 Inject focusPageID into create_page actions that lack parent_id
 	if focusPageID != nil {
 		for i := range actions {
 			if actions[i].Type == "create_page" && !hasParentID(actions[i].Params) {
+				// Distinguish "no parent_id key" from "placeholder parent_id"
+				// so we can log differently — the latter is a real risk
+				// (parent may resolve to wrong page if engine continues).
+				if hasPlaceholderParentID(actions[i].Params) {
+					log.Printf("WARN: focus fallback applied for action %s — parent_id is unresolved placeholder, falling back to focusPageID=%d", actions[i].ID, *focusPageID)
+				}
 				actions[i].Params = injectParentID(actions[i].Params, *focusPageID)
 			}
 		}
 	}
 
-	// 2. Topological sort
-	sorted, err := topoSort(actions)
+	// 1.6 Implicit dependency inference: scan each action's params for
+	// {{action:X.field}} placeholders and add X to the in-memory depends_on
+	// set if not already present. Only used for topo sort; the loaded
+	// model.PlanAction.DependsOn is left untouched for audit.
+	augmentedActions := make([]model.PlanAction, len(actions))
+	for i, a := range actions {
+		augmentedActions[i] = a
+		declared := parseDependsOn(string(a.DependsOn))
+		declaredSet := map[string]bool{}
+		for _, d := range declared {
+			declaredSet[d] = true
+		}
+		inferred := inferDependencies(string(a.Params))
+		added := false
+		for _, ref := range inferred {
+			if !declaredSet[ref] {
+				declared = append(declared, ref)
+				declaredSet[ref] = true
+				added = true
+			}
+		}
+		if added {
+			merged, _ := json.Marshal(declared)
+			augmentedActions[i].DependsOn = merged
+		}
+	}
+
+	// 2. Topological sort (using augmented depends_on; original loaded actions unchanged)
+	sorted, err := topoSort(augmentedActions)
 	if err != nil {
 		return nil, fmt.Errorf("topological sort: %w", err)
 	}
@@ -252,12 +291,15 @@ func parseDependsOn(dependsOn string) []string {
 // ---------------------------------------------------------------------------
 
 // replacePlaceholders replaces {{action:a1.page_id}} patterns in paramsJSON
-// with actual values from the actionResultMap.
+// with actual values from the actionResultMap. If any placeholder cannot
+// be resolved (referenced action not yet executed, or field missing from
+// the result), it returns an error naming every unresolved placeholder.
 func (e *ExecutionEngine) replacePlaceholders(paramsJSON string, actionResultMap map[string]any) (string, error) {
 	if !strings.Contains(paramsJSON, "{{action:") {
 		return paramsJSON, nil
 	}
 
+	var unresolved []string
 	result := placeholderPattern.ReplaceAllStringFunc(paramsJSON, func(match string) string {
 		subs := placeholderPattern.FindStringSubmatch(match)
 		if len(subs) < 3 {
@@ -268,16 +310,21 @@ func (e *ExecutionEngine) replacePlaceholders(paramsJSON string, actionResultMap
 
 		res, ok := actionResultMap[actionID]
 		if !ok {
-			return match // leave unresolved; will likely fail at execution
+			unresolved = append(unresolved, actionID+"."+field)
+			return match
 		}
 
 		val := resolveField(res, field)
 		if val == nil {
+			unresolved = append(unresolved, actionID+"."+field)
 			return match
 		}
 		return fmt.Sprintf("%v", val)
 	})
 
+	if len(unresolved) > 0 {
+		return "", fmt.Errorf("unresolved placeholders: %s", strings.Join(unresolved, ", "))
+	}
 	return result, nil
 }
 
@@ -1230,13 +1277,241 @@ func injectContentStatus(paramsJSON string, status string) string {
 }
 
 // hasParentID checks if the action params JSON contains a parent_id field.
+// A parent_id whose value is an unresolved {{action:...}} placeholder string
+// is treated as "no parent_id" so the focusPageID fallback can fire.
 func hasParentID(paramsJSON json.RawMessage) bool {
 	var p map[string]any
 	if err := json.Unmarshal(paramsJSON, &p); err != nil {
 		return false
 	}
-	_, ok := p["parent_id"]
-	return ok
+	v, ok := p["parent_id"]
+	if !ok {
+		return false
+	}
+	if s, isStr := v.(string); isStr && isPlaceholderString(s) {
+		return false
+	}
+	return true
+}
+
+// isPlaceholderString reports whether s looks like a {{action:...}} placeholder.
+func isPlaceholderString(s string) bool {
+	return strings.Contains(s, "{{action:")
+}
+
+// ---------------------------------------------------------------------------
+// Plan stage inference and limits
+// ---------------------------------------------------------------------------
+
+// Plan stage constants. Each plan is one stage; stages are mutually exclusive.
+const (
+	StageMain    = "main"
+	StageOutline = "outline"
+	StageContent = "content"
+)
+
+// Plan stage limits.
+const (
+	MaxMainStageCreatePages  = 1
+	MaxOutlineStageNodes     = 30
+	MaxContentStageMutations = 2
+)
+
+// planProposalLite is the minimal shape needed to infer a stage.
+// Mirrors a subset of the AI handler's proposal struct.
+type planProposalLite struct {
+	Actions []planActionLite
+	Outline json.RawMessage
+}
+
+type planActionLite struct {
+	Type       string
+	HasContent bool // create_page carrying non-empty content
+}
+
+// PlanProposalLite returns a new empty proposal for the handler to populate.
+func PlanProposalLite() *planProposalLite { return &planProposalLite{} }
+
+// PlanActionLite mirrors planActionLite for the handler to append.
+type PlanActionLite struct {
+	Type       string
+	HasContent bool
+}
+
+// InferPlanStage exposes inferPlanStage for the handler package. The
+// handler builds a planProposalLite, populates it, then calls this.
+func InferPlanStage(p *planProposalLite) (string, error) { return inferPlanStage(p) }
+
+// AppendAction appends an action to a plan proposal from outside the package.
+func (p *planProposalLite) AppendAction(t string, hasContent bool) {
+	p.Actions = append(p.Actions, planActionLite{Type: t, HasContent: hasContent})
+}
+
+// inferPlanStage classifies a propose_plan input into a stage and validates
+// the action counts per stage limits. Returns the stage name on success,
+// or an error describing which limit was violated.
+func inferPlanStage(p *planProposalLite) (string, error) {
+	hasOutline := len(p.Outline) > 0 && string(p.Outline) != "null" && !isEmptyJSONArray(p.Outline)
+	hasActions := len(p.Actions) > 0
+
+	if hasOutline && hasActions {
+		return "", fmt.Errorf("plan stage ambiguous: outline and actions are mutually exclusive; use one or the other")
+	}
+	if hasOutline {
+		count, err := countOutlineNodes(p.Outline)
+		if err != nil {
+			return "", fmt.Errorf("plan stage outline: parse: %w", err)
+		}
+		if count > MaxOutlineStageNodes {
+			return "", fmt.Errorf("plan stage outline: %d nodes exceeds limit %d; split into multiple plans", count, MaxOutlineStageNodes)
+		}
+		return StageOutline, nil
+	}
+	if !hasActions {
+		return "", fmt.Errorf("plan stage empty: neither outline nor actions provided")
+	}
+
+	// Actions-only: classify as main or content.
+	createCount := 0
+	contentCount := 0
+	for _, a := range p.Actions {
+		switch a.Type {
+		case "create_page":
+			createCount++
+		case "update_page", "patch_page", "link_pages", "move_page":
+			contentCount++
+		default:
+			return "", fmt.Errorf("plan stage: unknown action type %q", a.Type)
+		}
+	}
+
+	if createCount > 0 && contentCount > 0 {
+		return "", fmt.Errorf("plan stage ambiguous: create_page cannot be mixed with update/patch/link/move in one plan")
+	}
+	if createCount > 0 {
+		if createCount > MaxMainStageCreatePages {
+			return "", fmt.Errorf("plan stage main: %d create_page actions exceeds limit %d; split into multiple plans", createCount, MaxMainStageCreatePages)
+		}
+		// Validate create_page content policy: main stage allows content,
+		// but disallow create_page with content in what would be a content stage.
+		// (This is already handled above; main stage is the only stage where create_page is allowed.)
+		return StageMain, nil
+	}
+	// contentCount > 0
+	if createCount == 0 {
+		for _, a := range p.Actions {
+			if a.Type == "create_page" && a.HasContent {
+				return "", fmt.Errorf("plan stage content: create_page with content not allowed; use update_page instead")
+			}
+		}
+	}
+	if contentCount > MaxContentStageMutations {
+		return "", fmt.Errorf("plan stage content: %d mutations exceed limit %d; split into multiple plans", contentCount, MaxContentStageMutations)
+	}
+	return StageContent, nil
+}
+
+func isEmptyJSONArray(raw json.RawMessage) bool {
+	var arr []any
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return false
+	}
+	return len(arr) == 0
+}
+
+// countOutlineNodes walks an outline tree and returns the total leaf count.
+// Outline nodes are nested via "children" arrays.
+func countOutlineNodes(raw json.RawMessage) (int, error) {
+	var nodes []map[string]any
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, n := range nodes {
+		total += 1 // count this node
+		if children, ok := n["children"].([]any); ok {
+			childJSON, _ := json.Marshal(children)
+			childCount, err := countOutlineNodes(childJSON)
+			if err != nil {
+				return 0, err
+			}
+			total += childCount
+		}
+	}
+	return total, nil
+}
+
+// validatePersistedPlanStage re-validates stage rules for a plan loaded
+// from the database. Used at execution time to catch legacy plans that
+// predate the stage rules (per spec: Plan Stage Limits Enforced on
+// Existing Plans).
+func (e *ExecutionEngine) validatePersistedPlanStage(ctx context.Context, planID string, actions []model.PlanAction) error {
+	// Load outline from the plan row.
+	var outlineRaw sql.NullString
+	err := e.db.QueryRowContext(ctx, `SELECT outline FROM plans WHERE id = ?`, planID).Scan(&outlineRaw)
+	if err != nil {
+		return fmt.Errorf("load plan outline for stage validation: %w", err)
+	}
+
+	lite := &planProposalLite{}
+	if outlineRaw.Valid && outlineRaw.String != "" {
+		lite.Outline = json.RawMessage(outlineRaw.String)
+	}
+	for _, a := range actions {
+		hasContent := false
+		if a.Type == "create_page" {
+			var p map[string]any
+			if json.Unmarshal(a.Params, &p) == nil {
+				if c, ok := p["content"].(string); ok && c != "" {
+					hasContent = true
+				}
+			}
+		}
+		lite.Actions = append(lite.Actions, planActionLite{Type: a.Type, HasContent: hasContent})
+	}
+
+	if _, err := inferPlanStage(lite); err != nil {
+		return fmt.Errorf("persisted plan %q violates stage rules: %w", planID, err)
+	}
+	return nil
+}
+
+// inferDependencies scans a params JSON for {{action:X.field}} placeholders
+// and returns the set of referenced action IDs. Order is not significant.
+// Returns nil if no placeholders are present.
+func inferDependencies(paramsJSON string) []string {
+	if !strings.Contains(paramsJSON, "{{action:") {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	matches := placeholderPattern.FindAllStringSubmatch(paramsJSON, -1)
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		id := m[1]
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// hasPlaceholderParentID checks if the action params JSON contains a
+// parent_id field whose value is an unresolved {{action:...}} placeholder.
+func hasPlaceholderParentID(paramsJSON json.RawMessage) bool {
+	var p map[string]any
+	if err := json.Unmarshal(paramsJSON, &p); err != nil {
+		return false
+	}
+	v, ok := p["parent_id"]
+	if !ok {
+		return false
+	}
+	s, isStr := v.(string)
+	return isStr && isPlaceholderString(s)
 }
 
 // injectParentID adds parent_id to the action params JSON.

@@ -320,10 +320,14 @@ func (h *PlanHandler) SavePlan(ctx context.Context, p *model.Plan) error {
 	}()
 
 	// Insert plan
+	stage := p.Stage
+	if stage == "" {
+		stage = "main"
+	}
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO plans (id, conversation_id, reasoning, status, outline, phase_index, total_phases, focus_page_id, calibration_question, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.ConversationID, p.Reasoning, p.Status, p.Outline, p.PhaseIndex, p.TotalPhases, p.FocusPageID, p.CalibrationQuestion, p.CreatedAt)
+		`INSERT INTO plans (id, conversation_id, reasoning, status, outline, phase_index, total_phases, focus_page_id, calibration_question, created_at, stage)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.ConversationID, p.Reasoning, p.Status, p.Outline, p.PhaseIndex, p.TotalPhases, p.FocusPageID, p.CalibrationQuestion, p.CreatedAt, stage)
 	if err != nil {
 		return err
 	}

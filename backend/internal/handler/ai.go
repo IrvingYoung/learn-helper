@@ -987,6 +987,30 @@ parsed:
 		proposal.Outline = nil
 	}
 
+	// Stage inference + validation. Build a lite proposal that the engine
+	// can classify. On failure, return early so the AI sees the error
+	// and can reformulate (rather than persisting a malformed plan).
+	lite := engine.PlanProposalLite()
+	lite.Outline = proposal.Outline
+	for _, a := range proposal.Actions {
+		hasContent := false
+		switch a.Type {
+		case "create_page":
+			if len(a.CreatePageParams) > 0 {
+				if c, ok := a.CreatePageParams["content"].(string); ok && c != "" {
+					hasContent = true
+				}
+			} else if c, ok := a.Params["content"].(string); ok && c != "" {
+				hasContent = true
+			}
+		}
+		lite.AppendAction(a.Type, hasContent)
+	}
+	stage, err := engine.InferPlanStage(lite)
+	if err != nil {
+		return nil, fmt.Errorf("plan stage validation: %w", err)
+	}
+
 	plan := &model.Plan{
 		ID:                  planID,
 		ConversationID:      &conversationID,
@@ -998,6 +1022,7 @@ parsed:
 		FocusPageID:         focusPageID,
 		CalibrationQuestion: proposal.CalibrationQuestion,
 		CreatedAt:           now,
+		Stage:               stage,
 	}
 
 	for i, a := range proposal.Actions {

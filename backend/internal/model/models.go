@@ -76,18 +76,19 @@ type Message struct {
 }
 
 type Plan struct {
-	ID                 string          `json:"id"`
-	ConversationID     *int64          `json:"conversation_id,omitempty"`
-	Reasoning          string          `json:"reasoning"`
-	Status             string          `json:"status"`
-	Outline            json.RawMessage `json:"outline,omitempty"`
-	PhaseIndex         *int64          `json:"phase_index,omitempty"`
-	TotalPhases        *int64          `json:"total_phases,omitempty"`
-	Actions            []PlanAction    `json:"actions,omitempty"`
-	CreatedAt          string          `json:"created_at"`
-	ExecutedAt         *string         `json:"executed_at,omitempty"`
-	FocusPageID        *int64          `json:"focus_page_id,omitempty"`
+	ID                  string          `json:"id"`
+	ConversationID      *int64          `json:"conversation_id,omitempty"`
+	Reasoning           string          `json:"reasoning"`
+	Status              string          `json:"status"`
+	Outline             json.RawMessage `json:"outline,omitempty"`
+	PhaseIndex          *int64          `json:"phase_index,omitempty"`
+	TotalPhases         *int64          `json:"total_phases,omitempty"`
+	Actions             []PlanAction    `json:"actions,omitempty"`
+	CreatedAt           string          `json:"created_at"`
+	ExecutedAt          *string         `json:"executed_at,omitempty"`
+	FocusPageID         *int64          `json:"focus_page_id,omitempty"`
 	CalibrationQuestion json.RawMessage `json:"calibration_question,omitempty"`
+	Stage               string          `json:"stage,omitempty"`
 }
 
 type PlanAction struct {
