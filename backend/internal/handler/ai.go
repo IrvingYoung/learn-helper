@@ -31,8 +31,10 @@ type AIHandler struct {
 
 func NewAIHandler(db *sql.DB) *AIHandler {
 	return &AIHandler{
-		db:      db,
-		queries: model.New(db),
+		db:          db,
+		queries:     model.New(db),
+		permissions: NewPermissionRegistry(),
+		askUsers:    NewAskUserRegistry(),
 	}
 }
 
