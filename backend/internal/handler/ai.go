@@ -23,8 +23,10 @@ import (
 )
 
 type AIHandler struct {
-	db      *sql.DB
-	queries *model.Queries
+	db          *sql.DB
+	queries     *model.Queries
+	permissions *PermissionRegistry
+	askUsers    *AskUserRegistry
 }
 
 func NewAIHandler(db *sql.DB) *AIHandler {
