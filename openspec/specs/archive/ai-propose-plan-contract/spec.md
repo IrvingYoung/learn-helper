@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-06-02** — superseded by the plan tool redesign. See `docs/superpowers/specs/2026-06-02-plan-tool-redesign-design.md`.
+
 # Spec: ai-propose-plan-contract
 
 `wiki_maintainer` AI 调用 `propose_plan` 时的行为契约——通过 system prompt 强制约束 AI 走"建主页 → outline 建空子页 → 逐页填内容"三阶段流程，避免一次性提交大量 action 绕过设计。

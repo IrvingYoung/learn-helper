@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-06-02** — superseded by the plan tool redesign. See `docs/superpowers/specs/2026-06-02-plan-tool-redesign-design.md`.
+
 # Spec: plan-execution-semantics
 
 plan 执行时的语义约束——engine 层防御逻辑，确保任何 propose_plan 提交后不会产生脏数据。
