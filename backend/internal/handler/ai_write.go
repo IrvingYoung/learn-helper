@@ -70,3 +70,44 @@ func numberField(m map[string]any, key string) (float64, bool) {
 	f, ok := v.(float64)
 	return f, ok
 }
+
+// previewWrite produces a human-readable summary of a write op for the permission queue UI.
+func previewWrite(tool string, in map[string]any) string {
+	id := intField(in, "page_id")
+	switch tool {
+	case "create_page":
+		title, _ := in["title"].(string)
+		pid := intField(in, "parent_id")
+		if pid != 0 {
+			return fmt.Sprintf("在父页 %d 下创建页面「%s」", pid, title)
+		}
+		return fmt.Sprintf("创建顶级页面「%s」", title)
+	case "update_page":
+		return fmt.Sprintf("更新页面 %d", id)
+	case "patch_page":
+		return fmt.Sprintf("增量编辑页面 %d", id)
+	case "delete_page":
+		return fmt.Sprintf("删除页面 %d", id)
+	case "link_pages":
+		s := intField(in, "source_page_id")
+		t := intField(in, "target_page_id")
+		return fmt.Sprintf("在页面 %d 添加指向 %d 的链接", s, t)
+	case "move_page":
+		np := intField(in, "new_parent_id")
+		return fmt.Sprintf("把页面 %d 移到父页 %d 下", id, np)
+	default:
+		return fmt.Sprintf("%s: %v", tool, in)
+	}
+}
+
+func intField(m map[string]any, key string) int64 {
+	v, ok := m[key]
+	if !ok {
+		return 0
+	}
+	f, ok := v.(float64)
+	if !ok {
+		return 0
+	}
+	return int64(f)
+}
