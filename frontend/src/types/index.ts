@@ -64,51 +64,6 @@ export type PlanStatus = 'pending' | 'confirmed' | 'executing' | 'completed' | '
 export type ActionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 export type ActionType = 'create_page' | 'update_page' | 'delete_page' | 'link_pages' | 'move_page';
 
-export interface PlanAction {
-  id: string;
-  plan_id: string;
-  type: ActionType;
-  params: Record<string, unknown>;
-  depends_on: string[];
-  status: ActionStatus;
-  result?: string;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface OutlineNode {
-  id?: string;
-  title: string;
-  page_type: 'entity' | 'concept' | 'overview';
-  children?: OutlineNode[];
-}
-
-export interface Phase {
-  title: string;
-  description: string;
-}
-
-export interface CalibrationQuestion {
-  question: string;
-  options?: string[];
-}
-
-export interface Plan {
-  id: string;
-  conversation_id: number;
-  reasoning: string;
-  status: PlanStatus;
-  outline?: OutlineNode[];
-  phases?: Phase[];
-  phase_index?: number;
-  total_phases?: number;
-  calibration_question?: CalibrationQuestion;
-  focus_page_id?: number | null;
-  actions: PlanAction[];
-  created_at: string;
-  executed_at?: string;
-}
-
 export interface ExecutionReport {
   plan_id: string;
   status: PlanStatus;
@@ -120,4 +75,39 @@ export interface ExecutionReport {
     result?: Record<string, unknown>;
     error?: string;
   }[];
+}
+
+export interface PermissionRequestItem {
+  id: string;
+  tool: string;
+  input: Record<string, any>;
+  preview: string;
+}
+
+export interface PermissionRequestEvent {
+  request_id: string;
+  conversation_id: number;
+  items: PermissionRequestItem[];
+}
+
+export interface AskUserContext {
+  kind: "outline" | "page" | "markdown" | "diff";
+  data: any;
+}
+
+export interface AskUserRequestEvent {
+  request_id: string;
+  conversation_id: number;
+  question: string;
+  options: string[];
+  context?: AskUserContext;
+  multi_select: boolean;
+  allow_free_text: boolean;
+  header?: string;
+}
+
+export interface PermissionDecisionInput {
+  id: string;
+  action: "approve" | "reject" | "edit";
+  edited_input?: Record<string, any>;
 }
