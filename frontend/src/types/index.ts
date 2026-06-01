@@ -92,6 +92,15 @@ export interface PermissionRequestEvent {
 
 export interface AskUserContext {
   kind: "outline" | "page" | "markdown" | "diff";
+  /**
+   * Shape of `data` depends on `kind`:
+   * - "outline": OutlineNode[] — recursive tree of {id?, title, page_type?, children?}
+   * - "markdown": string — raw markdown
+   * - "diff":    DiffEntry[] — array of {page_id, before, after, label?}
+   * - "page":    { page_id: number; title?: string; content?: string }
+   *              The LLM provides `content` directly (taken from its prior
+   *              read_page tool call) so the frontend never needs to fetch.
+   */
   data: any;
 }
 

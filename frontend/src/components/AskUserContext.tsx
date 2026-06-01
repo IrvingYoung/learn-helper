@@ -76,20 +76,18 @@ function DiffView({ diffs }: { diffs: DiffEntry[] }) {
   );
 }
 
-function PagePreview({ pageId }: { pageId: number }) {
-  // Lazy fetch: simple SWR-style. For single-user, a useEffect is fine.
-  const [content, setContent] = useState<string | null>(null);
-  if (content === null) {
-    fetch(`/api/pages/${pageId}`)
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((p: any) => setContent(p.content ?? ""))
-      .catch(() => setContent("(加载失败)"));
+function PagePreview({ data }: { data: { page_id: number; title?: string; content?: string } }) {
+  if (data.content) {
+    return (
+      <div className="text-sm">
+        {data.title && <h3 className="font-medium text-th-text-primary mb-2">{data.title}</h3>}
+        <MarkdownContent content={data.content.slice(0, 500) + (data.content.length > 500 ? "..." : "")} />
+      </div>
+    );
   }
   return (
-    <div className="text-sm">
-      {content === null ? <span className="text-th-text-muted">加载中...</span> : (
-        <MarkdownContent content={content.slice(0, 500) + (content.length > 500 ? "..." : "")} />
-      )}
+    <div className="text-sm text-th-text-muted italic">
+      (page content not provided — the LLM should call read_page before ask_user with page context)
     </div>
   );
 }
@@ -103,7 +101,7 @@ export function AskUserContextView({ context }: Props) {
     case "diff":
       return <DiffView diffs={context.data as DiffEntry[]} />;
     case "page":
-      return <PagePreview pageId={(context.data as { page_id: number }).page_id} />;
+      return <PagePreview data={context.data as { page_id: number; title?: string; content?: string }} />;
     default:
       return <pre className="text-xs">{JSON.stringify(context, null, 2)}</pre>;
   }
