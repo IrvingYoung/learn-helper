@@ -422,7 +422,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	if req.CurrentSlug != "" {
 		focusID = nil
 	}
-	wikiContext := h.buildWikiContext(ctx, focusID)
+	wikiContext := buildKnowledgeMap(ctx, &wikiContextDBAdapter{q: h.queries}, focusID)
 	if req.CurrentSlug != "" {
 		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
 		if err == nil {
@@ -687,201 +687,44 @@ func (h *AIHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 // --- Helpers ---
 
-func (h *AIHandler) renderTreeContext(pages []model.GetWikiPageTreeRow, header string) string {
-	if len(pages) == 0 {
-		return ""
-	}
-
-	type node struct {
-		page     model.GetWikiPageTreeRow
-		children []int64
-	}
-	nodeMap := make(map[int64]*node)
-	var roots []int64
-
-	for i := range pages {
-		p := pages[i]
-		nodeMap[p.ID] = &node{page: p}
-	}
-	for i := range pages {
-		p := pages[i]
-		if !p.ParentID.Valid || p.ParentID.Int64 == 0 {
-			roots = append(roots, p.ID)
-		} else if parent, ok := nodeMap[p.ParentID.Int64]; ok {
-			parent.children = append(parent.children, p.ID)
-		}
-	}
-
-	var b strings.Builder
-	if header != "" {
-		b.WriteString(fmt.Sprintf("【%s】的子页面:\n", header))
-	}
-	var render func(ids []int64, indent string)
-	render = func(ids []int64, indent string) {
-		for _, id := range ids {
-			n := nodeMap[id]
-			status := "空"
-			if n.page.ContentStatus == "published" {
-				status = "有内容"
-			}
-			b.WriteString(fmt.Sprintf("%s- [ID=%d] %s (%s)\n", indent, n.page.ID, n.page.Title, status))
-			if len(n.children) > 0 {
-				render(n.children, indent+"  ")
-			}
-		}
-	}
-	render(roots, "")
-	return b.String()
+// wikiContextDBAdapter wraps *model.Queries to satisfy the handler.KnowledgeMapDB
+// composite interface. The only missing method is GetPageContentForFallback,
+// which the renderer uses when a page summary is pending/failed/empty.
+// The adapter delegates to GetWikiPageByID and returns the page's Content field.
+type wikiContextDBAdapter struct {
+	q *model.Queries
 }
 
-func (h *AIHandler) buildWikiContext(ctx context.Context, focusPageID *int64) string {
-	var b strings.Builder
+// Methods forwarded from *model.Queries (explicitly listed so a future change
+// to the query file does not silently remove coverage).
+func (a *wikiContextDBAdapter) CountWikiPages(ctx context.Context) (int64, error) {
+	return a.q.CountWikiPages(ctx)
+}
 
-	// --- Knowledge base overview ---
-	totalCount, _ := h.queries.CountWikiPages(ctx)
-	publishedCount, _ := h.queries.CountWikiPagesByStatus(ctx, "published")
-	draftCount, _ := h.queries.CountWikiPagesByStatus(ctx, "draft")
-	filledCount := publishedCount + draftCount
-	emptyCount := totalCount - filledCount
+func (a *wikiContextDBAdapter) CountWikiPagesByStatus(ctx context.Context, status string) (int64, error) {
+	return a.q.CountWikiPagesByStatus(ctx, status)
+}
 
-	b.WriteString("【知识库概览】\n")
-	b.WriteString(fmt.Sprintf("总页面数: %d\n", totalCount))
-	if totalCount > 0 {
-		pct := float64(filledCount) / float64(totalCount) * 100
-		b.WriteString(fmt.Sprintf("已填充页面: %d (%.0f%%)\n", filledCount, pct))
-		b.WriteString(fmt.Sprintf("空页面: %d (%.0f%%)\n", emptyCount, 100-pct))
-	} else {
-		b.WriteString("已填充页面: 0\n")
-		b.WriteString("空页面: 0\n")
+func (a *wikiContextDBAdapter) GetRecentlyUpdatedWikiPages(ctx context.Context) ([]model.GetRecentlyUpdatedWikiPagesRow, error) {
+	return a.q.GetRecentlyUpdatedWikiPages(ctx)
+}
+
+func (a *wikiContextDBAdapter) GetWikiPageTree(ctx context.Context) ([]model.GetWikiPageTreeRow, error) {
+	return a.q.GetWikiPageTree(ctx)
+}
+
+func (a *wikiContextDBAdapter) GetRecentWikiLog(ctx context.Context, arg model.GetRecentWikiLogParams) ([]model.WikiLog, error) {
+	return a.q.GetRecentWikiLog(ctx, arg)
+}
+
+// GetPageContentForFallback returns the raw page content for use as a summary
+// fallback when the persisted summary is pending/failed/empty.
+func (a *wikiContextDBAdapter) GetPageContentForFallback(ctx context.Context, pageID int64) (string, error) {
+	page, err := a.q.GetWikiPageByID(ctx, pageID)
+	if err != nil {
+		return "", err
 	}
-
-	// Most recently updated page
-	recentPages, _ := h.queries.GetRecentlyUpdatedWikiPages(ctx)
-	if len(recentPages) > 0 {
-		b.WriteString(fmt.Sprintf("最近更新: %s\n", recentPages[0].Title))
-	}
-	b.WriteString("\n")
-
-	// --- Tree rendering (existing behavior) ---
-	if focusPageID != nil {
-		// Subtree mode: only load the target page and its descendants
-		parentPage, err := h.queries.GetWikiPageByID(ctx, *focusPageID)
-		if err != nil {
-			return fmt.Sprintf("（未找到目标页面 ID=%d）", *focusPageID)
-		}
-		pages, err := h.queries.GetSubtreePages(ctx, sql.NullString{String: parentPage.Path, Valid: true})
-		if err != nil || len(pages) == 0 {
-			return fmt.Sprintf("（页面「%s」下没有子节点）", parentPage.Title)
-		}
-		// Convert to GetWikiPageTreeRow for the render helper (identical fields)
-		treeRows := make([]model.GetWikiPageTreeRow, len(pages))
-		for i, p := range pages {
-			treeRows[i] = model.GetWikiPageTreeRow{
-				ID:            p.ID,
-				Title:         p.Title,
-				Slug:          p.Slug,
-				PageType:      p.PageType,
-				ContentStatus: p.ContentStatus,
-				ParentID:      p.ParentID,
-				SortOrder:     p.SortOrder,
-				Path:          p.Path,
-			}
-		}
-		b.WriteString(h.renderTreeContext(treeRows, parentPage.Title))
-	} else {
-		// Existing full-tree behavior
-		pages, err := h.queries.GetWikiPageTree(ctx)
-		if err != nil || len(pages) == 0 {
-			return "（知识库为空）"
-		}
-		b.WriteString(h.renderTreeContext(pages, ""))
-	}
-
-	// --- Focus page context ---
-	if focusPageID != nil {
-		page, err := h.queries.GetWikiPageByID(ctx, *focusPageID)
-		if err == nil {
-			b.WriteString("\n【焦点页面详情】\n")
-			b.WriteString(fmt.Sprintf("标题: %s (ID=%d)\n", page.Title, page.ID))
-
-			// Resolve links (outgoing)
-			var linkIDs []int64
-			if page.Links != "" && page.Links != "[]" {
-				if err := json.Unmarshal([]byte(page.Links), &linkIDs); err == nil && len(linkIDs) > 0 {
-					b.WriteString("链接到:\n")
-					for _, lid := range linkIDs {
-						linkedPage, err := h.queries.GetWikiPageByID(ctx, lid)
-						if err == nil {
-							b.WriteString(fmt.Sprintf("  - [ID=%d] %s\n", linkedPage.ID, linkedPage.Title))
-						} else {
-							b.WriteString(fmt.Sprintf("  - [ID=%d] (未找到)\n", lid))
-						}
-					}
-				}
-			}
-
-			// Resolve backlinks (incoming)
-			var backlinkIDs []int64
-			if page.Backlinks != "" && page.Backlinks != "[]" {
-				if err := json.Unmarshal([]byte(page.Backlinks), &backlinkIDs); err == nil && len(backlinkIDs) > 0 {
-					b.WriteString("被链接自:\n")
-					for _, bid := range backlinkIDs {
-						backPage, err := h.queries.GetWikiPageByID(ctx, bid)
-						if err == nil {
-							b.WriteString(fmt.Sprintf("  - [ID=%d] %s\n", backPage.ID, backPage.Title))
-						} else {
-							b.WriteString(fmt.Sprintf("  - [ID=%d] (未找到)\n", bid))
-						}
-					}
-				}
-			}
-
-			// Child pages with content status
-			children, err := h.queries.GetWikiPageChildren(ctx, sql.NullInt64{Int64: *focusPageID, Valid: true})
-			if err == nil && len(children) > 0 {
-				b.WriteString("子页面:\n")
-				for _, c := range children {
-					status := "空"
-					if c.ContentStatus == "published" || c.ContentStatus == "draft" {
-						status = "有内容"
-					}
-					b.WriteString(fmt.Sprintf("  - [ID=%d] %s (%s)\n", c.ID, c.Title, status))
-				}
-			}
-		}
-	}
-
-	// --- Knowledge gaps ---
-	emptyPages, _ := h.queries.GetEmptyWikiPages(ctx)
-	if len(emptyPages) > 0 {
-		b.WriteString("\n【知识缺口】\n")
-		limit := 5
-		if len(emptyPages) < limit {
-			limit = len(emptyPages)
-		}
-		b.WriteString(fmt.Sprintf("空页面 (前 %d 个):\n", limit))
-		for i := 0; i < limit; i++ {
-			b.WriteString(fmt.Sprintf("  - [ID=%d] %s\n", emptyPages[i].ID, emptyPages[i].Title))
-		}
-		if len(emptyPages) > 5 {
-			b.WriteString(fmt.Sprintf("  ... 还有 %d 个空页面\n", len(emptyPages)-5))
-		}
-	}
-
-	// Count pages with no links
-	var noLinksCount int64
-	rows, err := h.db.QueryContext(ctx, `SELECT COUNT(*) FROM wiki_pages WHERE COALESCE(links, '[]') = '[]'`)
-	if err == nil {
-		if rows.Next() {
-			rows.Scan(&noLinksCount)
-		}
-		rows.Close()
-	}
-	if noLinksCount > 0 {
-		b.WriteString(fmt.Sprintf("无链接页面数: %d\n", noLinksCount))
-	}
-
-	return b.String()
+	return page.Content, nil
 }
 
 // createPlanFromToolCall creates a Plan from a propose_plan tool call input.
@@ -1178,7 +1021,7 @@ func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) strin
 	})
 
 	// Build subtree context for this page
-	subtreeContext := h.buildWikiContext(ctx, &page.ID)
+	subtreeContext := buildKnowledgeMap(ctx, &wikiContextDBAdapter{q: h.queries}, &page.ID)
 
 	return fmt.Sprintf(
 		"[系统] 工具 lookup_page 已执行完毕，查询「%s」结果：%s\n\n%s",

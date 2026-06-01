@@ -205,3 +205,33 @@ func TestRenderKnowledgeGaps_GroupedByCategory(t *testing.T) {
 		t.Error("expected Go 语言 to appear before 算法")
 	}
 }
+
+type fullMockDB struct {
+	*fakeOverviewDB
+	*fakeTreeDB
+	*fakeLogDB
+}
+
+func TestBuildKnowledgeMap_Integration(t *testing.T) {
+	db := &fullMockDB{
+		fakeOverviewDB: &fakeOverviewDB{pages: []model.WikiPage{
+			{ID: 1, Title: "Go", ContentStatus: "published"},
+			{ID: 2, Title: "channel", ContentStatus: "empty"},
+		}},
+		fakeTreeDB: &fakeTreeDB{pages: []model.GetWikiPageTreeRow{
+			{ID: 1, Title: "Go", PageType: "overview", ContentStatus: "published", Path: "1/", Summary: "Go 入门", SummaryStatus: "ready"},
+			{ID: 2, Title: "channel", PageType: "entity", ContentStatus: "empty", ParentID: sql.NullInt64{Int64: 1, Valid: true}, Path: "1/2/", SummaryStatus: "empty"},
+		}},
+		fakeLogDB: &fakeLogDB{entries: []model.WikiLog{
+			{ID: 1, Action: "create", PageTitle: "Go", CreatedAt: time.Now(), PageID: sql.NullInt64{Int64: 1, Valid: true}},
+		}},
+	}
+
+	out := buildKnowledgeMap(context.Background(), db, nil)
+	// Should contain all sections
+	for _, section := range []string{"【知识库概览】", "【知识地图】", "【最近活动】", "【结构健康检查】", "【知识缺口】"} {
+		if !strings.Contains(out, section) {
+			t.Errorf("missing section: %s", section)
+		}
+	}
+}

@@ -45,8 +45,8 @@ func pct(num, denom int64) float64 {
 	return float64(num) / float64(denom) * 100
 }
 
-// KnowledgeMapDB is the minimal interface for rendering the knowledge map.
-type KnowledgeMapDB interface {
+// KnowledgeMapTreeDB is the minimal interface for rendering the knowledge map.
+type KnowledgeMapTreeDB interface {
 	GetWikiPageTree(ctx context.Context) ([]model.GetWikiPageTreeRow, error)
 	// For fallback when summary is pending, we may need to fetch content.
 	// Optional: if not implemented, fallback shows "(content unavailable)".
@@ -55,7 +55,7 @@ type KnowledgeMapDB interface {
 
 // renderKnowledgeMap builds the categorized tree with per-page summaries.
 // focusPageID, if set, only renders the subtree (existing behavior).
-func renderKnowledgeMap(ctx context.Context, db KnowledgeMapDB, focusPageID *int64) string {
+func renderKnowledgeMap(ctx context.Context, db KnowledgeMapTreeDB, focusPageID *int64) string {
 	var b strings.Builder
 	b.WriteString("【知识地图】\n\n")
 
@@ -104,7 +104,7 @@ func renderKnowledgeMap(ctx context.Context, db KnowledgeMapDB, focusPageID *int
 	return b.String()
 }
 
-func renderNodeWithChildren(ctx context.Context, b *strings.Builder, db KnowledgeMapDB, node model.GetWikiPageTreeRow, children map[int64][]model.GetWikiPageTreeRow, depth int) {
+func renderNodeWithChildren(ctx context.Context, b *strings.Builder, db KnowledgeMapTreeDB, node model.GetWikiPageTreeRow, children map[int64][]model.GetWikiPageTreeRow, depth int) {
 	indent := strings.Repeat("  ", depth)
 	icon := "📄"
 	if node.PageType == "overview" {
@@ -168,7 +168,7 @@ func collectDescendants(root model.GetWikiPageTreeRow, children map[int64][]mode
 }
 
 // renderSummaryLine returns the summary for a page, with fallback handling.
-func renderSummaryLine(ctx context.Context, db KnowledgeMapDB, node model.GetWikiPageTreeRow) string {
+func renderSummaryLine(ctx context.Context, db KnowledgeMapTreeDB, node model.GetWikiPageTreeRow) string {
 	status := node.SummaryStatus
 
 	switch status {
@@ -206,7 +206,7 @@ func truncateForDisplay(s string, max int) string {
 }
 
 // renderTagIndex builds the global tag summary.
-func renderTagIndex(ctx context.Context, db KnowledgeMapDB) string {
+func renderTagIndex(ctx context.Context, db KnowledgeMapTreeDB) string {
 	pages, _ := db.GetWikiPageTree(ctx)
 	tagCounts := make(map[string]int)
 	for _, p := range pages {
@@ -455,4 +455,25 @@ func findTopLevel(p model.GetWikiPageTreeRow, all []model.GetWikiPageTreeRow, to
 		}
 	}
 	return 0, false
+}
+
+// KnowledgeMapDB is the composite interface for buildKnowledgeMap.
+// It must satisfy all the sub-renderer interfaces.
+type KnowledgeMapDB interface {
+	OverviewDB
+	KnowledgeMapTreeDB
+	RecentLogDB
+	HealthDB
+	GapsDB
+}
+
+// buildKnowledgeMap orchestrates the 5 sections of the new context.
+func buildKnowledgeMap(ctx context.Context, db KnowledgeMapDB, focusPageID *int64) string {
+	var b strings.Builder
+	b.WriteString(renderOverview(ctx, db))
+	b.WriteString(renderKnowledgeMap(ctx, db, focusPageID))
+	b.WriteString(renderRecentLog(ctx, db, 7*24*time.Hour, 20))
+	b.WriteString(renderHealthCheck(ctx, db))
+	b.WriteString(renderKnowledgeGaps(ctx, db))
+	return b.String()
 }
