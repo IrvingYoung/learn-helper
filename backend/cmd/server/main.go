@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -159,7 +160,7 @@ CREATE TABLE IF NOT EXISTS plans (
 CREATE TABLE IF NOT EXISTS plan_actions (
     id TEXT PRIMARY KEY,
     plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK(type IN ('create_page', 'update_page', 'delete_page', 'link_pages', 'move_page')),
+    type TEXT NOT NULL CHECK(type IN ('create_page', 'update_page', 'patch_page', 'delete_page', 'link_pages', 'move_page')),
     params TEXT NOT NULL,
     depends_on TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
@@ -242,6 +243,23 @@ func main() {
 	)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_log_created_at ON wiki_log(created_at DESC)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_log_page_id ON wiki_log(page_id)`)
+
+	// Migrate 010: allow 'patch_page' action type in plan_actions.
+	// AI was upgraded to use patch_page for targeted edits, but the CHECK
+	// constraint on plan_actions.type was never updated. SQLite has no
+	// ALTER CONSTRAINT, so we recreate the table. Idempotent: skips if
+	// the constraint already includes patch_page.
+	var planActionsSQL string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='plan_actions'`).Scan(&planActionsSQL); err == nil {
+		if !strings.Contains(planActionsSQL, "patch_page") {
+			log.Println("Migrating plan_actions to allow patch_page action type...")
+			if err := recreatePlanActionsForPatchPage(db); err != nil {
+				log.Printf("WARN: plan_actions migration failed: %v", err)
+			} else {
+				log.Println("plan_actions migrated to allow patch_page")
+			}
+		}
+	}
 
 	// Migrate: update legacy claude provider to opencode
 	db.Exec(`UPDATE ai_configs SET provider = 'opencode', model_name = 'deepseek-v4-pro' WHERE provider = 'claude'`)
@@ -404,4 +422,69 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// recreatePlanActionsForPatchPage rebuilds plan_actions with the CHECK constraint
+// updated to allow 'patch_page'. Uses a single connection + transaction so all
+// steps succeed atomically or roll back together.
+func recreatePlanActionsForPatchPage(db *sql.DB) error {
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// foreign_keys PRAGMA cannot be set inside a transaction, and the rename
+	// can briefly leave the FK in a state SQLite doesn't like. Keep it on the
+	// same connection so it reverts cleanly.
+	if _, err := conn.ExecContext(context.Background(), `PRAGMA foreign_keys=OFF`); err != nil {
+		return err
+	}
+	defer conn.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
+
+	tx, err := conn.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	steps := []string{
+		`CREATE TABLE plan_actions_new (
+			id TEXT PRIMARY KEY,
+			plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+			type TEXT NOT NULL CHECK(type IN ('create_page', 'update_page', 'patch_page', 'delete_page', 'link_pages', 'move_page')),
+			params TEXT NOT NULL,
+			depends_on TEXT NOT NULL DEFAULT '[]',
+			status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+			result TEXT,
+			sort_order INTEGER NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`INSERT INTO plan_actions_new SELECT * FROM plan_actions`,
+		`DROP TABLE plan_actions`,
+		`ALTER TABLE plan_actions_new RENAME TO plan_actions`,
+		`CREATE INDEX IF NOT EXISTS idx_plan_actions_plan ON plan_actions(plan_id)`,
+	}
+	for _, s := range steps {
+		if _, err := tx.ExecContext(context.Background(), s); err != nil {
+			return fmt.Errorf("step %q: %w", firstLine(s), err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
 }
