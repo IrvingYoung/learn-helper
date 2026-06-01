@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"learn-helper/internal/model"
 )
@@ -248,4 +249,33 @@ func renderTagIndex(ctx context.Context, db KnowledgeMapDB) string {
 	}
 	b.WriteString("\n")
 	return b.String()
+}
+
+// RecentLogDB is the minimal interface for log queries.
+type RecentLogDB interface {
+	GetRecentWikiLog(ctx context.Context, arg model.GetRecentWikiLogParams) ([]model.WikiLog, error)
+}
+
+// renderRecentLog builds the "recent activity" timeline.
+func renderRecentLog(ctx context.Context, db RecentLogDB, window time.Duration, limit int) string {
+	since := time.Now().Add(-window)
+	entries, err := db.GetRecentWikiLog(ctx, model.GetRecentWikiLogParams{CreatedAt: since, Limit: int64(limit)})
+	if err != nil || len(entries) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("【最近活动】(过去 %s，共 %d 条操作)\n", window, len(entries)))
+	for _, e := range entries {
+		ts := e.CreatedAt.Format("2006-01-02 15:04")
+		line := fmt.Sprintf("  - %s [%s] %s", ts, e.Action, e.PageTitle)
+		if e.PageID.Valid {
+			line += fmt.Sprintf(" (ID=%d)", e.PageID.Int64)
+		}
+		if e.Summary.Valid && e.Summary.String != "" {
+			line += " · " + e.Summary.String
+		}
+		b.WriteString(line + "\n")
+	}
+	return b.String() + "\n"
 }

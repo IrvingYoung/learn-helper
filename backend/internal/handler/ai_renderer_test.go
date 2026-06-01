@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"learn-helper/internal/model"
 )
@@ -124,5 +125,41 @@ func TestRenderKnowledgeMap_PendingSummaryFallback(t *testing.T) {
 	out := renderKnowledgeMap(context.Background(), &fakeTreeDB{pages: tree}, nil)
 	if !strings.Contains(out, "摘要待更新") {
 		t.Errorf("expected 摘要待更新 fallback, got: %s", out)
+	}
+}
+
+type fakeLogDB struct {
+	entries []model.WikiLog
+}
+
+func (f *fakeLogDB) GetRecentWikiLog(ctx context.Context, arg model.GetRecentWikiLogParams) ([]model.WikiLog, error) {
+	return f.entries, nil
+}
+
+func TestRenderRecentLog_Empty(t *testing.T) {
+	db := &fakeLogDB{}
+	out := renderRecentLog(context.Background(), db, 7*24*time.Hour, 20)
+	if out != "" {
+		t.Errorf("expected empty output for empty log, got: %s", out)
+	}
+}
+
+func TestRenderRecentLog_WithEntries(t *testing.T) {
+	now := time.Now()
+	db := &fakeLogDB{
+		entries: []model.WikiLog{
+			{ID: 1, Action: "create", PageTitle: "Go 语言", PageID: sql.NullInt64{Int64: 2, Valid: true}, CreatedAt: now.Add(-1 * time.Hour), Summary: sql.NullString{String: "新建主分类", Valid: true}},
+			{ID: 2, Action: "update", PageTitle: "channel", PageID: sql.NullInt64{Int64: 3, Valid: true}, CreatedAt: now.Add(-2 * time.Hour), Summary: sql.NullString{}},
+		},
+	}
+	out := renderRecentLog(context.Background(), db, 7*24*time.Hour, 20)
+	if !strings.Contains(out, "【最近活动】") {
+		t.Error("missing 最近活动 header")
+	}
+	if !strings.Contains(out, "Go 语言") {
+		t.Error("missing Go 语言 entry")
+	}
+	if !strings.Contains(out, "[create]") {
+		t.Error("missing action tag")
 	}
 }
