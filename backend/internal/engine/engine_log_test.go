@@ -3,8 +3,10 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -310,6 +312,61 @@ func TestExecutionEngine_LinkPagesUpdatesCounts(t *testing.T) {
 	}
 	if bBacklinkCount != 1 {
 		t.Errorf("target backlink_count = %d, want 1", bBacklinkCount)
+	}
+}
+
+func TestExecutionEngine_DeletePageDecrementsBacklinkCounts(t *testing.T) {
+	db := newTestDB(t)
+	q := model.New(db)
+	eng := NewExecutionEngine(db, q)
+	ctx := context.Background()
+
+	// Page A links to page B (so B has backlink_count=1).
+	resA, err := db.Exec(
+		`INSERT INTO wiki_pages (title, slug, page_type, content, path, links, backlinks, content_status, sort_order, created_at, updated_at)
+		 VALUES (?, ?, 'entity', '', ?, ?, ?, 'empty', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"A", "a", "1/", "[2]", "[]")
+	if err != nil {
+		t.Fatalf("insert A: %v", err)
+	}
+	idA, err := resA.LastInsertId()
+	if err != nil {
+		t.Fatalf("last insert id A: %v", err)
+	}
+
+	resB, err := db.Exec(
+		`INSERT INTO wiki_pages (title, slug, page_type, content, path, links, backlinks, content_status, backlink_count, sort_order, created_at, updated_at)
+		 VALUES (?, ?, 'entity', '', ?, '[]', ?, 'empty', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"B", "b", "2/", "[1]")
+	if err != nil {
+		t.Fatalf("insert B: %v", err)
+	}
+	idB, err := resB.LastInsertId()
+	if err != nil {
+		t.Fatalf("last insert id B: %v", err)
+	}
+
+	// Delete page A.
+	params := map[string]any{"page_id": idA}
+	if _, err := eng.execDeletePage(ctx, params); err != nil {
+		t.Fatalf("execDeletePage: %v", err)
+	}
+
+	// Verify B.backlink_count == 0 and B.backlinks no longer contains A's id.
+	var bBacklinkCount int
+	if err := db.QueryRow("SELECT backlink_count FROM wiki_pages WHERE id=?", idB).Scan(&bBacklinkCount); err != nil {
+		t.Fatalf("read B.backlink_count: %v", err)
+	}
+	if bBacklinkCount != 0 {
+		t.Errorf("expected B.backlink_count=0 after deleting A, got %d", bBacklinkCount)
+	}
+
+	var bBacklinks string
+	if err := db.QueryRow("SELECT backlinks FROM wiki_pages WHERE id=?", idB).Scan(&bBacklinks); err != nil {
+		t.Fatalf("read B.backlinks: %v", err)
+	}
+	if strings.Contains(bBacklinks, fmt.Sprintf("%d", idA)) {
+		t.Errorf("expected B.backlinks to no longer contain id %d, got %s", idA, bBacklinks)
 	}
 }
 

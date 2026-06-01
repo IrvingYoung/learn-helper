@@ -827,70 +827,43 @@ func (e *ExecutionEngine) addBacklink(ctx context.Context, targetID, pageID int6
 }
 
 // removeLinksForPage removes all references to pageID from other pages'
-// links and backlinks arrays.
+// links and backlinks arrays, and decrements backlink_count on pages that
+// no longer reference the deleted page.
+//
+// Implemented as two atomic UPDATE statements (one for `links`, one for
+// `backlinks`) that use `json_each` to filter the array. This avoids the
+// per-row read/modify/write loop, which deadlocks on a single-connection
+// sqlite handle while iterating open rows.
 func (e *ExecutionEngine) removeLinksForPage(ctx context.Context, pageID int64) {
-	// 1. Remove pageID from all pages that have it in their links array
-	rows, err := e.db.QueryContext(ctx,
-		`SELECT id, links FROM wiki_pages WHERE links LIKE ?`, fmt.Sprintf(`%%%d%%`, pageID))
-	if err != nil {
-		log.Printf("WARN: query links for cleanup: %v", err)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id int64
-		var links string
-		if err := rows.Scan(&id, &links); err != nil {
-			continue
-		}
-		var ids []int64
-		if err := json.Unmarshal([]byte(links), &ids); err != nil {
-			continue
-		}
-		filtered := make([]int64, 0, len(ids))
-		for _, lid := range ids {
-			if lid != pageID {
-				filtered = append(filtered, lid)
-			}
-		}
-		linksJSON, _ := json.Marshal(filtered)
-		if _, err := e.db.ExecContext(ctx,
-			`UPDATE wiki_pages SET links = ? WHERE id = ?`, string(linksJSON), id); err != nil {
-			log.Printf("WARN: failed to remove link ref %d from page %d: %v", pageID, id, err)
-		}
+	// 1. Strip pageID from every other page's outgoing `links` array.
+	if _, err := e.db.ExecContext(ctx,
+		`UPDATE wiki_pages
+		 SET links = (
+		   SELECT COALESCE(json_group_array(value), '[]')
+		   FROM json_each(links)
+		   WHERE value != ?
+		 )
+		 WHERE id != ?
+		   AND EXISTS (SELECT 1 FROM json_each(links) WHERE value = ?)`,
+		pageID, pageID, pageID); err != nil {
+		log.Printf("WARN: failed to remove link refs to page %d: %v", pageID, err)
 	}
 
-	// 2. Remove pageID from all pages that have it in their backlinks array
-	rows2, err := e.db.QueryContext(ctx,
-		`SELECT id, backlinks FROM wiki_pages WHERE backlinks LIKE ?`, fmt.Sprintf(`%%%d%%`, pageID))
-	if err != nil {
-		log.Printf("WARN: query backlinks for cleanup: %v", err)
-		return
-	}
-	defer rows2.Close()
-
-	for rows2.Next() {
-		var id int64
-		var backlinks string
-		if err := rows2.Scan(&id, &backlinks); err != nil {
-			continue
-		}
-		var ids []int64
-		if err := json.Unmarshal([]byte(backlinks), &ids); err != nil {
-			continue
-		}
-		filtered := make([]int64, 0, len(ids))
-		for _, bid := range ids {
-			if bid != pageID {
-				filtered = append(filtered, bid)
-			}
-		}
-		backlinksJSON, _ := json.Marshal(filtered)
-		if _, err := e.db.ExecContext(ctx,
-			`UPDATE wiki_pages SET backlinks = ? WHERE id = ?`, string(backlinksJSON), id); err != nil {
-			log.Printf("WARN: failed to remove backlink ref %d from page %d: %v", pageID, id, err)
-		}
+	// 2. Strip pageID from every other page's `backlinks` array AND
+	//    decrement backlink_count by 1 (clamped at 0 to absorb any
+	//    pre-existing drift between the array and the count).
+	if _, err := e.db.ExecContext(ctx,
+		`UPDATE wiki_pages
+		 SET backlinks = (
+		   SELECT COALESCE(json_group_array(value), '[]')
+		   FROM json_each(backlinks)
+		   WHERE value != ?
+		 ),
+		 backlink_count = MAX(0, backlink_count - 1)
+		 WHERE id != ?
+		   AND EXISTS (SELECT 1 FROM json_each(backlinks) WHERE value = ?)`,
+		pageID, pageID, pageID); err != nil {
+		log.Printf("WARN: failed to remove backlink refs to page %d: %v", pageID, err)
 	}
 }
 
