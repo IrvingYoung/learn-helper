@@ -382,3 +382,77 @@ func renderHealthCheck(ctx context.Context, db HealthDB) string {
 	}
 	return b.String() + "\n"
 }
+
+// GapsDB is the minimal interface for knowledge gap detection.
+type GapsDB interface {
+	GetWikiPageTree(ctx context.Context) ([]model.GetWikiPageTreeRow, error)
+}
+
+// renderKnowledgeGaps lists empty pages grouped by top-level category.
+func renderKnowledgeGaps(ctx context.Context, db GapsDB) string {
+	pages, err := db.GetWikiPageTree(ctx)
+	if err != nil || len(pages) == 0 {
+		return ""
+	}
+
+	// Build index: top-level overview page → its title
+	topLevel := make(map[int64]string) // pageID → title
+	for _, p := range pages {
+		if !p.ParentID.Valid || p.ParentID.Int64 == 0 {
+			topLevel[p.ID] = p.Title
+		}
+	}
+
+	// Group empty pages by their top-level ancestor
+	groupEmpty := make(map[int64][]string) // topLevelID → empty children titles
+	var orphanEmpty []string               // empty pages with no top-level parent
+
+	for _, p := range pages {
+		if p.ContentStatus != "empty" {
+			continue
+		}
+		// Walk up to find top-level ancestor
+		topID, found := findTopLevel(p, pages, topLevel)
+		if found {
+			groupEmpty[topID] = append(groupEmpty[topID], p.Title)
+		} else {
+			orphanEmpty = append(orphanEmpty, p.Title)
+		}
+	}
+
+	if len(groupEmpty) == 0 && len(orphanEmpty) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("【知识缺口】\n")
+	for id, empties := range groupEmpty {
+		b.WriteString(fmt.Sprintf("  📁 %s: %d 个空页（%s）\n",
+			topLevel[id], len(empties), strings.Join(empties, " / ")))
+	}
+	for _, title := range orphanEmpty {
+		b.WriteString(fmt.Sprintf("  📝 顶层空页: %s\n", title))
+	}
+	return b.String() + "\n"
+}
+
+// findTopLevel walks up the parent chain to find a top-level (parent_id NULL) ancestor.
+func findTopLevel(p model.GetWikiPageTreeRow, all []model.GetWikiPageTreeRow, topLevel map[int64]string) (int64, bool) {
+	if !p.ParentID.Valid || p.ParentID.Int64 == 0 {
+		// p itself is top-level
+		if _, ok := topLevel[p.ID]; ok {
+			return p.ID, true
+		}
+		return 0, false
+	}
+	// Find parent
+	for _, candidate := range all {
+		if candidate.ID == p.ParentID.Int64 {
+			if _, ok := topLevel[candidate.ID]; ok {
+				return candidate.ID, true
+			}
+			return findTopLevel(candidate, all, topLevel)
+		}
+	}
+	return 0, false
+}

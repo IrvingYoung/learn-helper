@@ -178,3 +178,30 @@ func TestRenderHealthCheck_DeadPage(t *testing.T) {
 		t.Errorf("expected page title in warning, got: %s", out)
 	}
 }
+
+func TestRenderKnowledgeGaps_GroupedByCategory(t *testing.T) {
+	tree := []model.GetWikiPageTreeRow{
+		{ID: 1, Title: "Go 语言", PageType: "overview", ParentID: sql.NullInt64{}, Path: "1/"},
+		{ID: 2, Title: "channel", PageType: "entity", ContentStatus: "empty", ParentID: sql.NullInt64{Int64: 1, Valid: true}, Path: "1/2/"},
+		{ID: 3, Title: "context", PageType: "entity", ContentStatus: "empty", ParentID: sql.NullInt64{Int64: 1, Valid: true}, Path: "1/3/"},
+		{ID: 4, Title: "算法", PageType: "overview", ParentID: sql.NullInt64{}, Path: "4/"},
+		{ID: 5, Title: "树", PageType: "entity", ContentStatus: "empty", ParentID: sql.NullInt64{Int64: 4, Valid: true}, Path: "4/5/"},
+	}
+	db := &fakeTreeDB{pages: tree} // reuse fakeTreeDB from Task 2.2
+	out := renderKnowledgeGaps(context.Background(), db)
+	if !strings.Contains(out, "Go 语言") {
+		t.Error("expected Go 语言 in gaps")
+	}
+	if !strings.Contains(out, "channel") {
+		t.Error("expected channel in gaps")
+	}
+	if !strings.Contains(out, "算法") {
+		t.Error("expected 算法 in gaps")
+	}
+	// Verify grouping: Go 语言的空页应该一起列
+	idx := strings.Index(out, "Go 语言")
+	idxAlg := strings.Index(out, "算法")
+	if idx > idxAlg {
+		t.Error("expected Go 语言 to appear before 算法")
+	}
+}
