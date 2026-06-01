@@ -568,197 +568,143 @@ reactLoop:
 			break reactLoop
 		}
 
-		// Separate auto-executed tools from propose_plan
-		var autoCalls []ai.ToolCall
-		var planCall *ai.ToolCall
+		// Classify tool calls
+		var calls []aiToolCall
 		for _, tc := range toolCalls {
-			if tc.Name == "propose_plan" {
-				planCall = &tc
-			} else {
-				autoCalls = append(autoCalls, tc)
-			}
+			calls = append(calls, aiToolCall{Name: tc.Name, ID: tc.ID, Input: tc.Input})
 		}
-		log.Printf("[ReAct] iteration=%d auto_calls=%d plan_call=%v", iteration, len(autoCalls), planCall != nil)
+		readBatch, writeBatch, askBatch := classifyToolCalls(calls)
 
-		// For propose_plan iterations, skip content accumulation —
-		// the plan outline is shown in the right panel via PlanPreview,
-		// not in the chat message. For auto-tools-only iterations,
-		// accumulate as normal so the text is saved as the assistant message.
-		if planCall == nil && respContent != "" {
-			fullContent.WriteString(respContent)
-			fullContent.WriteString("\n\n")
-		}
+		log.Printf("[ReAct] iteration=%d reads=%d writes=%d asks=%d",
+			iteration, len(readBatch), len(writeBatch), len(askBatch))
 
-		// Build structured content for this assistant turn
+		// Build assistant turn blocks (text + tool_use for every tool call)
 		var blocks []ai.ContentBlock
 		if respContent != "" {
 			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeText, Text: respContent})
 		}
-
-		// If propose_plan is present, this is the terminal iteration
-		if planCall != nil {
-			// Add all tool_use blocks (auto + plan)
-			for _, tc := range autoCalls {
-				var input json.RawMessage
-				if tc.Input != "" {
-					input = json.RawMessage(tc.Input)
-				}
-				blocks = append(blocks, ai.ContentBlock{
-					Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input,
-				})
-			}
-			var planInput json.RawMessage
-			if planCall.Input != "" {
-				planInput = json.RawMessage(planCall.Input)
-			}
-			blocks = append(blocks, ai.ContentBlock{
-				Type: ai.ContentTypeToolUse, ID: planCall.ID, Name: planCall.Name, Input: planInput,
-			})
-
-			if assistantContent, err := ai.ContentBlocksToJSON(blocks); err == nil {
-				aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: assistantContent})
-			}
-
-			// Execute auto tools, stream results in real-time
-			for _, tc := range autoCalls {
-				log.Printf("[ReAct] executing auto tool: %s", tc.Name)
-
-				// Send tool_call_start SSE event
-				startInput := json.RawMessage(tc.Input)
-				if startInput == nil {
-					startInput = json.RawMessage("{}")
-				}
-				startData, _ := json.Marshal(ToolCallStartEvent{
-					ID:    tc.ID,
-					Name:  tc.Name,
-					Input: startInput,
-				})
-				sseWrite(w, "tool_call_start", string(startData), canFlush, flusher)
-
-				result := h.executeAutoTool(ctx, tc)
-
-				// Send tool_result SSE event with truncated output
-				// Detect tool execution error from result string
-				errStr := ""
-				if strings.Contains(result, "失败") {
-					errStr = result
-				}
-				truncated := truncateString(result, 8000)
-				resultData, _ := json.Marshal(ToolCallResult{
-					ID:     tc.ID,
-					Name:   tc.Name,
-					Input:  startInput,
-					Output: truncated,
-					Error:  errStr,
-				})
-				sseWrite(w, "tool_result", string(resultData), canFlush, flusher)
-
-				toolCallResults = append(toolCallResults, ToolCallResult{
-					ID:     tc.ID,
-					Name:   tc.Name,
-					Input:  startInput,
-					Output: truncated,
-					Error:  errStr,
-				})
-
-				log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
-				aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
-			}
-
-			// Create Plan from propose_plan call
-			log.Printf("[ReAct] creating plan from propose_plan, input_len=%d", len(planCall.Input))
-			plan, err := h.createPlanFromToolCall(req.ConversationID, planCall.Input, req.FocusPageID)
-			if err != nil {
-				log.Printf("[ReAct] createPlanFromToolCall FAILED: %v", err)
-				sseWrite(w, "error", fmt.Sprintf("create plan failed: %v", err), canFlush, flusher)
-				break reactLoop
-			}
-			log.Printf("[ReAct] plan created: id=%s actions=%d", plan.ID, len(plan.Actions))
-
-			// Save assistant message with plan info
-			planSummary := ""
-			if len(plan.CalibrationQuestion) > 0 {
-				planSummary = fmt.Sprintf("[校准问题] %s\n请在右侧面板中回答。", plan.Reasoning)
-			} else if len(plan.Outline) > 0 && len(plan.Actions) == 0 {
-				planSummary = fmt.Sprintf("[操作计划 - 大纲] %s\n大纲已生成，请在右侧查看。", plan.Reasoning)
-			} else {
-				planSummary = fmt.Sprintf("[操作计划] %s\n共 %d 个操作待确认。", plan.Reasoning, len(plan.Actions))
-			}
-			toolCallsJSON, _ := json.Marshal(toolCallResults)
-			_, _ = h.db.ExecContext(ctx,
-				"INSERT INTO messages (conversation_id, role, content, model_provider, token_count, tool_calls) VALUES (?, 'assistant', ?, ?, 0, ?)",
-				req.ConversationID, planSummary, config.Provider, string(toolCallsJSON))
-
-			// Send plan to frontend via SSE meta event
-			metaData := map[string]any{
-				"plan": plan,
-			}
-			metaJSON, _ := json.Marshal(metaData)
-			sseWrite(w, "meta", string(metaJSON), canFlush, flusher)
-			break reactLoop // Exit loop — wait for user confirmation
-		}
-
-		// Only auto tools: add tool_use blocks, execute, stream results, and loop
-		for _, tc := range autoCalls {
+		for _, tc := range toolCalls {
 			var input json.RawMessage
 			if tc.Input != "" {
 				input = json.RawMessage(tc.Input)
 			}
-			blocks = append(blocks, ai.ContentBlock{
-				Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input,
-			})
+			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input})
 		}
-
 		if assistantContent, err := ai.ContentBlocksToJSON(blocks); err == nil {
 			aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: assistantContent})
 		}
 
-		for _, tc := range autoCalls {
-			log.Printf("[ReAct] executing auto tool: %s", tc.Name)
-
-			// Send tool_call_start SSE event
-			startInput := json.RawMessage(tc.Input)
-			if startInput == nil {
-				startInput = json.RawMessage("{}")
-			}
-			startData, _ := json.Marshal(ToolCallStartEvent{
-				ID:    tc.ID,
-				Name:  tc.Name,
-				Input: startInput,
-			})
-			sseWrite(w, "tool_call_start", string(startData), canFlush, flusher)
-
-			result := h.executeAutoTool(ctx, tc)
-
-			// Send tool_result SSE event with truncated output
-			// Detect tool execution error from result string
-			errStr := ""
-			if strings.Contains(result, "失败") {
-				errStr = result
-			}
-			truncated := truncateString(result, 8000)
-			resultData, _ := json.Marshal(ToolCallResult{
-				ID:     tc.ID,
-				Name:   tc.Name,
-				Input:  startInput,
-				Output: truncated,
-				Error:  errStr,
-			})
-			sseWrite(w, "tool_result", string(resultData), canFlush, flusher)
-
-			toolCallResults = append(toolCallResults, ToolCallResult{
-				ID:     tc.ID,
-				Name:   tc.Name,
-				Input:  startInput,
-				Output: truncated,
-				Error:  errStr,
-			})
-
-			log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
-			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
+		// Execute read tools (auto)
+		for _, c := range readBatch {
+			log.Printf("[ReAct] read tool: %s", c.Name)
+			sseWriteToolCallStart(w, c.ID, c.Name, c.Input, canFlush, flusher)
+			result := h.executeReadTool(ctx, c)
+			sseWriteToolResult(w, c.ID, c.Name, result, "", canFlush, flusher)
+			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: c.ID})
 		}
 
-		log.Printf("[ReAct] iteration=%d auto tools done, looping for AI to reason further", iteration)
+		// Execute write tools (permission gate, batched)
+		if len(writeBatch) > 0 {
+			requestID := fmt.Sprintf("perm-%d", time.Now().UnixNano())
+			ch := h.permissions.Register(requestID, 1)
+
+			items := make([]PermissionRequestItem, 0, len(writeBatch))
+			for _, c := range writeBatch {
+				sseWriteToolCallStart(w, c.ID, c.Name, c.Input, canFlush, flusher)
+				parsed, _ := parseWriteInput(c.Name, json.RawMessage(c.Input))
+				items = append(items, PermissionRequestItem{
+					ID:      c.ID,
+					Tool:    c.Name,
+					Input:   parsed,
+					Preview: previewWrite(c.Name, parsed),
+				})
+			}
+			sseWritePermissionRequired(w, PermissionRequest{
+				RequestID:      requestID,
+				ConversationID: req.ConversationID,
+				Items:          items,
+			}, canFlush, flusher)
+
+			log.Printf("[ReAct] waiting for permission decisions: %s (n=%d)", requestID, len(writeBatch))
+			decisions := <-ch // BLOCKS
+
+			// Index decisions by ID
+			decByID := map[string]PermissionDecision{}
+			for _, d := range decisions {
+				decByID[d.ID] = d
+			}
+
+			for _, c := range writeBatch {
+				dec, ok := decByID[c.ID]
+				if !ok {
+					dec = PermissionDecision{ID: c.ID, Action: "reject"}
+				}
+
+				switch dec.Action {
+				case "approve", "edit":
+					input := c.Input
+					if dec.Action == "edit" && dec.EditedInput != nil {
+						b, _ := json.Marshal(dec.EditedInput)
+						input = string(b)
+					}
+					result, execErr := h.executeWriteTool(ctx, c.Name, input, req.FocusPageID)
+					if execErr != nil {
+						sseWriteToolResult(w, c.ID, c.Name, "", execErr.Error(), canFlush, flusher)
+						aiMessages = append(aiMessages, ai.Message{
+							Role: "tool", Content: fmt.Sprintf("error: %s", execErr.Error()), ToolCallID: c.ID,
+						})
+					} else {
+						sseWriteToolResult(w, c.ID, c.Name, result, "", canFlush, flusher)
+						aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: c.ID})
+					}
+				default: // reject or unknown
+					sseWriteToolResult(w, c.ID, c.Name, "", "rejected by user", canFlush, flusher)
+					aiMessages = append(aiMessages, ai.Message{
+						Role: "tool", Content: `{"error":"rejected by user"}`, ToolCallID: c.ID,
+					})
+				}
+			}
+		}
+
+		// Execute ask_user (one at a time, in order)
+		for _, c := range askBatch {
+			sseWriteToolCallStart(w, c.ID, c.Name, c.Input, canFlush, flusher)
+			requestID := fmt.Sprintf("ask-%d", time.Now().UnixNano())
+			ch := h.askUsers.Register(requestID)
+
+			var parsed struct {
+				Question      string          `json:"question"`
+				Options       []string        `json:"options"`
+				Context       *AskUserContext `json:"context,omitempty"`
+				MultiSelect   bool            `json:"multi_select"`
+				AllowFreeText bool            `json:"allow_free_text"`
+				Header        string          `json:"header,omitempty"`
+			}
+			_ = json.Unmarshal([]byte(c.Input), &parsed)
+
+			sseWriteAskUserRequest(w, AskUserRequest{
+				RequestID:      requestID,
+				ConversationID: req.ConversationID,
+				Question:       parsed.Question,
+				Options:        parsed.Options,
+				Context:        parsed.Context,
+				MultiSelect:    parsed.MultiSelect,
+				AllowFreeText:  parsed.AllowFreeText,
+				Header:         parsed.Header,
+			}, canFlush, flusher)
+
+			log.Printf("[ReAct] waiting for ask_user answer: %s", requestID)
+			resp := <-ch // BLOCKS
+			answerJSON, _ := json.Marshal(map[string]any{"answer": resp.Answer})
+			sseWriteToolResult(w, c.ID, c.Name, string(answerJSON), "", canFlush, flusher)
+			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: string(answerJSON), ToolCallID: c.ID})
+		}
+
+		// Accumulate text content (post-tool reasoning, if any)
+		if respContent != "" && len(writeBatch) == 0 && len(askBatch) == 0 {
+			fullContent.WriteString(respContent)
+			fullContent.WriteString("\n\n")
+		}
 
 		// Loop continues → AI sees tool results and can reason further
 		if iteration == maxIterations-1 {
@@ -1552,6 +1498,32 @@ func sseWrite(w http.ResponseWriter, eventType, data string, canFlush bool, flus
 	if canFlush {
 		flusher.Flush()
 	}
+}
+
+func sseWriteToolCallStart(w http.ResponseWriter, id, name, input string, canFlush bool, flusher http.Flusher) {
+	in := json.RawMessage(input)
+	if in == nil {
+		in = json.RawMessage("{}")
+	}
+	data, _ := json.Marshal(ToolCallStartEvent{ID: id, Name: name, Input: in})
+	sseWrite(w, "tool_call_start", string(data), canFlush, flusher)
+}
+
+func sseWriteToolResult(w http.ResponseWriter, id, name, output, errStr string, canFlush bool, flusher http.Flusher) {
+	data, _ := json.Marshal(ToolCallResult{
+		ID: id, Name: name, Output: output, Error: errStr,
+	})
+	sseWrite(w, "tool_result", string(data), canFlush, flusher)
+}
+
+func sseWritePermissionRequired(w http.ResponseWriter, req PermissionRequest, canFlush bool, flusher http.Flusher) {
+	data, _ := json.Marshal(req)
+	sseWrite(w, "permission_required", string(data), canFlush, flusher)
+}
+
+func sseWriteAskUserRequest(w http.ResponseWriter, req AskUserRequest, canFlush bool, flusher http.Flusher) {
+	data, _ := json.Marshal(req)
+	sseWrite(w, "ask_user_request", string(data), canFlush, flusher)
 }
 
 func boolToInt64(b bool) int64 {
