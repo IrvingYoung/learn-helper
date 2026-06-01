@@ -276,6 +276,27 @@ const (
 	RoleWikiMaintainer = "wiki_maintainer"
 )
 
+const knowledgeMapUsageGuide = `
+
+## 知识地图使用（强制遵守）
+
+你的 system prompt 里包含"知识地图"——按一级分类组织的目录，每页带 1-2 句摘要、链接数、标签、最后更新时间。
+
+**回答规则**：
+1. 回答前先看知识地图，定位相关分类，再钻到具体页（用 read_page 工具）
+2. 用户问"我了解 X 吗"时，先在地图里找 X 相关的分类和页，再读具体页（避免全量 read_page）
+3. 摘要可能标"摘要待更新"、"摘要生成失败"或"暂无摘要"——这种时候用 read_page 工具读全文
+4. 全局标签索引帮你做跨分类检索
+5. "最近活动"告诉你用户最近在学什么、改了什么（适合做上下文相关建议）
+6. "结构健康检查"和"知识缺口"段落是 AI 主动建议的输入——发现问题时在聊天中提建议，不要直接修改
+
+**摘要降级标识含义**：
+- 无标识 = 摘要已就绪
+- (摘要待更新) = 页面刚改过，AI 正在重新生成
+- (摘要生成失败) = 生成失败（用 read_page 读全文）
+- (暂无摘要) = 内容为空，AI 不会生成（空页）
+`
+
 // BuildSystemPrompt constructs the system prompt with wiki context.
 func BuildSystemPrompt(role string, wikiContext string) string {
 	switch role {
@@ -331,6 +352,8 @@ propose_plan 是你操作知识库的主要工具。以下场景使用它：
 - 不要在校准问题和正式写入之间插入其他内容。
 
 ` + treeContext
+
+	wikiMaintainerPrompt += knowledgeMapUsageGuide
 
 	dateStr := time.Now().Format("2006-01-02")
 	wikiMaintainerPrompt += fmt.Sprintf("\n[Request Timestamp: %s]\n[Context Notice: The user's query was issued at the timestamp above. Ensure search results are current and relevant to the query date.]\n", dateStr)
