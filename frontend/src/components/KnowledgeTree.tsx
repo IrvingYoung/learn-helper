@@ -276,12 +276,16 @@ export function KnowledgeTree({
           />
         ))}
         {effectiveTree.length === 0 && (
-          <div className="text-center text-th-text-muted mt-12 space-y-2">
-            <svg className="w-8 h-8 mx-auto opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 19.477 5.754 20 7.5 20s3.332-.477 4.5-1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 19.477 18.247 20 16.5 20a3.5 3.5 0 01-3.5-3.5" />
-            </svg>
-            <p className="text-sm">{searchQuery ? '未找到匹配的页面' : '知识库为空'}</p>
-            <p className="text-xs opacity-60">{searchQuery ? '尝试其他关键词' : '和 AI 对话创建知识树'}</p>
+          <div className="text-center text-th-text-muted mt-10 px-4 space-y-3">
+            <div className="w-10 h-10 mx-auto rounded-full border border-dashed border-th-border flex items-center justify-center">
+              <svg className="w-4 h-4 text-th-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 19.477 5.754 20 7.5 20s3.332-.477 4.5-1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 19.477 18.247 20 16.5 20a3.5 3.5 0 01-3.5-3.5" />
+              </svg>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-th-text-secondary">{searchQuery ? '未找到匹配的页面' : '知识库还是空的'}</p>
+              <p className="text-xs leading-relaxed">{searchQuery ? '尝试其他关键词' : '和 AI 聊聊你想学的领域，它会帮你把知识整理成一棵树'}</p>
+            </div>
           </div>
         )}
       </div>
@@ -412,14 +416,14 @@ function TreeNode({ node, selectedSlug, onSelect, depth, expandedIds, onToggle, 
   };
 
   return (
-    <div>
+    <div className="relative">
       <div
-        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-all duration-150 ${
+        className={`group flex items-center gap-1.5 px-2 py-[5px] rounded-md cursor-pointer transition-colors duration-150 ${
           isSelected
-            ? 'bg-th-accent-bg text-th-accent font-medium shadow-sm'
+            ? 'text-th-text-primary'
             : isDropTarget
             ? 'bg-th-bg-primary text-th-text-primary ring-2 ring-th-accent/50'
-            : 'text-th-text-primary hover:bg-th-bg-primary hover:text-th-text-primary'
+            : 'text-th-text-secondary hover:text-th-text-primary hover:bg-th-hover'
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
@@ -433,6 +437,10 @@ function TreeNode({ node, selectedSlug, onSelect, depth, expandedIds, onToggle, 
         onDrop={handleDrop}
         onDragEnd={handleDragEnd}
       >
+        {/* Left accent bar for selected state */}
+        {isSelected && (
+          <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-th-accent rounded-r" />
+        )}
         {hasChildren ? (
           <button
             onClick={handleToggle}
@@ -446,7 +454,7 @@ function TreeNode({ node, selectedSlug, onSelect, depth, expandedIds, onToggle, 
         ) : (
           <span className="w-4 shrink-0" />
         )}
-        <span className={`w-2 h-2 rounded-full ${statusColor} shrink-0 transition-transform duration-150 ${isSelected ? 'scale-125' : ''}`} />
+        <span className={`w-1.5 h-1.5 rotate-45 ${statusColor} shrink-0 transition-transform duration-200 ${isSelected ? 'scale-125' : ''}`} />
         {editing ? (
           <input
             ref={inputRef}
@@ -471,19 +479,23 @@ function TreeNode({ node, selectedSlug, onSelect, depth, expandedIds, onToggle, 
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className={`flex-1 text-sm truncate ${isSelected ? 'font-medium' : ''}`} onDoubleClick={handleDoubleClick}>
+          <span className={`flex-1 text-[13.5px] truncate leading-snug ${isSelected ? 'font-medium text-th-text-primary' : ''}`} onDoubleClick={handleDoubleClick}>
             {node.title}
           </span>
         )}
         {node.page_type === 'overview' && (
-          <span className="text-xs text-th-text-muted shrink-0 font-mono tracking-tight">概览</span>
+          <span className="text-[10px] text-th-text-muted shrink-0 font-mono tracking-tight opacity-70">home</span>
         )}
         {hovered && onContextMenu && (
           <button
             onClick={(e) => { e.stopPropagation(); onContextMenu(e, node); }}
-            className="w-4 h-4 flex items-center justify-center text-th-text-muted hover:text-th-text-secondary shrink-0"
+            className="w-5 h-5 flex items-center justify-center text-th-text-muted hover:text-th-text-primary shrink-0 rounded transition-colors"
           >
-            ⋯
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="5" cy="12" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="19" cy="12" r="1.5" />
+            </svg>
           </button>
         )}
       </div>
