@@ -75,11 +75,11 @@ func (f *fakeTreeDB) GetWikiPageTree(ctx context.Context) ([]model.GetWikiPageTr
 	return f.pages, nil
 }
 
-func (f *fakeTreeDB) GetPageContentForFallback(ctx context.Context, pageID int64) (string, error) {
+func (f *fakeTreeDB) GetPageContentsForFallback(ctx context.Context) (map[int64]string, error) {
 	if f.content == nil {
-		return "", nil
+		return map[int64]string{}, nil
 	}
-	return f.content[pageID], nil
+	return f.content, nil
 }
 
 func TestRenderKnowledgeMap_Basic(t *testing.T) {

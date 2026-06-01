@@ -48,9 +48,11 @@ func pct(num, denom int64) float64 {
 // KnowledgeMapTreeDB is the minimal interface for rendering the knowledge map.
 type KnowledgeMapTreeDB interface {
 	GetWikiPageTree(ctx context.Context) ([]model.GetWikiPageTreeRow, error)
-	// For fallback when summary is pending, we may need to fetch content.
+	// GetPageContentsForFallback returns a map of pageID → content for all
+	// pages with non-ready summary status and non-empty content. The caller
+	// uses this as a per-page summary fallback (avoiding N+1 queries).
 	// Optional: if not implemented, fallback shows "(content unavailable)".
-	GetPageContentForFallback(ctx context.Context, pageID int64) (string, error)
+	GetPageContentsForFallback(ctx context.Context) (map[int64]string, error)
 }
 
 // renderKnowledgeMap builds the categorized tree with per-page summaries.
@@ -93,8 +95,9 @@ func renderKnowledgeMap(ctx context.Context, db KnowledgeMapTreeDB, focusPageID 
 	}
 
 	// Render each root and its descendants
+	fallbackContents, _ := db.GetPageContentsForFallback(ctx)
 	for _, root := range roots {
-		renderNodeWithChildren(ctx, &b, db, root, children, 0)
+		renderNodeWithChildren(&b, db, root, children, 0, fallbackContents)
 	}
 
 	// Render global tag index
@@ -104,7 +107,7 @@ func renderKnowledgeMap(ctx context.Context, db KnowledgeMapTreeDB, focusPageID 
 	return b.String()
 }
 
-func renderNodeWithChildren(ctx context.Context, b *strings.Builder, db KnowledgeMapTreeDB, node model.GetWikiPageTreeRow, children map[int64][]model.GetWikiPageTreeRow, depth int) {
+func renderNodeWithChildren(b *strings.Builder, db KnowledgeMapTreeDB, node model.GetWikiPageTreeRow, children map[int64][]model.GetWikiPageTreeRow, depth int, fallbackContents map[int64]string) {
 	indent := strings.Repeat("  ", depth)
 	icon := "📄"
 	if node.PageType == "overview" {
@@ -120,7 +123,7 @@ func renderNodeWithChildren(ctx context.Context, b *strings.Builder, db Knowledg
 	}
 
 	// Build summary line
-	summaryLine := renderSummaryLine(ctx, db, node)
+	summaryLine := renderSummaryLine(node, fallbackContents)
 
 	// Build metadata
 	meta := fmt.Sprintf("[ID=%d]", node.ID)
@@ -150,7 +153,7 @@ func renderNodeWithChildren(ctx context.Context, b *strings.Builder, db Knowledg
 
 	// Recurse into children
 	for _, child := range children[node.ID] {
-		renderNodeWithChildren(ctx, b, db, child, children, depth+1)
+		renderNodeWithChildren(b, db, child, children, depth+1, fallbackContents)
 	}
 }
 
@@ -168,7 +171,9 @@ func collectDescendants(root model.GetWikiPageTreeRow, children map[int64][]mode
 }
 
 // renderSummaryLine returns the summary for a page, with fallback handling.
-func renderSummaryLine(ctx context.Context, db KnowledgeMapTreeDB, node model.GetWikiPageTreeRow) string {
+// fallbackContents is a pre-fetched map of pageID → content for pages with
+// non-ready summary status (used to avoid N+1 queries during tree rendering).
+func renderSummaryLine(node model.GetWikiPageTreeRow, fallbackContents map[int64]string) string {
 	status := node.SummaryStatus
 
 	switch status {
@@ -178,17 +183,17 @@ func renderSummaryLine(ctx context.Context, db KnowledgeMapTreeDB, node model.Ge
 		}
 		fallthrough
 	case "pending":
-		if content, err := db.GetPageContentForFallback(ctx, node.ID); err == nil && content != "" {
+		if content, ok := fallbackContents[node.ID]; ok && content != "" {
 			return truncateForDisplay(content, 80) + " (摘要待更新)"
 		}
 		return "(摘要待更新)"
 	case "failed":
-		if content, err := db.GetPageContentForFallback(ctx, node.ID); err == nil && content != "" {
+		if content, ok := fallbackContents[node.ID]; ok && content != "" {
 			return truncateForDisplay(content, 80) + " (摘要生成失败)"
 		}
 		return "(摘要生成失败)"
 	case "empty":
-		if content, err := db.GetPageContentForFallback(ctx, node.ID); err == nil && content != "" {
+		if content, ok := fallbackContents[node.ID]; ok && content != "" {
 			return truncateForDisplay(content, 80) + " (暂无摘要)"
 		}
 		return ""

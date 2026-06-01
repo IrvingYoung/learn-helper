@@ -120,6 +120,13 @@ ORDER BY path, sort_order, id;
 -- name: GetWikiPageByID :one
 SELECT * FROM wiki_pages WHERE id = ?;
 
+-- name: GetFallbackContents :many
+-- Returns (id, content) for all pages with non-ready summary status and
+-- non-empty content. Used to populate the renderer's summary fallback
+-- without N+1 queries.
+SELECT id, content FROM wiki_pages
+WHERE summary_status IN ('pending', 'failed', 'empty') AND content != '';
+
 -- name: GetOverviewPage :one
 SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages

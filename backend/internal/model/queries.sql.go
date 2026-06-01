@@ -1323,6 +1323,39 @@ func (q *Queries) GetWikiPageByID(ctx context.Context, id int64) (WikiPage, erro
 	return i, err
 }
 
+const getFallbackContents = `-- name: GetFallbackContents :many
+SELECT id, content FROM wiki_pages
+WHERE summary_status IN ('pending', 'failed', 'empty') AND content != ''
+`
+
+type GetFallbackContentsRow struct {
+	ID      int64
+	Content string
+}
+
+func (q *Queries) GetFallbackContents(ctx context.Context) ([]GetFallbackContentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getFallbackContents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFallbackContentsRow
+	for rows.Next() {
+		var i GetFallbackContentsRow
+		if err := rows.Scan(&i.ID, &i.Content); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getWikiPageBySlug = `-- name: GetWikiPageBySlug :one
 SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages

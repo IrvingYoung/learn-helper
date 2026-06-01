@@ -688,9 +688,10 @@ func (h *AIHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 // --- Helpers ---
 
 // wikiContextDBAdapter wraps *model.Queries to satisfy the handler.KnowledgeMapDB
-// composite interface. The only missing method is GetPageContentForFallback,
+// composite interface. The only missing method is GetPageContentsForFallback,
 // which the renderer uses when a page summary is pending/failed/empty.
-// The adapter delegates to GetWikiPageByID and returns the page's Content field.
+// The adapter delegates to GetFallbackContents and returns a pageID → content
+// map, batched into a single query to avoid N+1.
 type wikiContextDBAdapter struct {
 	q *model.Queries
 }
@@ -717,14 +718,19 @@ func (a *wikiContextDBAdapter) GetRecentWikiLog(ctx context.Context, arg model.G
 	return a.q.GetRecentWikiLog(ctx, arg)
 }
 
-// GetPageContentForFallback returns the raw page content for use as a summary
-// fallback when the persisted summary is pending/failed/empty.
-func (a *wikiContextDBAdapter) GetPageContentForFallback(ctx context.Context, pageID int64) (string, error) {
-	page, err := a.q.GetWikiPageByID(ctx, pageID)
+// GetPageContentsForFallback returns a map of pageID → content for all pages
+// with non-ready summary status and non-empty content, batched into a single
+// query. Used by the renderer to populate per-page summary fallbacks.
+func (a *wikiContextDBAdapter) GetPageContentsForFallback(ctx context.Context) (map[int64]string, error) {
+	rows, err := a.q.GetFallbackContents(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return page.Content, nil
+	out := make(map[int64]string, len(rows))
+	for _, r := range rows {
+		out[r.ID] = r.Content
+	}
+	return out, nil
 }
 
 // createPlanFromToolCall creates a Plan from a propose_plan tool call input.
