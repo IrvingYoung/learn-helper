@@ -261,6 +261,15 @@ func main() {
 		}
 	}
 
+	// Migrate 012: drop plans / plan_actions tables.
+	// The plan tool has been redesigned and no longer uses these tables
+	// (tool migration happened in code; see tasks 4.2-4.4). User is
+	// single-tenant, so any pending plans in the DB are discarded.
+	// Child (plan_actions) is dropped before parent (plans) to respect
+	// the FK constraint from plan_actions.plan_id -> plans.id.
+	db.Exec(`DROP TABLE IF EXISTS plan_actions`)
+	db.Exec(`DROP TABLE IF EXISTS plans`)
+
 	// Migrate: update legacy claude provider to opencode
 	db.Exec(`UPDATE ai_configs SET provider = 'opencode', model_name = 'deepseek-v4-pro' WHERE provider = 'claude'`)
 
