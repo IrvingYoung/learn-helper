@@ -1463,20 +1463,28 @@ func (q *Queries) GetWikiPagePathByID(ctx context.Context, id int64) (string, er
 }
 
 const getWikiPageTree = `-- name: GetWikiPageTree :many
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path,
+       summary, summary_status, summary_content_hash,
+       backlink_count, link_count, tags_normalized
 FROM wiki_pages
 ORDER BY sort_order, id
 `
 
 type GetWikiPageTreeRow struct {
-	ID            int64
-	Title         string
-	Slug          string
-	PageType      string
-	ContentStatus string
-	ParentID      sql.NullInt64
-	SortOrder     int64
-	Path          string
+	ID                 int64
+	Title              string
+	Slug               string
+	PageType           string
+	ContentStatus      string
+	ParentID           sql.NullInt64
+	SortOrder          int64
+	Path               string
+	Summary            string
+	SummaryStatus      string
+	SummaryContentHash sql.NullString
+	BacklinkCount      int64
+	LinkCount          int64
+	TagsNormalized     string
 }
 
 func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, error) {
@@ -1497,6 +1505,12 @@ func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, er
 			&i.ParentID,
 			&i.SortOrder,
 			&i.Path,
+			&i.Summary,
+			&i.SummaryStatus,
+			&i.SummaryContentHash,
+			&i.BacklinkCount,
+			&i.LinkCount,
+			&i.TagsNormalized,
 		); err != nil {
 			return nil, err
 		}

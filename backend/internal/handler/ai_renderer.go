@@ -43,3 +43,209 @@ func pct(num, denom int64) float64 {
 	}
 	return float64(num) / float64(denom) * 100
 }
+
+// KnowledgeMapDB is the minimal interface for rendering the knowledge map.
+type KnowledgeMapDB interface {
+	GetWikiPageTree(ctx context.Context) ([]model.GetWikiPageTreeRow, error)
+	// For fallback when summary is pending, we may need to fetch content.
+	// Optional: if not implemented, fallback shows "(content unavailable)".
+	GetPageContentForFallback(ctx context.Context, pageID int64) (string, error)
+}
+
+// renderKnowledgeMap builds the categorized tree with per-page summaries.
+// focusPageID, if set, only renders the subtree (existing behavior).
+func renderKnowledgeMap(ctx context.Context, db KnowledgeMapDB, focusPageID *int64) string {
+	var b strings.Builder
+	b.WriteString("【知识地图】\n\n")
+
+	pages, err := db.GetWikiPageTree(ctx)
+	if err != nil || len(pages) == 0 {
+		b.WriteString("（知识库为空）\n")
+		return b.String()
+	}
+
+	// Build parent-children index
+	children := make(map[int64][]model.GetWikiPageTreeRow)
+	var roots []model.GetWikiPageTreeRow
+	for _, p := range pages {
+		if !p.ParentID.Valid || p.ParentID.Int64 == 0 {
+			roots = append(roots, p)
+		} else {
+			children[p.ParentID.Int64] = append(children[p.ParentID.Int64], p)
+		}
+	}
+
+	// If focus is set, find that node as the root
+	if focusPageID != nil {
+		var focus *model.GetWikiPageTreeRow
+		for i, p := range roots {
+			if p.ID == *focusPageID {
+				focus = &roots[i]
+				break
+			}
+		}
+		if focus == nil {
+			b.WriteString(fmt.Sprintf("（未找到页面 ID=%d）\n", *focusPageID))
+			return b.String()
+		}
+		roots = []model.GetWikiPageTreeRow{*focus}
+	}
+
+	// Render each root and its descendants
+	for _, root := range roots {
+		renderNodeWithChildren(ctx, &b, db, root, children, 0)
+	}
+
+	// Render global tag index
+	b.WriteString("\n")
+	b.WriteString(renderTagIndex(ctx, db))
+
+	return b.String()
+}
+
+func renderNodeWithChildren(ctx context.Context, b *strings.Builder, db KnowledgeMapDB, node model.GetWikiPageTreeRow, children map[int64][]model.GetWikiPageTreeRow, depth int) {
+	indent := strings.Repeat("  ", depth)
+	icon := "📄"
+	if node.PageType == "overview" {
+		icon = "📁"
+	}
+
+	// Build status suffix
+	status := "空"
+	if node.ContentStatus == "published" {
+		status = "有内容"
+	} else if node.ContentStatus == "draft" {
+		status = "草稿"
+	}
+
+	// Build summary line
+	summaryLine := renderSummaryLine(ctx, db, node)
+
+	// Build metadata
+	meta := fmt.Sprintf("[ID=%d]", node.ID)
+	if node.BacklinkCount > 0 {
+		meta += fmt.Sprintf(", %d 反链", node.BacklinkCount)
+	}
+	if node.TagsNormalized != "" {
+		meta += fmt.Sprintf(", 标签: %s", node.TagsNormalized)
+	}
+
+	// Coverage for overview nodes (X/Y 已建)
+	if node.PageType == "overview" {
+		all := collectDescendants(node, children)
+		filled := 0
+		for _, d := range all {
+			if d.ContentStatus == "published" || d.ContentStatus == "draft" {
+				filled++
+			}
+		}
+		meta = fmt.Sprintf("%d/%d 已建, %s", filled, len(all), meta)
+	}
+
+	b.WriteString(fmt.Sprintf("%s%s %s (%s) %s\n", indent, icon, node.Title, status, meta))
+	if summaryLine != "" {
+		b.WriteString(fmt.Sprintf("%s  %s\n", indent, summaryLine))
+	}
+
+	// Recurse into children
+	for _, child := range children[node.ID] {
+		renderNodeWithChildren(ctx, b, db, child, children, depth+1)
+	}
+}
+
+func collectDescendants(root model.GetWikiPageTreeRow, children map[int64][]model.GetWikiPageTreeRow) []model.GetWikiPageTreeRow {
+	var result []model.GetWikiPageTreeRow
+	var walk func(id int64)
+	walk = func(id int64) {
+		for _, c := range children[id] {
+			result = append(result, c)
+			walk(c.ID)
+		}
+	}
+	walk(root.ID)
+	return result
+}
+
+// renderSummaryLine returns the summary for a page, with fallback handling.
+func renderSummaryLine(ctx context.Context, db KnowledgeMapDB, node model.GetWikiPageTreeRow) string {
+	status := node.SummaryStatus
+
+	switch status {
+	case "ready":
+		if node.Summary != "" {
+			return node.Summary
+		}
+		fallthrough
+	case "pending":
+		if content, err := db.GetPageContentForFallback(ctx, node.ID); err == nil && content != "" {
+			return truncateForDisplay(content, 80) + " (摘要待更新)"
+		}
+		return "(摘要待更新)"
+	case "failed":
+		if content, err := db.GetPageContentForFallback(ctx, node.ID); err == nil && content != "" {
+			return truncateForDisplay(content, 80) + " (摘要生成失败)"
+		}
+		return "(摘要生成失败)"
+	case "empty":
+		if content, err := db.GetPageContentForFallback(ctx, node.ID); err == nil && content != "" {
+			return truncateForDisplay(content, 80) + " (暂无摘要)"
+		}
+		return ""
+	default:
+		return ""
+	}
+}
+
+func truncateForDisplay(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "..."
+}
+
+// renderTagIndex builds the global tag summary.
+func renderTagIndex(ctx context.Context, db KnowledgeMapDB) string {
+	pages, _ := db.GetWikiPageTree(ctx)
+	tagCounts := make(map[string]int)
+	for _, p := range pages {
+		if p.TagsNormalized == "" {
+			continue
+		}
+		for _, tag := range strings.Split(p.TagsNormalized, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tagCounts[tag]++
+			}
+		}
+	}
+	if len(tagCounts) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("【全局标签索引】\n")
+	type tagCount struct {
+		tag   string
+		count int
+	}
+	var sorted []tagCount
+	for k, v := range tagCounts {
+		sorted = append(sorted, tagCount{k, v})
+	}
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j].count > sorted[i].count {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+	for i, tc := range sorted {
+		if i > 0 {
+			b.WriteString(" · ")
+		}
+		b.WriteString(fmt.Sprintf("#%s (%d 页)", tc.tag, tc.count))
+	}
+	b.WriteString("\n")
+	return b.String()
+}

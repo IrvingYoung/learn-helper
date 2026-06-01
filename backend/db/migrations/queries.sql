@@ -100,7 +100,9 @@ FROM wiki_pages
 ORDER BY sort_order, id;
 
 -- name: GetWikiPageTree :many
-SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path
+SELECT id, title, slug, page_type, content_status, parent_id, sort_order, path,
+       summary, summary_status, summary_content_hash,
+       backlink_count, link_count, tags_normalized
 FROM wiki_pages
 ORDER BY sort_order, id;
 
