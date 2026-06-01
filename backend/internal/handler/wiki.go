@@ -442,13 +442,13 @@ func (h *WikiHandler) CreateWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log the create action with source="manual".
-	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "create",
 		PageID:    sql.NullInt64{Int64: id, Valid: id > 0},
 		PageTitle: req.Title,
 		PagePath:  sql.NullString{String: pagePath, Valid: pagePath != ""},
 		Source:    "manual",
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	// Trigger summary regeneration (best-effort, non-blocking).
 	if id > 0 {
@@ -520,12 +520,12 @@ func (h *WikiHandler) UpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 	h.updatePageLinks(id, req.Content)
 
 	// Log the update action with source="manual".
-	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "update",
 		PageID:    sql.NullInt64{Int64: id, Valid: true},
 		PageTitle: req.Title,
 		Source:    "manual",
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	// Trigger summary regeneration (best-effort, non-blocking).
 	_ = h.queries.MarkSummaryPending(ctx, id)
@@ -586,13 +586,13 @@ func (h *WikiHandler) DeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 
 	// Log the delete action with source="manual".
 	// page_id is NULL (the row is gone) but page_title is preserved.
-	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "delete",
 		PageID:    sql.NullInt64{}, // explicitly invalid
 		PageTitle: page.Title,
 		PagePath:  sql.NullString{String: page.Path, Valid: page.Path != ""},
 		Source:    "manual",
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -712,12 +712,12 @@ func (h *WikiHandler) RenameWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log the rename action with source="manual".
-	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "rename",
 		PageID:    sql.NullInt64{Int64: id, Valid: true},
 		PageTitle: req.Title,
 		Source:    "manual",
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"id": id, "title": req.Title, "slug": newSlug})
@@ -818,12 +818,12 @@ func (h *WikiHandler) MoveWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log the move action with source="manual".
-	_ = h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := h.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "move",
 		PageID:    sql.NullInt64{Int64: id, Valid: true},
 		PageTitle: page.Title,
 		Source:    "manual",
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

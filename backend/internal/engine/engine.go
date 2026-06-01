@@ -463,14 +463,14 @@ func (e *ExecutionEngine) execCreatePage(ctx context.Context, params map[string]
 	}
 
 	// Log the create action (best-effort: don't fail the action on log error).
-	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "create",
 		PageID:    sql.NullInt64{Int64: pageID, Valid: true},
 		PageTitle: title,
 		PagePath:  sql.NullString{String: path, Valid: true},
 		Source:    "plan",
 		Summary:   sql.NullString{String: "通过 plan 创建页面", Valid: true},
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	// Trigger summary regeneration (best-effort, non-blocking).
 	_ = e.queries.MarkSummaryPending(ctx, pageID)
@@ -549,13 +549,13 @@ func (e *ExecutionEngine) execUpdatePage(ctx context.Context, params map[string]
 	e.updatePageLinks(ctx, pageID, content)
 
 	// Log the update action.
-	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "update",
 		PageID:    sql.NullInt64{Int64: pageID, Valid: true},
 		PageTitle: title,
 		Source:    "plan",
 		Summary:   sql.NullString{String: "通过 plan 更新页面", Valid: true},
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	// Trigger summary regeneration (best-effort, non-blocking).
 	_ = e.queries.MarkSummaryPending(ctx, pageID)
@@ -606,14 +606,14 @@ func (e *ExecutionEngine) execDeletePage(ctx context.Context, params map[string]
 	// 4. Log the delete action.
 	//    On delete, page_id is NULL (the row is gone) but page_title is preserved
 	//    so the AI can still see what was just removed.
-	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "delete",
 		PageID:    sql.NullInt64{}, // explicitly invalid
 		PageTitle: pageTitle,
 		PagePath:  sql.NullString{String: pagePath, Valid: pagePath != ""},
 		Source:    "plan",
 		Summary:   sql.NullString{String: "通过 plan 删除页面", Valid: true},
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	return map[string]any{
 		"deleted": true,
@@ -647,13 +647,15 @@ func (e *ExecutionEngine) execLinkPages(ctx context.Context, params map[string]a
 		// Link already present; just update the link arrays
 		e.updatePageLinks(ctx, sourceID, source.Content)
 		// Log the link action so the AI sees the user added/refreshed a link.
-		_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+		if err := e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 			Action:    "link",
 			PageID:    sql.NullInt64{Int64: sourceID, Valid: true},
 			PageTitle: source.Title,
 			Source:    "plan",
 			Summary:   sql.NullString{String: fmt.Sprintf("通过 plan 添加链接 [[%s]]", linkText), Valid: true},
-		})
+		}); err != nil {
+			log.Printf("WARN: wiki_log write failed: %v", err)
+		}
 		return map[string]any{
 			"source_page_id": sourceID,
 			"target_page_id": targetID,
@@ -685,13 +687,13 @@ func (e *ExecutionEngine) execLinkPages(ctx context.Context, params map[string]a
 	e.updatePageLinks(ctx, sourceID, newContent)
 
 	// Log the link action.
-	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "link",
 		PageID:    sql.NullInt64{Int64: sourceID, Valid: true},
 		PageTitle: source.Title,
 		Source:    "plan",
 		Summary:   sql.NullString{String: fmt.Sprintf("通过 plan 添加链接 [[%s]]", linkText), Valid: true},
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	return map[string]any{
 		"source_page_id": sourceID,
@@ -765,14 +767,14 @@ func (e *ExecutionEngine) execMovePage(ctx context.Context, params map[string]an
 	}
 
 	// Log the move action.
-	_ = e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
+	if err := e.queries.InsertWikiLog(ctx, model.InsertWikiLogParams{
 		Action:    "move",
 		PageID:    sql.NullInt64{Int64: pageID, Valid: true},
 		PageTitle: page.Title,
 		PagePath:  sql.NullString{String: newPath, Valid: true},
 		Source:    "plan",
 		Summary:   sql.NullString{String: "通过 plan 移动页面", Valid: true},
-	})
+	}); err != nil { log.Printf("WARN: wiki_log write failed: %v", err) }
 
 	return map[string]any{
 		"page_id":  pageID,
