@@ -26,6 +26,7 @@ interface MarkdownContentProps {
   content: string
   className?: string
   onWikiLinkClick?: (title: string) => void
+  compact?: boolean
 }
 
 function processWikiLinks(content: string): string {
@@ -34,14 +35,16 @@ function processWikiLinks(content: string): string {
   })
 }
 
-export const MarkdownContent = memo(function MarkdownContent({ content, className = '', onWikiLinkClick }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({
+  content, className = '', onWikiLinkClick, compact = false,
+}: MarkdownContentProps) {
   const { theme } = useTheme()
   const syntaxStyle = theme === 'dark' ? oneDark : oneLight
   const processedContent = processWikiLinks(content)
 
   if (!content) return null
   return (
-    <div className={`prose prose-sm max-w-none ${className}`}>
+    <div className={`prose-custom ${compact ? 'prose-custom--compact' : ''} ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -49,7 +52,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
             const match = /language-(\w+)/.exec(className || '')
             if (!match) {
               return (
-                <code className="bg-th-bg-tertiary text-th-accent px-1 py-0.5 rounded text-sm" {...props}>
+                <code className="font-mono" {...props}>
                   {children}
                 </code>
               )
@@ -59,7 +62,14 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
                 style={syntaxStyle}
                 language={match[1]}
                 PreTag="div"
-                className="rounded-md !mt-2 !mb-2"
+                className="rounded-md"
+                customStyle={{
+                  fontSize: '0.8125rem',
+                  padding: '0.75rem 1rem',
+                  margin: 0,
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--separator)',
+                }}
               >
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>
@@ -68,36 +78,45 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
           table({ children }) {
             return (
               <div className="overflow-x-auto">
-                <table className="min-w-full border-collapse border border-th-border">{children}</table>
+                <table>{children}</table>
               </div>
             )
           },
           th({ children }) {
-            return <th className="border border-th-border bg-th-bg-tertiary px-3 py-1.5 text-left text-sm font-medium text-th-text-secondary">{children}</th>
+            return <th>{children}</th>
           },
           td({ children }) {
-            return <td className="border border-th-border px-3 py-1.5 text-sm text-th-text-primary">{children}</td>
+            return <td>{children}</td>
           },
           blockquote({ children }) {
-            return <blockquote className="border-l-4 border-th-accent bg-th-accent-bg pl-4 py-1 my-2 text-sm text-th-text-secondary">{children}</blockquote>
+            return <blockquote>{children}</blockquote>
           },
           h1({ children }) {
-            return <h1 className="text-2xl font-bold mt-6 mb-3 text-th-text-primary font-display leading-tight">{children}</h1>
+            return <h1>{children}</h1>
           },
           h2({ children }) {
-            return <h2 className="text-xl font-bold mt-5 mb-2 text-th-text-primary font-display leading-snug">{children}</h2>
+            return <h2>{children}</h2>
           },
           h3({ children }) {
-            return <h3 className="text-base font-semibold mt-4 mb-1.5 text-th-text-primary">{children}</h3>
+            return <h3>{children}</h3>
+          },
+          h4({ children }) {
+            return <h4>{children}</h4>
           },
           ul({ children }) {
-            return <ul className="list-disc list-inside space-y-0.5 my-1 text-th-text-primary">{children}</ul>
+            return <ul>{children}</ul>
           },
           ol({ children }) {
-            return <ol className="list-decimal list-inside space-y-0.5 my-1 text-th-text-primary">{children}</ol>
+            return <ol>{children}</ol>
           },
           p({ children }) {
-            return <p className="my-1.5 leading-relaxed text-th-text-secondary">{children}</p>
+            return <p>{children}</p>
+          },
+          em({ children }) {
+            return <em className="italic text-th-text-primary">{children}</em>
+          },
+          strong({ children }) {
+            return <strong className="font-semibold text-th-text-primary">{children}</strong>
           },
           a({ href, children, ...props }) {
             if (href?.startsWith('wiki:')) {
@@ -109,14 +128,13 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
                     const title = decodeURIComponent(href.slice(5))
                     onWikiLinkClick?.(title)
                   }}
-                  className="text-th-accent hover:underline cursor-pointer"
                   {...props}
                 >
                   {children}
                 </a>
               )
             }
-            return <a href={href} {...props}>{children}</a>
+            return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
           },
         }}
       >
@@ -124,4 +142,4 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
       </ReactMarkdown>
     </div>
   )
-});
+})

@@ -443,19 +443,29 @@ ${meta.plan.reasoning}
       const isLast = i === messages.length - 1;
 
       return (
-        <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-          <div className={`max-w-[85%] ${msg.role === "user" ? "bg-th-accent bg-th-user-bubble text-white rounded-2xl rounded-br-md px-3 py-2" : ""}`}>
+        <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
+          {msg.role === "assistant" && (
+            <div className="w-6 h-6 rounded-full bg-th-accent-bg flex items-center justify-center mr-2 shrink-0 mt-0.5">
+              <span className="font-display text-[11px] font-bold text-th-accent leading-none">L</span>
+            </div>
+          )}
+          <div
+            className={`max-w-[85%] ${
+              msg.role === "user"
+                ? "bg-th-user-bubble text-th-user-bubble-text rounded-2xl rounded-br-md px-3.5 py-2 shadow-th"
+                : "text-th-text-primary"
+            }`}
+          >
             {msg.role === "user" ? (
-              <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+              <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
             ) : (
               <div className="min-w-0">
                 {msg.content ? (
-                  <MarkdownContent content={msg.content} />
+                  <MarkdownContent content={msg.content} compact />
                 ) : isLast && loading ? (
-                  <div className="flex items-center gap-1.5 text-th-text-muted">
-                    <span className="w-2 h-2 bg-th-accent rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-2 h-2 bg-th-accent rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-2 h-2 bg-th-accent rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <div className="flex items-center gap-1 py-1 text-th-text-muted">
+                    <span className="block w-1 h-3.5 bg-th-accent rounded-sm animate-cursor-scan" />
+                    <span className="text-xs italic">正在思考</span>
                   </div>
                 ) : null}
                 {/* Tool calls from persisted messages */}
@@ -622,9 +632,9 @@ ${meta.plan.reasoning}
       </div>
 
       {streamError && (
-        <div className="mx-4 mb-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-          {streamError}
-          <button onClick={() => setStreamError(null)} className="ml-2 underline">关闭</button>
+        <div className="mx-4 mb-2 p-2.5 bg-th-error-bg border border-th-error/20 rounded-md text-xs text-th-error flex items-start gap-2 animate-fade-in">
+          <span className="flex-1">{streamError}</span>
+          <button onClick={() => setStreamError(null)} className="underline shrink-0">关闭</button>
         </div>
       )}
 

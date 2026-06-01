@@ -1,114 +1,191 @@
-/* Warm theme (default) */
+/* === Warm theme (default) — "manuscript paper" === */
 :root,
 [data-theme="warm"] {
-  --bg-primary: #faf9f7;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f5f3ef;
-  --border: #eae7e0;
-  --border-hover: #d9d5cc;
-  --text-primary: #1a1815;
-  --text-secondary: #4a4640;
-  --text-muted: #8a857a;
+  /* Surfaces */
+  --bg-primary: #faf8f3;
+  --bg-secondary: #fdfcf8;
+  --bg-tertiary: #f1ede4;
+  --bg-elevated: #ffffff;
+
+  /* Borders & dividers */
+  --border: #e6e1d4;
+  --border-hover: #d3ccb9;
+  --separator: #ece7d8;
+
+  /* Text */
+  --text-primary: #1f1c17;
+  --text-secondary: #4f4a3f;
+  --text-muted: #8a8474;
+
+  /* Hover & focus */
+  --hover: #f0ebe0;
+  --focus-ring: #c45c26;
+
+  /* Accent — burnt sienna */
   --accent: #c45c26;
   --accent-light: #e07a3c;
-  --accent-bg: #fef5ed;
-  --success: #2d7a3e;
+  --accent-soft: #d97a4d;
+  --accent-bg: #f6ebe0;
+  --accent-bg-strong: #efddca;
+
+  /* Semantic */
+  --success: #4a7a3e;
   --warning: #c78a2a;
-  --error: #dc2626;
-  --node-filled: #2d7a3e;
+  --error: #b8412a;
+  --error-bg: #f7e3dc;
+  --danger: #b8412a;
+  --danger-bg: #f7e3dc;
+
+  /* Tree state */
+  --node-filled: #4a7a3e;
   --node-partial: #c78a2a;
-  --node-empty: #b5b0a6;
+  --node-empty: #a8a294;
+
+  /* Type */
   --font-display: 'Playfair Display', Georgia, serif;
   --font-body: 'DM Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
-  --scrollbar-thumb: #d9d5cc;
-  --scrollbar-thumb-hover: #b5b0a6;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(196, 92, 38, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(196, 92, 38, 0.04);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(196, 92, 38, 0.04);
-  --input-bg: #ffffff;
-  --input-border: #d9d5cc;
+
+  /* Scrollbar */
+  --scrollbar-thumb: #d3ccb9;
+  --scrollbar-thumb-hover: #a8a294;
+
+  /* Shadows — tinted with warm hue, not generic black */
+  --shadow: 0 1px 2px rgba(31, 28, 23, 0.04), 0 1px 3px rgba(196, 92, 38, 0.04);
+  --shadow-md: 0 2px 6px rgba(31, 28, 23, 0.05), 0 4px 12px rgba(196, 92, 38, 0.05);
+  --shadow-lg: 0 8px 24px rgba(31, 28, 23, 0.08), 0 4px 8px rgba(196, 92, 38, 0.06);
+  --shadow-float: 0 12px 32px rgba(31, 28, 23, 0.10), 0 4px 12px rgba(196, 92, 38, 0.06);
+
+  /* Inputs */
+  --input-bg: #fdfcf8;
+  --input-border: #d3ccb9;
+
+  /* Bubbles */
   --user-bubble-bg: #c45c26;
   --user-bubble-text: #ffffff;
-  --assistant-bubble-bg: #f0ede7;
-  --assistant-bubble-text: #1a1815;
-  --badge-published-bg: #f0fdf4;
-  --badge-published-text: #166534;
-  --badge-published-border: #bbf7d0;
-  --badge-published-dot: #22c55e;
-  --badge-draft-bg: #fffbeb;
-  --badge-draft-text: #92400e;
-  --badge-draft-border: #fde68a;
-  --badge-draft-dot: #f59e0b;
-  --badge-empty-bg: #f5f3ef;
-  --badge-empty-text: #8a857a;
-  --badge-empty-border: #eae7e0;
-  --badge-empty-dot: #b5b0a6;
+  --assistant-bubble-bg: #f0ebe0;
+  --assistant-bubble-text: #1f1c17;
+
+  /* Status badges */
+  --badge-published-bg: #ecf3e4;
+  --badge-published-text: #3d6631;
+  --badge-published-border: #c5d9b3;
+  --badge-published-dot: #5a8c47;
+  --badge-draft-bg: #fbf2dd;
+  --badge-draft-text: #7a5410;
+  --badge-draft-border: #e9d49b;
+  --badge-draft-dot: #d4991e;
+  --badge-empty-bg: #ece7d8;
+  --badge-empty-text: #6e6857;
+  --badge-empty-border: #d3ccb9;
+  --badge-empty-dot: #a8a294;
+
+  /* Page ribbon (Bear-style top-right status tag) */
+  --ribbon-bg: #ecf3e4;
+  --ribbon-text: #3d6631;
+  --ribbon-border: #c5d9b3;
+
+  /* Depth guide lines for tree */
+  --depth-guide: #d3ccb9;
+
+  /* Ambient overlay tint */
+  --ambient-tint: #c45c26;
 }
 
-/* Dark theme — warm charcoal with amber accent (distinct from purple AI aesthetic) */
+/* === Dark theme — "typewriter at night" === */
 [data-theme="dark"] {
   --bg-primary: #0c0c0a;
-  --bg-secondary: #141412;
-  --bg-tertiary: #1c1c1a;
+  --bg-secondary: #131310;
+  --bg-tertiary: #1c1c18;
+  --bg-elevated: #1c1c18;
+
   --border: #2a2a26;
-  --border-hover: #3a3a36;
+  --border-hover: #3a3a34;
+  --separator: #1f1f1c;
+
   --text-primary: #e8e5dd;
   --text-secondary: #a3a098;
   --text-muted: #6b6863;
+
+  --hover: #1c1c18;
+  --focus-ring: #d97706;
+
   --accent: #d97706;
   --accent-light: #f59e0b;
-  --accent-bg: rgba(217, 119, 6, 0.12);
-  --success: #22c55e;
+  --accent-soft: #b86507;
+  --accent-bg: rgba(217, 119, 6, 0.10);
+  --accent-bg-strong: rgba(217, 119, 6, 0.18);
+
+  --success: #4ade80;
   --warning: #f59e0b;
-  --error: #ef4444;
-  --node-filled: #22c55e;
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.08);
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.08);
+
+  --node-filled: #4ade80;
   --node-partial: #f59e0b;
   --node-empty: #6b6863;
+
   --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+
   --scrollbar-thumb: #2a2a26;
-  --scrollbar-thumb-hover: #3a3a36;
+  --scrollbar-thumb-hover: #3a3a34;
+
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(217, 119, 6, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(217, 119, 6, 0.06);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(217, 119, 6, 0.06);
-  --input-bg: #1c1c1a;
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(217, 119, 6, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(217, 119, 6, 0.08);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.7), 0 4px 12px rgba(217, 119, 6, 0.08);
+
+  --input-bg: #131310;
   --input-border: #2a2a26;
+
   --user-bubble-bg: #d97706;
   --user-bubble-text: #ffffff;
-  --assistant-bubble-bg: #1c1c1a;
+  --assistant-bubble-bg: #1c1c18;
   --assistant-bubble-text: #e8e5dd;
-  --badge-published-bg: rgba(34, 197, 94, 0.08);
-  --badge-published-text: #4ade80;
-  --badge-published-border: rgba(34, 197, 94, 0.2);
-  --badge-published-dot: #22c55e;
+
+  --badge-published-bg: rgba(74, 222, 128, 0.08);
+  --badge-published-text: #86efac;
+  --badge-published-border: rgba(74, 222, 128, 0.2);
+  --badge-published-dot: #4ade80;
   --badge-draft-bg: rgba(245, 158, 11, 0.08);
-  --badge-draft-text: #fbbf24;
+  --badge-draft-text: #fcd34d;
   --badge-draft-border: rgba(245, 158, 11, 0.2);
   --badge-draft-dot: #f59e0b;
   --badge-empty-bg: rgba(107, 104, 99, 0.08);
   --badge-empty-text: #a3a098;
-  --badge-empty-border: rgba(107, 104, 99, 0.15);
+  --badge-empty-border: rgba(107, 104, 99, 0.18);
   --badge-empty-dot: #6b6863;
+
+  --ribbon-bg: rgba(74, 222, 128, 0.08);
+  --ribbon-text: #86efac;
+  --ribbon-border: rgba(74, 222, 128, 0.2);
+
+  --depth-guide: #2a2a26;
+
+  --ambient-tint: #d97706;
 }
 
-/* Custom scrollbar */
-.custom-scroll::-webkit-scrollbar { width: 5px; }
+/* === Custom scrollbar === */
+.custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
 .custom-scroll::-webkit-scrollbar-track { background: transparent; }
 .custom-scroll::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border-radius: 3px;
+  transition: background 0.2s;
 }
 .custom-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
 }
 
-/* Resizable panel separator */
+/* === Resizable panel separator === */
 [data-separator] {
   width: 1px;
-  background: var(--border);
-  transition: background 0.15s, width 0.15s;
+  background: var(--separator);
+  transition: background 0.18s, width 0.18s;
   position: relative;
 }
 [data-separator]::after {
@@ -126,8 +203,14 @@
   width: 2px;
 }
 
-/* Visible selection highlight on user message bubbles (orange bg + white text) */
+/* === Selection highlight on user bubble (white on orange) === */
 .bg-th-user-bubble::selection,
 .bg-th-user-bubble ::selection {
   background: rgba(255, 255, 255, 0.25);
+}
+
+/* === SVG noise filter for grain overlay === */
+/* Tiny turbulence rendered to transparent rect — gives "paper grain" feel */
+:root {
+  --grain-svg: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }

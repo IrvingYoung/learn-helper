@@ -241,7 +241,6 @@ export function WikiPageLayout() {
 
 
 
-
   const handleSaveConfig = async () => {
     const resp = await fetch('/api/ai/configs', {
       method: 'POST',

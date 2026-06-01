@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import type { WikiTreeNode } from '../types';
 import { TreeNodeMenu } from './TreeNodeMenu';
 
@@ -37,7 +37,10 @@ interface KnowledgeTreeProps {
   newNodeId?: number | null;
 }
 
-export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddChild, onRename, onMove, onDelete, newNodeId }: KnowledgeTreeProps) {
+export function KnowledgeTree({
+  tree, selectedSlug, onSelect, collapsed,
+  onAddChild, onRename, onMove, onDelete, newNodeId,
+}: KnowledgeTreeProps) {
   const [menuState, setMenuState] = useState<{
     x: number; y: number; nodeId: number; nodeTitle: string; hasChildren: boolean;
   } | null>(null);
@@ -167,7 +170,10 @@ export function KnowledgeTree({ tree, selectedSlug, onSelect, collapsed, onAddCh
     return ids;
   };
 
-  const draggedDescendants = draggedId ? getDescendantIds(draggedId, tree) : new Set<number>();
+  const draggedDescendants = useMemo(
+    () => (draggedId ? getDescendantIds(draggedId, tree) : new Set<number>()),
+    [draggedId, tree]
+  );
 
   const handleContextMenu = (e: React.MouseEvent, node: WikiTreeNode) => {
     e.preventDefault();
@@ -317,6 +323,7 @@ interface TreeNodeProps {
   onDropHover?: (id: number | null) => void;
   disabled?: boolean;
 }
+
 
 function TreeNode({ node, selectedSlug, onSelect, depth, expandedIds, onToggle, onContextMenu, onAddChild, onRename, onMove, renameNodeId, onRenameStarted, draggedId, draggedDescendants, onDragStart, onDragEnd, dropHoverId, onDropHover, disabled = false }: TreeNodeProps) {
   const [hovered, setHovered] = useState(false);
