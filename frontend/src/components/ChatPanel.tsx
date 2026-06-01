@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
-import type { Conversation, ConversationMessage, Plan, ToolCallInfo } from "../types";
+import type {
+  Conversation,
+  ConversationMessage,
+  Plan,
+  ToolCallInfo,
+  PermissionRequestEvent,
+  AskUserRequestEvent,
+  PermissionDecisionInput,
+} from "../types";
 import {
   listConversations,
   createConversation,
@@ -7,9 +15,14 @@ import {
   deleteConversation,
   getConversationMessages,
   streamChat,
+  postPermissionResponse,
+  postAskUserResponse,
 } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
+import { PermissionQueue } from "./PermissionQueue";
+import { AskUserCard } from "./AskUserCard";
+import { AskUserContextView } from "./AskUserContext";
 
 const STORAGE_KEY = "llm-wiki-active-conversation-id";
 
@@ -37,6 +50,8 @@ export const ChatPanel = forwardRef<{
   const [titleDraft, setTitleDraft] = useState("");
   const [streamError, setStreamError] = useState<string | null>(null);
   const [streamingToolCalls, setStreamingToolCalls] = useState<Map<string, ToolCallInfo>>(new Map());
+  const [permissionRequest, setPermissionRequest] = useState<PermissionRequestEvent | null>(null);
+  const [askUserRequest, setAskUserRequest] = useState<AskUserRequestEvent | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const prevLoadingRef = useRef(false);
@@ -112,6 +127,12 @@ export const ChatPanel = forwardRef<{
           (tc) => {
             toolCallAccum.set(tc.id, tc);
             setStreamingToolCalls(new Map(toolCallAccum));
+          },
+          (pr) => {
+            setPermissionRequest(pr);
+          },
+          (au) => {
+            setAskUserRequest(au);
           },
         );
 
@@ -254,6 +275,28 @@ export const ChatPanel = forwardRef<{
     }
   }
 
+  async function respondToPermission(decisions: PermissionDecisionInput[]) {
+    if (!permissionRequest) return;
+    const reqId = permissionRequest.request_id;
+    setPermissionRequest(null);
+    try {
+      await postPermissionResponse(reqId, decisions);
+    } catch (e) {
+      console.error("Failed to send permission response:", e);
+    }
+  }
+
+  async function respondToAskUser(answer: string | string[] | "no_answer") {
+    if (!askUserRequest) return;
+    const reqId = askUserRequest.request_id;
+    setAskUserRequest(null);
+    try {
+      await postAskUserResponse(reqId, answer);
+    } catch (e) {
+      console.error("Failed to send ask_user response:", e);
+    }
+  }
+
   async function handleSend(planId?: string, messageOverride?: string, skipEmptyCheck?: boolean) {
     if (loading) return;
 
@@ -387,7 +430,13 @@ ${meta.plan.reasoning}
         (tc) => {
           toolCallAccum.set(tc.id, tc);
           setStreamingToolCalls(new Map(toolCallAccum));
-        }
+        },
+        (pr) => {
+          setPermissionRequest(pr);
+        },
+        (au) => {
+          setAskUserRequest(au);
+        },
       );
 
       // If API created a new conversation (e.g. auto-named), switch to it
@@ -642,6 +691,21 @@ ${meta.plan.reasoning}
           </div>
         )}
         {renderedMessages}
+        {askUserRequest?.context && (
+          <div className="mt-2">
+            <AskUserContextView context={askUserRequest.context} />
+          </div>
+        )}
+        {askUserRequest && (
+          <div className="flex justify-start animate-fade-in">
+            <div className="w-6 h-6 rounded-full bg-th-accent-bg flex items-center justify-center mr-2 shrink-0 mt-0.5">
+              <span className="font-display text-[11px] font-bold text-th-accent leading-none">L</span>
+            </div>
+            <div className="max-w-[85%]">
+              <AskUserCard request={askUserRequest} onAnswer={respondToAskUser} />
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -652,7 +716,15 @@ ${meta.plan.reasoning}
         </div>
       )}
 
-      
+      {/* Permission queue — sits above the input. The right panel renders the
+          permanent workspace; for now this lives here so the user can act on
+          pending write tools without leaving the chat surface. */}
+      {permissionRequest && (
+        <div className="mx-3 mb-2 max-h-80 overflow-y-auto shrink-0">
+          <PermissionQueue request={permissionRequest} onResolve={respondToPermission} />
+        </div>
+      )}
+
       {/* Input */}
       <div className="p-3 border-t border-th-border shrink-0">
         {currentPageTitle && (

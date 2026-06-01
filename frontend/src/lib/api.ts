@@ -1,4 +1,36 @@
-import type { WikiPage, WikiTreeNode, Conversation, ConversationMessage, Plan, ExecutionReport, ToolCallInfo } from "../types";
+import type {
+  WikiPage,
+  WikiTreeNode,
+  Conversation,
+  ConversationMessage,
+  Plan,
+  ExecutionReport,
+  ToolCallInfo,
+  PermissionRequestEvent,
+  AskUserRequestEvent,
+  PermissionDecisionInput,
+} from "../types";
+
+// Write tools require user permission before execution. When a `tool_call_start`
+// arrives for one of these, the frontend stamps the card as `pending`.
+const WRITE_TOOLS = new Set([
+  "create_page",
+  "update_page",
+  "patch_page",
+  "delete_page",
+  "link_pages",
+  "move_page",
+]);
+
+// Read tools run without permission. Stamped `running` on start, `done`/`error`
+// on result. (ask_user is a separate flow handled via its own event.)
+function statusForStart(name: string): "pending" | "running" {
+  return WRITE_TOOLS.has(name) ? "pending" : "running";
+}
+
+function statusForResult(error: string): "done" | "error" {
+  return error ? "error" : "done";
+}
 
 const BASE = "/api";
 
@@ -98,6 +130,8 @@ export async function streamChat(
   onStatus?: (data: { step: number; max_steps: number; status: string }) => void,
   onError?: (error: string) => void,
   onToolCall?: (data: ToolCallInfo) => void,
+  onPermissionRequired?: (data: PermissionRequestEvent) => void,
+  onAskUserRequest?: (data: AskUserRequestEvent) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/ai/chat`, {
     method: "POST",
@@ -161,6 +195,7 @@ export async function streamChat(
           input: data.input || {},
           output: "",
           error: "",
+          status: statusForStart(data.name),
         });
       } catch { /* ignore */ }
       currentEvent = "";
@@ -171,14 +206,30 @@ export async function streamChat(
     if (currentEvent === "tool_result" && onToolCall) {
       try {
         const data = JSON.parse(currentData);
+        const errorStr = data.error || "";
         onToolCall({
           id: data.id,
           name: data.name,
           input: data.input || {},
           output: data.output || "",
-          error: data.error || "",
+          error: errorStr,
+          status: statusForResult(errorStr),
         });
       } catch { /* ignore */ }
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    if (currentEvent === "permission_required" && onPermissionRequired) {
+      try { onPermissionRequired(JSON.parse(currentData)); } catch { /* ignore */ }
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    if (currentEvent === "ask_user_request" && onAskUserRequest) {
+      try { onAskUserRequest(JSON.parse(currentData)); } catch { /* ignore */ }
       currentEvent = "";
       currentData = "";
       return;
@@ -304,4 +355,30 @@ export async function deleteWikiPage(id: number): Promise<void> {
 export async function confirmPageContent(pageId: number): Promise<void> {
   const res = await fetch(`/api/wiki/${pageId}/confirm`, { method: "PUT" });
   if (!res.ok) throw new Error("Failed to confirm page content");
+}
+
+// Permission / ask_user response endpoints (Phase 7)
+
+export async function postPermissionResponse(
+  requestId: string,
+  decisions: PermissionDecisionInput[],
+): Promise<void> {
+  const res = await fetch(`${BASE}/ai/permission_response`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request_id: requestId, decisions }),
+  });
+  if (!res.ok) throw new Error("Failed to send permission response");
+}
+
+export async function postAskUserResponse(
+  requestId: string,
+  answer: string | string[] | "no_answer",
+): Promise<void> {
+  const res = await fetch(`${BASE}/ai/ask_user_response`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request_id: requestId, answer }),
+  });
+  if (!res.ok) throw new Error("Failed to send ask_user response");
 }
