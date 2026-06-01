@@ -64,211 +64,154 @@ type Tool struct {
 // WikiTools returns the tool definitions for wiki_maintainer.
 func WikiTools() []Tool {
 	return []Tool{
+		// ── Write tools (gated by permission queue) ──
 		{
-			Name:        "propose_plan",
-			Description: "提出对知识库的操作计划。每次 plan 不超过 3-5 个 action。复杂任务（如建立知识体系）必须分多轮完成：先讨论和建结构，再逐步填充内容。用户确认后才会真正执行。",
+			Name:        "create_page",
+			Description: "在指定父页面下创建新页面。走权限闸门,需要用户批准。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"reasoning": map[string]any{
-						"type":        "string",
-						"description": "为什么建议这些操作，向用户解释你的思路",
-					},
-					"outline": map[string]any{
-						"type":        "array",
-						"description": "知识大纲树（可选）。展示为可折叠树状结构，确认后自动创建所有骨架页面（内容为空）。适用于 3+ 页面的复杂体系建设",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"id": map[string]any{
-									"type":        "string",
-									"description": "节点标识符，可选，供后续 action 通过 {{action:id.page_id}} 引用",
-								},
-								"title": map[string]any{
-									"type":        "string",
-									"description": "页面标题",
-								},
-								"page_type": map[string]any{
-									"type":        "string",
-									"enum":        []string{"entity", "concept", "overview"},
-									"description": "页面类型",
-								},
-								"children": map[string]any{
-									"type":        "array",
-									"items":       map[string]any{"$ref": "#"},
-									"description": "子节点，递归结构",
-								},
-							},
-						},
-					},
-					"phases": map[string]any{
-						"type":        "array",
-						"description": "整体路线图（可选）。首次 propose_plan 时让用户了解全貌。纯信息字段，不做系统级追踪",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"title":       map[string]any{"type": "string", "description": "阶段标题"},
-								"description": map[string]any{"type": "string", "description": "阶段简述"},
-							},
-						},
-					},
-					"phase_index": map[string]any{
-						"type":        "integer",
-						"description": "当前阶段序号，从 0 开始。首次调用传 0",
-					},
-					"total_phases": map[string]any{
-						"type":        "integer",
-						"description": "总阶段数。首次调用时必填",
-					},
-					"calibration_question": map[string]any{
-						"type":        "object",
-						"description": "可选。在写内容前，如果方向不确定，先提一个校准问题让用户决定方向",
-						"properties": map[string]any{
-							"question": map[string]any{
-								"type":        "string",
-								"description": "你的问题，如'关于变量声明，你是想和 Python 对比学，还是注重底层原理？'",
-							},
-							"options": map[string]any{
-								"type":        "array",
-								"items":       map[string]any{"type": "string"},
-								"description": "选项列表，如 ['和 Python 对比', '底层原理', '实际踩坑']",
-							},
-						},
-						"required": []string{"question"},
-					},
-					"actions": map[string]any{
-						"type":        "array",
-						"description": "要执行的操作列表",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"id": map[string]any{
-									"type":        "string",
-									"description": "操作的唯一标识符，用于依赖引用。例如 'a1', 'a2'",
-								},
-								"type": map[string]any{
-									"type":        "string",
-									"enum":        []string{"create_page", "update_page", "patch_page", "delete_page", "link_pages", "move_page"},
-									"description": "操作类型",
-								},
-								"create_page_params": map[string]any{
-									"type": "object",
-									"description": "create_page 的参数（type 为 create_page 时使用）",
-									"properties": map[string]any{
-										"title":     map[string]any{"type": "string", "description": "页面标题"},
-										"slug":      map[string]any{"type": "string", "description": "URL slug，可选，默认自动生成"},
-										"parent_id": map[string]any{"type": "integer", "description": "父页面 ID，顶级页面不需要"},
-										"content":   map[string]any{"type": "string", "description": "页面 Markdown 内容"},
-										"page_type": map[string]any{"type": "string", "description": "页面类型，默认 wiki"},
-									},
-									"required": []string{"title"},
-								},
-								"update_page_params": map[string]any{
-									"type": "object",
-									"description": "update_page 的参数（type 为 update_page 时使用）",
-									"properties": map[string]any{
-										"page_id": map[string]any{"type": "integer", "description": "要更新的页面 ID"},
-										"content": map[string]any{"type": "string", "description": "新的页面内容"},
-										"title":   map[string]any{"type": "string", "description": "新标题，可选"},
-									},
-									"required": []string{"page_id", "content"},
-								},
-								"patch_page_params": map[string]any{
-									"type": "object",
-									"description": "patch_page 的参数（type 为 patch_page 时使用）。增量编辑，不需要输出完整页面内容。",
-									"properties": map[string]any{
-										"page_id": map[string]any{"type": "integer", "description": "要编辑的页面 ID"},
-										"operations": map[string]any{
-											"type": "array",
-											"description": "操作列表，按顺序执行。replace: 按标题替换章节；append: 追加内容到末尾",
-											"items": map[string]any{
-												"type": "object",
-												"properties": map[string]any{
-													"type": map[string]any{
-														"type":        "string",
-														"enum":        []string{"replace", "append"},
-														"description": "replace=替换章节, append=追加内容",
-													},
-													"target": map[string]any{
-														"type":        "string",
-														"description": "replace 操作的目标标题（带 # 号，如 '## 核心概念'）",
-													},
-													"content": map[string]any{
-														"type":        "string",
-														"description": "markdown 内容。replace: 替换后的完整章节内容（应包含标题）；append: 追加的内容",
-													},
-												},
-												"required": []string{"type"},
-											},
-										},
-									},
-									"required": []string{"page_id", "operations"},
-								},
-								"delete_page_params": map[string]any{
-									"type": "object",
-									"description": "delete_page 的参数（type 为 delete_page 时使用）",
-									"properties": map[string]any{
-										"page_id": map[string]any{"type": "integer", "description": "要删除的页面 ID"},
-									},
-									"required": []string{"page_id"},
-								},
-								"link_pages_params": map[string]any{
-									"type": "object",
-									"description": "link_pages 的参数（type 为 link_pages 时使用）",
-									"properties": map[string]any{
-										"source_page_id": map[string]any{"type": "integer", "description": "源页面 ID"},
-										"target_page_id": map[string]any{"type": "integer", "description": "目标页面 ID"},
-										"link_text":      map[string]any{"type": "string", "description": "链接显示文本，可选"},
-									},
-									"required": []string{"source_page_id", "target_page_id"},
-								},
-								"move_page_params": map[string]any{
-									"type": "object",
-									"description": "move_page 的参数（type 为 move_page 时使用）",
-									"properties": map[string]any{
-										"page_id":      map[string]any{"type": "integer", "description": "要移动的页面 ID"},
-										"new_parent_id": map[string]any{"type": "integer", "description": "新的父页面 ID"},
-									},
-									"required": []string{"page_id", "new_parent_id"},
-								},
-								"depends_on": map[string]any{
-									"type":        "array",
-									"items":       map[string]any{"type": "string"},
-									"description": "依赖的操作ID列表。例如创建子页面依赖父页面的创建。依赖的操作中生成的page_id可通过 {{action:ID.page_id}} 在参数中引用",
-								},
-							},
-							"required": []string{"id", "type"},
-						},
-					},
+					"title":     map[string]any{"type": "string", "description": "页面标题(必填)"},
+					"parent_id": map[string]any{"type": "integer", "description": "父页面 ID;顶级页面或留空走 focusPageID"},
+					"content":   map[string]any{"type": "string", "description": "页面 markdown 内容,可选(空骨架页)"},
+					"page_type": map[string]any{"type": "string", "enum": []string{"entity", "concept", "overview"}, "description": "页面类型,默认 entity"},
+					"slug":      map[string]any{"type": "string", "description": "URL slug,可选,默认自动生成"},
 				},
-				"required": []string{"reasoning", "actions"},
+				"required": []string{"title"},
 			},
 		},
 		{
-			Name:        "lookup_page",
-			Description: "根据页面标题查询页面信息，返回页面 ID、标题等元数据。可自动执行，无需用户确认。",
+			Name:        "update_page",
+			Description: "覆盖式更新页面内容。走权限闸门。改大段用这个。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"title": map[string]any{"type": "string", "description": "要查询的页面标题（精确匹配）"},
+					"page_id": map[string]any{"type": "integer", "description": "要更新的页面 ID(必填)"},
+					"content": map[string]any{"type": "string", "description": "新 markdown 内容(必填)"},
+					"title":   map[string]any{"type": "string", "description": "新标题,可选"},
+				},
+				"required": []string{"page_id", "content"},
+			},
+		},
+		{
+			Name:        "patch_page",
+			Description: "增量编辑页面:按标题替换章节(replace)或在末尾追加(append)。走权限闸门。改小段用这个,避免重写整页。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"page_id": map[string]any{"type": "integer", "description": "页面 ID(必填)"},
+					"operations": map[string]any{
+						"type":        "array",
+						"description": "操作列表,按顺序执行",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"type":    map[string]any{"type": "string", "enum": []string{"replace", "append"}},
+								"target":  map[string]any{"type": "string", "description": "replace 的目标标题(带 # 号,如 '## 核心概念')"},
+								"content": map[string]any{"type": "string", "description": "markdown 内容"},
+							},
+							"required": []string{"type", "content"},
+						},
+					},
+				},
+				"required": []string{"page_id", "operations"},
+			},
+		},
+		{
+			Name:        "delete_page",
+			Description: "删除页面。走权限闸门。慎用:能 move_page / update_page 解决的优先用那两个。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"page_id": map[string]any{"type": "integer", "description": "页面 ID"},
+				},
+				"required": []string{"page_id"},
+			},
+		},
+		{
+			Name:        "link_pages",
+			Description: "在 source 页面添加指向 target 的链接。走权限闸门。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"source_page_id": map[string]any{"type": "integer", "description": "源页 ID"},
+					"target_page_id": map[string]any{"type": "integer", "description": "目标页 ID"},
+					"link_text":      map[string]any{"type": "string", "description": "链接显示文本,可选(默认用目标页标题)"},
+				},
+				"required": []string{"source_page_id", "target_page_id"},
+			},
+		},
+		{
+			Name:        "move_page",
+			Description: "把页面移到新父节点下。走权限闸门。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"page_id":       map[string]any{"type": "integer", "description": "要移动的页面 ID"},
+					"new_parent_id": map[string]any{"type": "integer", "description": "新父页 ID"},
+				},
+				"required": []string{"page_id", "new_parent_id"},
+			},
+		},
+
+		// ── ask_user ──
+		{
+			Name:        "ask_user",
+			Description: "向用户提一个澄清问题。可以附带 context(outline / page / markdown / diff)让用户看到具体物料。阻塞 ReAct loop 直到用户回答。不用于确认写操作(那是权限闸门的事)。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"question": map[string]any{"type": "string", "description": "问题正文"},
+					"options": map[string]any{
+						"type":        "array",
+						"description": "2-4 个选项",
+						"items":       map[string]any{"type": "string"},
+						"minItems":    2,
+						"maxItems":    4,
+					},
+					"context": map[string]any{
+						"type":        "object",
+						"description": "可选,context.kind 决定渲染",
+						"properties": map[string]any{
+							"kind": map[string]any{"type": "string", "enum": []string{"outline", "page", "markdown", "diff"}},
+							"data": map[string]any{"description": "按 kind 决定形状:outline→OutlineNode[];page→{page_id};markdown→string;diff→[{page_id,before,after,label?}]"},
+						},
+						"required": []string{"kind", "data"},
+					},
+					"multi_select":    map[string]any{"type": "boolean", "description": "默认 false"},
+					"allow_free_text": map[string]any{"type": "boolean", "description": "默认 true"},
+					"header":          map[string]any{"type": "string", "description": "短标签,最多 12 字符"},
+				},
+				"required": []string{"question", "options"},
+			},
+		},
+
+		// ── Read tools (unchanged) ──
+		{
+			Name:        "lookup_page",
+			Description: "根据页面标题查询页面信息,返回页面 ID、标题等元数据。可自动执行,无需用户确认。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"title": map[string]any{"type": "string", "description": "要查询的页面标题(精确匹配)"},
 				},
 				"required": []string{"title"},
 			},
 		},
 		{
 			Name:        "read_page",
-			Description: "根据页面 ID 读取 Wiki 页面的完整 Markdown 内容。可自动执行，无需用户确认。",
+			Description: "根据页面 ID 读取 Wiki 页面的完整 Markdown 内容。可自动执行。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"page_id": map[string]any{"type": "integer", "description": "要读取的页面 ID"},
+					"page_id": map[string]any{"type": "integer", "description": "页面 ID"},
 				},
 				"required": []string{"page_id"},
 			},
 		},
 		{
 			Name:        "search_pages",
-			Description: "在知识库中搜索页面标题和内容，返回匹配的页面列表。可自动执行，无需用户确认。",
+			Description: "在知识库中搜索页面标题和内容,返回匹配的页面列表。可自动执行。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -279,23 +222,23 @@ func WikiTools() []Tool {
 		},
 		{
 			Name:        "websearch",
-			Description: fmt.Sprintf("搜索网络获取相关信息，返回结构化结果列表（标题、URL、摘要）。可自动执行，无需用户确认。当前是 %d 年，注意搜索内容的时效性。", time.Now().Year()),
+			Description: fmt.Sprintf("搜索网络获取相关信息。当前是 %d 年,注意搜索内容的时效性。", time.Now().Year()),
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"query":       map[string]any{"type": "string", "description": "搜索关键词"},
-					"max_results": map[string]any{"type": "integer", "description": "返回结果数量（默认 5）"},
+					"query":       map[string]any{"type": "string"},
+					"max_results": map[string]any{"type": "integer"},
 				},
 				"required": []string{"query"},
 			},
 		},
 		{
 			Name:        "webfetch",
-			Description: "获取指定 URL 的网页内容，提取正文文本返回。可自动执行，无需用户确认。",
+			Description: "获取指定 URL 的网页内容,提取正文文本返回。可自动执行。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"url": map[string]any{"type": "string", "description": "要获取内容的网页 URL"},
+					"url": map[string]any{"type": "string"},
 				},
 				"required": []string{"url"},
 			},
