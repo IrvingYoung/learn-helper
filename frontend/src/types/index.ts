@@ -47,6 +47,15 @@ export interface ToolCallInfo {
   input: Record<string, unknown>;
   output: string;
   error?: string;
+  /**
+   * Explicit lifecycle state. When absent, the card derives state from
+   * output/error (back-compat for older messages without this field).
+   * - "pending" : write tool awaiting user permission approval
+   * - "running" : tool currently executing
+   * - "done"    : tool completed successfully
+   * - "error"   : tool failed
+   */
+  status?: "pending" | "running" | "done" | "error";
 }
 
 export interface ConversationMessage {
