@@ -419,6 +419,16 @@ ${meta.plan.reasoning}
         }
         setStreamingToolCalls(new Map());
       }
+
+      // Clean up empty assistant message (model returned no content and no tool calls)
+      setMessages((prev) => {
+        const msgs = [...prev];
+        const last = msgs[msgs.length - 1];
+        if (last && last.role === "assistant" && !last.content && (!last.tool_calls || last.tool_calls.length === 0)) {
+          msgs.pop();
+        }
+        return msgs;
+      });
     } catch (e) {
       console.error("Chat error:", e);
       setMessages((prev) => {

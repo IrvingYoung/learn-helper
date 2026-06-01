@@ -234,10 +234,10 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Provider == "" {
-		req.Provider = "claude"
+		req.Provider = "opencode"
 	}
 	if req.ModelName == "" {
-		req.ModelName = "claude-sonnet-4-7-20250514"
+		req.ModelName = "deepseek-v4-pro"
 	}
 
 	ctx := r.Context()

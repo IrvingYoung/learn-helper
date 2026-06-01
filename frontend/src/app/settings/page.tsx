@@ -5,8 +5,8 @@ import { useTheme } from '../../contexts/ThemeContext'
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
-  const [provider, setProvider] = useState('claude')
-  const [model, setModel] = useState('claude-sonnet-4-7-20250514')
+  const [provider, setProvider] = useState('opencode')
+  const [model, setModel] = useState('deepseek-v4-pro')
   const [apiKey, setApiKey] = useState('')
   const [tavilyApiKey, setTavilyApiKey] = useState('')
   const [saved, setSaved] = useState(false)
@@ -103,15 +103,15 @@ export default function SettingsPage() {
                 value={provider}
                 onChange={(e) => {
                   setProvider(e.target.value)
-                  if (e.target.value === 'deepseek') {
-                    setModel('deepseek-v4-flash')
+                  if (e.target.value === 'opencode') {
+                    setModel('deepseek-v4-pro')
                   } else {
-                    setModel('claude-sonnet-4-7-20250514')
+                    setModel('deepseek-v4-flash')
                   }
                 }}
                 className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/30 focus:border-th-accent transition-colors"
               >
-                <option value="claude">Anthropic Claude</option>
+                <option value="opencode">OpenCode Go</option>
                 <option value="deepseek">DeepSeek</option>
               </select>
             </div>
@@ -125,11 +125,15 @@ export default function SettingsPage() {
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/30 focus:border-th-accent transition-colors"
               >
-                {provider === 'claude' ? (
+                {provider === 'opencode' ? (
                   <>
-                    <option value="claude-sonnet-4-7-20250514">Claude Sonnet 4.7</option>
-                    <option value="claude-opus-4-7-20250514">Claude Opus 4.7</option>
-                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                    <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+                    <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+                    <option value="qwen3.7-max">Qwen 3.7 Max</option>
+                    <option value="kimi-k2.6">Kimi K2.6</option>
+                    <option value="mimo-v2.5-pro">MiMo V2.5 Pro</option>
+                    <option value="minimax-m3">MiniMax M3</option>
+                    <option value="glm-5.1">GLM 5.1</option>
                   </>
                 ) : (
                   <>
@@ -148,7 +152,7 @@ export default function SettingsPage() {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-ant-...'}
+                placeholder="sk-..."
                 className="w-full border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-th-accent/30 focus:border-th-accent transition-colors"
               />
             </div>

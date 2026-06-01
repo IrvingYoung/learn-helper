@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS topics (
     slug TEXT UNIQUE NOT NULL,
     description TEXT DEFAULT '',
     content TEXT DEFAULT '',
+    code_examples TEXT,
+    common_mistakes TEXT,
     difficulty TEXT DEFAULT 'beginner',
     sort_order INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -43,6 +45,8 @@ CREATE TABLE IF NOT EXISTS exercises (
     difficulty TEXT DEFAULT 'easy',
     exercise_type TEXT DEFAULT 'coding',
     solution TEXT DEFAULT '',
+    solution_detail TEXT,
+    common_errors TEXT,
     hints TEXT DEFAULT '[]',
     sort_order INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -81,13 +85,14 @@ CREATE TABLE IF NOT EXISTS messages (
     token_count INTEGER,
     tool_call_id TEXT,
     tool_name TEXT,
+    tool_calls TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS ai_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL DEFAULT 'claude',
-    model_name TEXT NOT NULL DEFAULT 'claude-sonnet-4-7-20250514',
+    provider TEXT NOT NULL DEFAULT 'opencode',
+    model_name TEXT NOT NULL DEFAULT 'deepseek-v4-pro',
     api_key TEXT NOT NULL,
     is_active INTEGER DEFAULT 1,
     config TEXT,
@@ -108,6 +113,13 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
     path TEXT NOT NULL DEFAULT '',
     links TEXT NOT NULL DEFAULT '[]',
     backlinks TEXT NOT NULL DEFAULT '[]',
+    summary TEXT NOT NULL DEFAULT '',
+    summary_status TEXT NOT NULL DEFAULT 'empty',
+    summary_generated_at DATETIME,
+    summary_content_hash TEXT,
+    link_count INTEGER NOT NULL DEFAULT 0,
+    backlink_count INTEGER NOT NULL DEFAULT 0,
+    tags_normalized TEXT NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -115,6 +127,20 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_id);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_path ON wiki_pages(path);
+
+CREATE TABLE IF NOT EXISTS wiki_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    page_id INTEGER,
+    page_title TEXT NOT NULL,
+    page_path TEXT,
+    source TEXT NOT NULL DEFAULT 'plan',
+    summary TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_log_created_at ON wiki_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wiki_log_page_id ON wiki_log(page_id);
 
 CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY,
@@ -168,7 +194,13 @@ func main() {
 		log.Fatalf("Failed to initialize schema: %v", err)
 	}
 
-	// Migrate existing databases: add links/backlinks columns if missing
+	// Migrate 001: add topic detail columns
+	db.Exec(`ALTER TABLE topics ADD COLUMN code_examples TEXT`)
+	db.Exec(`ALTER TABLE topics ADD COLUMN common_mistakes TEXT`)
+	db.Exec(`ALTER TABLE exercises ADD COLUMN solution_detail TEXT`)
+	db.Exec(`ALTER TABLE exercises ADD COLUMN common_errors TEXT`)
+
+	// Migrate 005: add links/backlinks columns if missing
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN links TEXT NOT NULL DEFAULT '[]'`)
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN backlinks TEXT NOT NULL DEFAULT '[]'`)
 
@@ -182,6 +214,37 @@ func main() {
 
 	// Migrate: add calibration_question column to plans if missing
 	db.Exec(`ALTER TABLE plans ADD COLUMN calibration_question TEXT`)
+
+	// Migrate 007: add tool_calls column to messages
+	db.Exec(`ALTER TABLE messages ADD COLUMN tool_calls TEXT`)
+
+	// Migrate existing databases: add summary columns from migration 008
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'empty'`)
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary_generated_at DATETIME`)
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary_content_hash TEXT`)
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN link_count INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN tags_normalized TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_pages_summary_status ON wiki_pages(summary_status)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_pages_tags_normalized ON wiki_pages(tags_normalized)`)
+
+	// Migrate existing databases: add wiki_log table from migration 009
+	db.Exec(`CREATE TABLE IF NOT EXISTS wiki_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		action TEXT NOT NULL,
+		page_id INTEGER,
+		page_title TEXT NOT NULL,
+		page_path TEXT,
+		source TEXT NOT NULL DEFAULT 'plan',
+		summary TEXT,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_log_created_at ON wiki_log(created_at DESC)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_log_page_id ON wiki_log(page_id)`)
+
+	// Migrate: update legacy claude provider to opencode
+	db.Exec(`UPDATE ai_configs SET provider = 'opencode', model_name = 'deepseek-v4-pro' WHERE provider = 'claude'`)
 
 	db.Exec(`INSERT OR IGNORE INTO wiki_pages (title, slug, page_type, content, content_status, sort_order) VALUES ('概览', 'overview', 'overview', '# 知识库概览\n\n欢迎使用 LLM Wiki！\n\n通过与 AI 对话来构建你的知识库。试试说：\n\n- "我要学 Go 后端"\n- "总结一下 Redis 的核心数据结构"\n- "帮我梳理数据库索引的知识"', 'published', 0)`)
 

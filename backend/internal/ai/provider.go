@@ -21,19 +21,19 @@ type AIProvider interface {
 type ProviderType string
 
 const (
-	ProviderClaude   ProviderType = "claude"
+	ProviderOpenCode ProviderType = "opencode"
 	ProviderDeepSeek ProviderType = "deepseek"
 )
 
 // NewProvider creates an AI provider based on the provider type.
 func NewProvider(providerType ProviderType, apiKey, model string) (AIProvider, error) {
 	switch providerType {
-	case ProviderClaude:
-		return NewClaudeProvider(apiKey, model), nil
+	case ProviderOpenCode:
+		return NewOpenCodeProvider(apiKey, model), nil
 	case ProviderDeepSeek:
 		return NewDeepSeekProvider(apiKey, model), nil
 	default:
-		return nil, fmt.Errorf("unsupported provider type: %s (supported: claude, deepseek)", providerType)
+		return nil, fmt.Errorf("unsupported provider type: %s (supported: opencode, deepseek)", providerType)
 	}
 }
 
@@ -455,39 +455,6 @@ propose_plan 是你操作知识库的主要工具。以下场景使用它：
 	return wikiMaintainerPrompt
 }
 
-// Claude API types
-
-type claudeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	System    string          `json:"system"`
-	Messages  []claudeMessage `json:"messages"`
-	Tools     []claudeTool    `json:"tools,omitempty"`
-	Stream    bool            `json:"stream"`
-}
-
-type claudeMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"` // string or []claudeContentBlock
-}
-
-type claudeContentBlock struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	ID        string          `json:"id,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	Content   string          `json:"content,omitempty"`
-	ToolUseID string          `json:"tool_use_id,omitempty"`
-	IsError   bool            `json:"is_error,omitempty"`
-}
-
-type claudeTool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"input_schema"`
-}
-
 // DeepSeek API types
 
 type deepseekRequest struct {
@@ -530,104 +497,6 @@ type deepseekFunction struct {
 
 // StreamResponse reads SSE from the AI provider and sends ChatChunks to the callback.
 type StreamResponse func(body io.Reader, callback func(ChatChunk)) error
-
-// ParseClaudeSSE parses Claude's SSE stream.
-func ParseClaudeSSE(body io.Reader, callback func(ChatChunk)) error {
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	var eventType string
-	var currentToolID string
-	var currentToolName string
-	var toolInputParts []string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(line, "event: ") {
-			eventType = strings.TrimPrefix(line, "event: ")
-			continue
-		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-
-		switch eventType {
-		case "content_block_delta":
-			var delta struct {
-				Delta struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"delta"`
-			}
-			if err := json.Unmarshal([]byte(data), &delta); err == nil && delta.Delta.Text != "" {
-				callback(ChatChunk{Content: delta.Delta.Text})
-			}
-
-		case "content_block_start":
-			var block struct {
-				ContentBlock struct {
-					Type  string          `json:"type"`
-					ID    string          `json:"id"`
-					Name  string          `json:"name"`
-					Text  string          `json:"text"`
-				} `json:"content_block"`
-			}
-			if err := json.Unmarshal([]byte(data), &block); err == nil {
-				if block.ContentBlock.Type == "tool_use" {
-					currentToolID = block.ContentBlock.ID
-					currentToolName = block.ContentBlock.Name
-					toolInputParts = nil
-				} else if block.ContentBlock.Text != "" {
-					callback(ChatChunk{Content: block.ContentBlock.Text})
-				}
-			}
-
-		case "input_json_delta":
-			var delta struct {
-				PartialJSON string `json:"partial_json"`
-			}
-			if err := json.Unmarshal([]byte(data), &delta); err == nil {
-				toolInputParts = append(toolInputParts, delta.PartialJSON)
-			}
-
-		case "content_block_stop":
-			if currentToolID != "" {
-				input := strings.Join(toolInputParts, "")
-				callback(ChatChunk{
-					Done: false,
-					ToolCall: &ToolCall{
-						ID:    currentToolID,
-						Name:  currentToolName,
-						Input: input,
-					},
-				})
-				currentToolID = ""
-				currentToolName = ""
-				toolInputParts = nil
-			}
-
-		case "message_stop":
-			callback(ChatChunk{Done: true})
-
-		case "error":
-			var errEvent struct {
-				Error struct {
-					Message string `json:"message"`
-				} `json:"error"`
-			}
-			if err := json.Unmarshal([]byte(data), &errEvent); err == nil {
-				callback(ChatChunk{Content: fmt.Sprintf("\n[AI Error: %s]", errEvent.Error.Message), Done: true})
-				return nil
-			}
-		}
-	}
-
-	return scanner.Err()
-}
 
 // ParseDeepSeekSSE parses DeepSeek's SSE stream (OpenAI-compatible format).
 func ParseDeepSeekSSE(body io.Reader, callback func(ChatChunk)) error {
