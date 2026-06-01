@@ -3,8 +3,6 @@ import type {
   WikiTreeNode,
   Conversation,
   ConversationMessage,
-  Plan,
-  ExecutionReport,
   ToolCallInfo,
   PermissionRequestEvent,
   AskUserRequestEvent,
@@ -126,7 +124,7 @@ export interface ChatRequest {
 export async function streamChat(
   req: ChatRequest,
   onChunk: (content: string) => void,
-  onMeta: (data: { conversation_id?: number; plan?: Plan }) => void,
+  onMeta: (data: { conversation_id?: number }) => void,
   onStatus?: (data: { step: number; max_steps: number; status: string }) => void,
   onError?: (error: string) => void,
   onToolCall?: (data: ToolCallInfo) => void,
@@ -275,46 +273,6 @@ export async function streamChat(
 
   // Final dispatch in case stream ends without trailing empty line
   dispatchEvent();
-}
-
-// Plan API
-
-export async function confirmPlan(planId: string, focusPageId?: number | null): Promise<ExecutionReport> {
-  const res = await fetch(`${BASE}/plans/confirm`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ plan_id: planId, focus_page_id: focusPageId ?? null }),
-  });
-  if (!res.ok) throw new Error("Failed to confirm plan");
-  return res.json();
-}
-
-export async function rejectPlan(planId: string): Promise<void> {
-  const res = await fetch(`${BASE}/plans/reject`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ plan_id: planId }),
-  });
-  if (!res.ok) throw new Error("Failed to reject plan");
-}
-
-export async function getPlan(planId: string): Promise<Plan> {
-  const res = await fetch(`${BASE}/plans?id=${encodeURIComponent(planId)}`);
-  if (!res.ok) throw new Error("Failed to get plan");
-  return res.json();
-}
-
-export async function createPlan(params: {
-  reasoning: string;
-  actions: { type: string; params: Record<string, unknown> }[];
-}): Promise<Plan> {
-  const res = await fetch(`${BASE}/plans`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok) throw new Error("Failed to create plan");
-  return res.json();
 }
 
 // Wiki Tree Operations

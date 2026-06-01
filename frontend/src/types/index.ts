@@ -65,7 +65,6 @@ export interface ConversationMessage {
   model_provider: string | null;
   token_count: number | null;
   created_at: string;
-  plan?: Plan;
   tool_calls?: ToolCallInfo[];
 }
 

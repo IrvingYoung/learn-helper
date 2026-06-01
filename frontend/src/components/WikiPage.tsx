@@ -2,13 +2,12 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
-import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, createEmptyWikiPage, renameWikiPage, moveWikiPage, deleteWikiPage, confirmPlan, rejectPlan } from '../lib/api';
+import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, createEmptyWikiPage, renameWikiPage, moveWikiPage, deleteWikiPage } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { WikiPage, WikiTreeNode, Plan, ExecutionReport, OutlineNode } from '../types';
+import type { WikiPage, WikiTreeNode } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
-import { PlanPreview } from './PlanPreview';
 import { TabbedPageReview } from './TabbedPageReview';
 import { BrandMark } from './BrandMark';
 
@@ -37,8 +36,6 @@ export function WikiPageLayout() {
   const chatPanelRef = useRef<{ setSelectedText: (text: string, pageTitle: string) => void; sendMessage: (text: string) => void; continueAfterConfirm: () => void }>(null);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(() => localStorage.getItem('wiki-selected-slug'));
   const [newPageNodeId, setNewPageNodeId] = useState<number | null>(null);
-  const [pendingOutlinePlan, setPendingOutlinePlan] = useState<Plan | null>(null);
-  const [confirmingOutline, setConfirmingOutline] = useState(false);
   const [reviewSlugs, setReviewSlugs] = useState<string[]>([]);
   const { theme, toggleTheme } = useTheme();
   const [treeVersion, setTreeVersion] = useState(0);
@@ -109,78 +106,6 @@ export function WikiPageLayout() {
     mutateCurrentPage();
     handlePageChanged();
   }, [mutateCurrentPage, handlePageChanged]);
-
-  const handleConfirmOutline = useCallback(async (planId: string) => {
-    setConfirmingOutline(true);
-    try {
-      const report: ExecutionReport & { outline?: Record<string, { slug: string }> } = await confirmPlan(planId, pendingOutlinePlan?.focus_page_id ?? displayPage?.id ?? null);
-      setPendingOutlinePlan(null);
-      handlePageChanged();
-
-      // Extract page slugs from execution report for tabbed review.
-      // Note: pendingOutlinePlan in this closure still holds the pre-null value
-      // since React batches state updates and hasn't re-rendered yet.
-      const slugs: string[] = [];
-      const seen = new Set<string>();
-
-      // Action-based plans: collect slugs from create_page / update_page results
-      if (report.actions) {
-        for (const action of report.actions) {
-          if (action.status === "completed") {
-            const slug = (action.result as { slug?: string } | undefined)?.slug;
-            if (slug && !seen.has(slug)) {
-              slugs.push(slug);
-              seen.add(slug);
-            }
-          }
-        }
-      }
-
-      // Outline plans: collect slugs from outline results, preserving outline order
-      if (report.outline) {
-        const outlineResults = report.outline;
-        if (pendingOutlinePlan?.outline) {
-          const walkOutline = (nodes: OutlineNode[]) => {
-            for (const node of nodes) {
-              if (node.id && outlineResults[node.id]?.slug) {
-                const slug = outlineResults[node.id].slug;
-                if (!seen.has(slug)) {
-                  slugs.push(slug);
-                  seen.add(slug);
-                }
-              }
-              if (node.children) walkOutline(node.children);
-            }
-          };
-          walkOutline(pendingOutlinePlan.outline);
-        } else {
-          for (const value of Object.values(outlineResults)) {
-            const slug = value.slug;
-            if (slug && !seen.has(slug)) {
-              slugs.push(slug);
-              seen.add(slug);
-            }
-          }
-        }
-      }
-
-      if (slugs.length > 0) {
-        setReviewSlugs(slugs);
-      }
-
-      // Trigger AI to continue analyzing results
-      chatPanelRef.current?.continueAfterConfirm();
-    } catch (err) {
-      console.error("Outline confirmation failed:", err);
-    } finally {
-      setConfirmingOutline(false);
-    }
-  }, [handlePageChanged, pendingOutlinePlan]);
-
-  const handlePlanReceived = useCallback((plan: Plan) => {
-    setPendingOutlinePlan(plan);
-    setReviewSlugs([]);
-  }, []);
 
   const handleReviewDone = useCallback(() => {
     setReviewSlugs([]);
@@ -345,7 +270,7 @@ export function WikiPageLayout() {
 
         {/* Center: Chat */}
         <Panel id="center" minSize={300}>
-          <ChatPanel ref={chatPanelRef} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? displayPage?.slug ?? undefined} currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined} onPlanReceived={handlePlanReceived} />
+          <ChatPanel ref={chatPanelRef} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? displayPage?.slug ?? undefined} currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined} />
         </Panel>
 
         <Separator />
@@ -369,20 +294,6 @@ export function WikiPageLayout() {
                 onDone={handleReviewDone}
                 onSelectPage={(slug) => setSelectedSlug(slug)}
                 onContentConfirmed={handleContentConfirmed}
-              />
-            ) : pendingOutlinePlan ? (
-              <PlanPreview
-                plan={pendingOutlinePlan}
-                onConfirm={handleConfirmOutline}
-                confirming={confirmingOutline}
-                onCalibrationAnswer={async (answer) => {
-                  // Reject the calibration plan and send answer as chat message
-                  if (pendingOutlinePlan) {
-                    try { await rejectPlan(pendingOutlinePlan.id); } catch {}
-                  }
-                  setPendingOutlinePlan(null);
-                  chatPanelRef.current?.sendMessage(`我的选择：${answer}`);
-                }}
               />
             ) : (
               <PageViewer

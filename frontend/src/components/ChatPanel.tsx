@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImper
 import type {
   Conversation,
   ConversationMessage,
-  Plan,
   ToolCallInfo,
   PermissionRequestEvent,
   AskUserRequestEvent,
@@ -30,7 +29,6 @@ interface ChatPanelProps {
   focusPageId?: number | null;
   currentSlug?: string;
   currentPageTitle?: string;
-  onPlanReceived?: (plan: Plan) => void;
 }
 
 export const ChatPanel = forwardRef<{
@@ -38,7 +36,7 @@ export const ChatPanel = forwardRef<{
 	sendMessage: (text: string) => void;
 	continueAfterConfirm: () => void;
 }, ChatPanelProps>(
-  function ChatPanel({ focusPageId, currentSlug, currentPageTitle, onPlanReceived }, ref) {
+  function ChatPanel({ focusPageId, currentSlug, currentPageTitle }, ref) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -114,9 +112,6 @@ export const ChatPanel = forwardRef<{
           (meta) => {
             if (meta.conversation_id && meta.conversation_id !== activeConv!.id) {
               newConvId = meta.conversation_id;
-            }
-            if (meta.plan) {
-              onPlanReceived?.(meta.plan);
             }
           },
           undefined,
@@ -365,61 +360,6 @@ export const ChatPanel = forwardRef<{
         (meta) => {
           if (meta.conversation_id && meta.conversation_id !== conv.id) {
             newConvId = meta.conversation_id;
-          }
-          if (meta.plan) {
-            onPlanReceived?.(meta.plan);
-            // Replace the assistant message with a summary pointing to the right panel
-            if (meta.plan.calibration_question) {
-              const cq = meta.plan.calibration_question;
-              const optionsText = cq.options ? cq.options.map((o, i) => `${i + 1}. ${o}`).join('\n') : '';
-              const summary = cq.question
-                ? `## ❓ 校准问题
-
-${cq.question}
-
-${optionsText ? '选项：\n' + optionsText + '\n\n请在右侧面板中选择，或直接在聊天中回复。' : '请在右侧面板或聊天中回复。'}`
-                : '## 校准问题\n\n请在右侧面板中查看并回答。';
-              setMessages((prev) => {
-                const msgs = [...prev];
-                const last = msgs[msgs.length - 1];
-                if (last && last.role === "assistant") {
-                  msgs[msgs.length - 1] = { ...last, content: summary };
-                }
-                return msgs;
-              });
-            } else if ((meta.plan.outline && meta.plan.outline.length > 0)) {
-              const summary = meta.plan.reasoning
-                ? `## 📋 知识大纲
-
-${meta.plan.reasoning}
-
-大纲已生成，请在右侧面板中查看并确认。`
-                : '## 📋 知识大纲\n\n大纲已生成，请在右侧面板中查看并确认。';
-              setMessages((prev) => {
-                const msgs = [...prev];
-                const last = msgs[msgs.length - 1];
-                if (last && last.role === "assistant") {
-                  msgs[msgs.length - 1] = { ...last, content: summary };
-                }
-                return msgs;
-              });
-            } else if (meta.plan.actions && meta.plan.actions.length > 0) {
-              const summary = meta.plan.reasoning
-                ? `## 📋 操作计划
-
-${meta.plan.reasoning}
-
-共 ${meta.plan.actions.length} 个操作待确认，请在右侧面板中查看。`
-                : `## 📋 操作计划\n\n共 ${meta.plan.actions.length} 个操作待确认，请在右侧面板中查看。`;
-              setMessages((prev) => {
-                const msgs = [...prev];
-                const last = msgs[msgs.length - 1];
-                if (last && last.role === "assistant") {
-                  msgs[msgs.length - 1] = { ...last, content: summary };
-                }
-                return msgs;
-              });
-            }
           }
         },
         undefined, /* onStatus — not used */
