@@ -163,3 +163,18 @@ func TestRenderRecentLog_WithEntries(t *testing.T) {
 		t.Error("missing action tag")
 	}
 }
+
+func TestRenderHealthCheck_DeadPage(t *testing.T) {
+	// Page with content but 0 backlinks and 0 links → "dead page"
+	tree := []model.GetWikiPageTreeRow{
+		{ID: 1, Title: "孤岛", PageType: "entity", ContentStatus: "published", LinkCount: 0, BacklinkCount: 0},
+	}
+	db := &fakeTreeDB{pages: tree}
+	out := renderHealthCheck(context.Background(), db)
+	if !strings.Contains(out, "死页") {
+		t.Errorf("expected 死页 warning, got: %s", out)
+	}
+	if !strings.Contains(out, "孤岛") {
+		t.Errorf("expected page title in warning, got: %s", out)
+	}
+}

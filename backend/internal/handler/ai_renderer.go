@@ -279,3 +279,106 @@ func renderRecentLog(ctx context.Context, db RecentLogDB, window time.Duration, 
 	}
 	return b.String() + "\n"
 }
+
+// TreeHealthIssue represents a structural health problem found in the wiki tree.
+type TreeHealthIssue struct {
+	Severity string // "error" or "warning"
+	Type     string // "orphan", "duplicate_title", "dead_page", ...
+	Message  string
+	PageID   int64
+}
+
+// analyzeTreeHealth scans the page tree for structural problems:
+//   - orphan pages: parent_id points to a non-existent page
+//   - duplicate titles: multiple pages with the same title
+//
+// It does NOT check content correctness (e.g. contradictions between pages).
+func analyzeTreeHealth(pages []model.GetWikiPageTreeRow) []TreeHealthIssue {
+	if len(pages) == 0 {
+		return nil
+	}
+
+	var issues []TreeHealthIssue
+
+	// Index valid page IDs
+	exists := make(map[int64]bool, len(pages))
+	for _, p := range pages {
+		exists[p.ID] = true
+	}
+
+	// Orphan pages (parent_id references a missing page)
+	for _, p := range pages {
+		if p.ParentID.Valid && p.ParentID.Int64 != 0 && !exists[p.ParentID.Int64] {
+			issues = append(issues, TreeHealthIssue{
+				Severity: "error",
+				Type:     "orphan",
+				Message:  fmt.Sprintf("孤儿页: '%s' (ID=%d) 指向不存在的父页 ID=%d", p.Title, p.ID, p.ParentID.Int64),
+				PageID:   p.ID,
+			})
+		}
+	}
+
+	// Duplicate titles
+	titleCounts := make(map[string][]int64)
+	for _, p := range pages {
+		titleCounts[p.Title] = append(titleCounts[p.Title], p.ID)
+	}
+	for title, ids := range titleCounts {
+		if len(ids) > 1 {
+			idList := make([]string, len(ids))
+			for i, id := range ids {
+				idList[i] = fmt.Sprintf("%d", id)
+			}
+			issues = append(issues, TreeHealthIssue{
+				Severity: "warning",
+				Type:     "duplicate_title",
+				Message:  fmt.Sprintf("重复标题: '%s' 出现 %d 次 (IDs=%s)", title, len(ids), strings.Join(idList, ",")),
+			})
+		}
+	}
+
+	return issues
+}
+
+// HealthDB is the minimal DB interface for health checks.
+type HealthDB interface {
+	GetWikiPageTree(ctx context.Context) ([]model.GetWikiPageTreeRow, error)
+}
+
+// renderHealthCheck builds the structural health section by combining
+// the existing analyzeTreeHealth checks with new dead-page detection.
+func renderHealthCheck(ctx context.Context, db HealthDB) string {
+	pages, err := db.GetWikiPageTree(ctx)
+	if err != nil || len(pages) == 0 {
+		return ""
+	}
+
+	issues := analyzeTreeHealth(pages)
+
+	// New: dead pages (content but 0 links, 0 backlinks)
+	for _, p := range pages {
+		if p.ContentStatus == "published" && p.LinkCount == 0 && p.BacklinkCount == 0 {
+			issues = append(issues, TreeHealthIssue{
+				Severity: "warning",
+				Type:     "dead_page",
+				Message:  fmt.Sprintf("死页: '%s' (ID=%d) 有内容但 0 反链 0 出链", p.Title, p.ID),
+				PageID:   p.ID,
+			})
+		}
+	}
+
+	if len(issues) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("【结构健康检查】\n")
+	for _, issue := range issues {
+		icon := "⚠️"
+		if issue.Severity == "error" {
+			icon = "❌"
+		}
+		b.WriteString(fmt.Sprintf("  %s %s\n", icon, issue.Message))
+	}
+	return b.String() + "\n"
+}
