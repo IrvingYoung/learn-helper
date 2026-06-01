@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPermissionDecisionJSON(t *testing.T) {
@@ -225,4 +226,33 @@ func TestPermissionResponseJSON(t *testing.T) {
 	if edited["title"] != "Renamed" {
 		t.Errorf("decisions[1].edited_input.title = %v, want Renamed", edited["title"])
 	}
+}
+
+func TestPermissionRegistry(t *testing.T) {
+	r := NewPermissionRegistry()
+
+	ch := r.Register("perm-1", 5)
+	if ch == nil {
+		t.Fatal("Register returned nil chan")
+	}
+	if r.Pending() != 1 {
+		t.Errorf("Pending = %d, want 1", r.Pending())
+	}
+
+	r.Resolve("perm-1", []PermissionDecision{{ID: "x", Action: "approve"}})
+	select {
+	case got := <-ch:
+		if len(got) != 1 || got[0].ID != "x" {
+			t.Errorf("got %+v, want one decision for x", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("resolve did not unblock Register")
+	}
+
+	if r.Pending() != 0 {
+		t.Errorf("after resolve, Pending = %d, want 0", r.Pending())
+	}
+
+	// Resolve unknown id is a no-op (no panic)
+	r.Resolve("perm-unknown", nil)
 }
