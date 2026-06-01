@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
-import type { Conversation, ConversationMessage, Plan } from "../types";
+import type { Conversation, ConversationMessage, Plan, ToolCallInfo } from "../types";
 import {
   listConversations,
   createConversation,
@@ -9,6 +9,7 @@ import {
   streamChat,
 } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
+import { ToolCallCard } from "./ToolCallCard";
 
 const STORAGE_KEY = "llm-wiki-active-conversation-id";
 
@@ -19,7 +20,11 @@ interface ChatPanelProps {
   onPlanReceived?: (plan: Plan) => void;
 }
 
-export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle: string) => void }, ChatPanelProps>(
+export const ChatPanel = forwardRef<{
+	setSelectedText: (text: string, pageTitle: string) => void;
+	sendMessage: (text: string) => void;
+	continueAfterConfirm: () => void;
+}, ChatPanelProps>(
   function ChatPanel({ focusPageId, currentSlug, currentPageTitle, onPlanReceived }, ref) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -30,14 +35,11 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
   const [showMenu, setShowMenu] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
-  const [agentStatus, setAgentStatus] = useState<{
-    step: number;
-    maxSteps: number;
-    running: boolean;
-  } | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamingToolCalls, setStreamingToolCalls] = useState<Map<string, ToolCallInfo>>(new Map());
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const prevLoadingRef = useRef(false);
 
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [selectedTextPage, setSelectedTextPage] = useState<string | null>(null);
@@ -49,6 +51,91 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
       setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
+    },
+    sendMessage(text: string) {
+      handleSend(undefined, text);
+    },
+    async continueAfterConfirm() {
+      if (loading) return;
+      if (!activeConv) {
+        const conv = await handleCreateConversation();
+        if (!conv) return;
+      }
+      setStreamError(null);
+      setLoading(true);
+      const assistantMsg: ConversationMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: "",
+        model_provider: null,
+        token_count: null,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      try {
+        let fullContent = "";
+        let newConvId: number | undefined;
+        const toolCallAccum = new Map<string, ToolCallInfo>();
+
+        await streamChat(
+          {
+            conversation_id: activeConv!.id,
+            message: "",
+            focus_page_id: focusPageId,
+            current_slug: currentSlug,
+          },
+          (chunk) => {
+            fullContent += chunk;
+            setMessages((prev) => {
+              const msgs = [...prev];
+              const last = msgs[msgs.length - 1];
+              if (last && last.role === "assistant") {
+                msgs[msgs.length - 1] = { ...last, content: fullContent };
+              }
+              return msgs;
+            });
+          },
+          (meta) => {
+            if (meta.conversation_id && meta.conversation_id !== activeConv!.id) {
+              newConvId = meta.conversation_id;
+            }
+            if (meta.plan) {
+              onPlanReceived?.(meta.plan);
+            }
+          },
+          undefined,
+          (error) => {
+            setStreamError(error);
+            setLoading(false);
+          },
+          (tc) => {
+            toolCallAccum.set(tc.id, tc);
+            setStreamingToolCalls(new Map(toolCallAccum));
+          },
+        );
+
+        if (newConvId && newConvId !== activeConv!.id) {
+          await loadConversations();
+          const newConv = conversations.find((c) => c.id === newConvId);
+          if (newConv) {
+            await switchToConversation(newConv);
+          }
+        }
+      } catch (e) {
+        console.error("Continuation chat error:", e);
+        setMessages((prev) => {
+          const msgs = [...prev];
+          const last = msgs[msgs.length - 1];
+          if (last && last.role === "assistant" && !last.content) {
+            msgs.pop();
+          }
+          return msgs;
+        });
+      } finally {
+        setLoading(false);
+        loadConversations();
+      }
     },
   }));
 
@@ -62,6 +149,13 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading) {
+      inputRef.current?.focus();
+    }
+    prevLoadingRef.current = loading;
+  }, [loading]);
 
   useEffect(() => {
     loadConversations();
@@ -160,11 +254,11 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
     }
   }
 
-  async function handleSend(planId?: string) {
+  async function handleSend(planId?: string, messageOverride?: string, skipEmptyCheck?: boolean) {
     if (loading) return;
 
-    const userContent = input.trim();
-    if (!userContent) return;
+    const userContent = (messageOverride ?? input).trim();
+    if (!userContent && !skipEmptyCheck) return;
 
     setStreamError(null);
 
@@ -185,11 +279,10 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMsg]);
-      setInput("");
+      if (!messageOverride) setInput("");
     }
 
     setLoading(true);
-    setAgentStatus({ step: 0, maxSteps: 10, running: true });
 
     const assistantMsg: ConversationMessage = {
       id: Date.now() + 1,
@@ -204,6 +297,7 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
     try {
       let fullContent = "";
       let newConvId: number | undefined;
+      const toolCallAccum = new Map<string, ToolCallInfo>();
 
       await streamChat(
         {
@@ -232,7 +326,25 @@ export const ChatPanel = forwardRef<{ setSelectedText: (text: string, pageTitle:
           if (meta.plan) {
             onPlanReceived?.(meta.plan);
             // Replace the assistant message with a summary pointing to the right panel
-            if ((meta.plan.outline && meta.plan.outline.length > 0)) {
+            if (meta.plan.calibration_question) {
+              const cq = meta.plan.calibration_question;
+              const optionsText = cq.options ? cq.options.map((o, i) => `${i + 1}. ${o}`).join('\n') : '';
+              const summary = cq.question
+                ? `## ❓ 校准问题
+
+${cq.question}
+
+${optionsText ? '选项：\n' + optionsText + '\n\n请在右侧面板中选择，或直接在聊天中回复。' : '请在右侧面板或聊天中回复。'}`
+                : '## 校准问题\n\n请在右侧面板中查看并回答。';
+              setMessages((prev) => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === "assistant") {
+                  msgs[msgs.length - 1] = { ...last, content: summary };
+                }
+                return msgs;
+              });
+            } else if ((meta.plan.outline && meta.plan.outline.length > 0)) {
               const summary = meta.plan.reasoning
                 ? `## 📋 知识大纲
 
@@ -267,12 +379,14 @@ ${meta.plan.reasoning}
             }
           }
         },
-        (data) => {
-          setAgentStatus({ step: data.step, maxSteps: data.max_steps, running: data.status !== "done" });
-        },
+        undefined, /* onStatus — not used */
         (error) => {
           setStreamError(error);
           setLoading(false);
+        },
+        (tc) => {
+          toolCallAccum.set(tc.id, tc);
+          setStreamingToolCalls(new Map(toolCallAccum));
         }
       );
 
@@ -287,6 +401,24 @@ ${meta.plan.reasoning}
 
       setSelectedText(null);
       setSelectedTextPage(null);
+
+      // Persist streamed tool calls to the last assistant message
+      if (toolCallAccum.size > 0) {
+        const calls = Array.from(toolCallAccum.values()).filter(
+          (tc) => tc.output || tc.error
+        );
+        if (calls.length > 0) {
+          setMessages((prev) => {
+            const msgs = [...prev];
+            const last = msgs[msgs.length - 1];
+            if (last && last.role === "assistant") {
+              msgs[msgs.length - 1] = { ...last, tool_calls: calls };
+            }
+            return msgs;
+          });
+        }
+        setStreamingToolCalls(new Map());
+      }
     } catch (e) {
       console.error("Chat error:", e);
       setMessages((prev) => {
@@ -299,7 +431,6 @@ ${meta.plan.reasoning}
       });
     } finally {
       setLoading(false);
-      setAgentStatus(null);
       // Refresh conversation list to pick up any auto-generated title
       loadConversations();
     }
@@ -327,13 +458,21 @@ ${meta.plan.reasoning}
                     <span className="w-2 h-2 bg-th-accent rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
                 ) : null}
+                {/* Tool calls from persisted messages */}
+                {msg.tool_calls?.map((tc) => (
+                  <ToolCallCard key={tc.id} toolCall={tc} defaultExpanded={false} />
+                ))}
+                {/* Streaming tool calls for the last message */}
+                {isLast && loading && Array.from(streamingToolCalls.values()).map((tc) => (
+                  <ToolCallCard key={tc.id} toolCall={tc} defaultExpanded={false} />
+                ))}
               </div>
             )}
           </div>
         </div>
       );
     });
-  }, [messages, loading]);
+  }, [messages, loading, streamingToolCalls]);
 
   return (
     <div className="h-full flex flex-col bg-th-bg-primary">
@@ -466,22 +605,6 @@ ${meta.plan.reasoning}
           </div>
         )}
       </div>
-
-      {/* Agent progress bar */}
-      {agentStatus && (
-        <div className="px-4 py-2 border-b border-th-border bg-th-accent-bg shrink-0">
-          <div className="flex items-center gap-2 text-xs text-th-text-secondary">
-            <span className="animate-pulse">🤖</span>
-            <span>步骤 {agentStatus.step}/{agentStatus.maxSteps}</span>
-            <div className="flex-1 h-1.5 bg-th-bg-tertiary rounded-full overflow-hidden">
-              <div
-                className="h-full bg-th-accent rounded-full transition-all duration-300"
-                style={{ width: `${(agentStatus.step / agentStatus.maxSteps) * 100}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scroll">

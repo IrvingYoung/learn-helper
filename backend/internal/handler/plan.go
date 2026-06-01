@@ -53,11 +53,12 @@ func (h *PlanHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 }
 
 // ConfirmPlan handles POST /api/plans/confirm
-// Body: { "plan_id": "xxx" }
+// Body: { "plan_id": "xxx", "focus_page_id": 123 }
 // Confirms a pending plan and executes it.
 func (h *PlanHandler) ConfirmPlan(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PlanID string `json:"plan_id"`
+		PlanID      string `json:"plan_id"`
+		FocusPageID *int64 `json:"focus_page_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -101,13 +102,30 @@ func (h *PlanHandler) ConfirmPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve effective focusPageID: request body takes priority over plan's saved value
+	effectiveFocusPageID := plan.FocusPageID
+	if req.FocusPageID != nil {
+		effectiveFocusPageID = req.FocusPageID
+	}
+
+	// Helper to save execution result to conversation messages
+	saveResultMessage := func(content string) {
+		if plan.ConversationID == nil {
+			return
+		}
+		h.db.ExecContext(r.Context(),
+			`INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, '', 0)`,
+			*plan.ConversationID, content)
+	}
+
 	if len(plan.Outline) > 0 && len(plan.Actions) == 0 {
 		// Outline-only: create skeleton pages
-		result, err := h.engine.ExecOutline(r.Context(), string(plan.Outline), nil)
+		result, err := h.engine.ExecOutline(r.Context(), string(plan.Outline), effectiveFocusPageID)
 		if err != nil {
 			http.Error(w, "outline execution failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		saveResultMessage(fmt.Sprintf("我之前提议的大纲已创建完成（共 %d 个页面骨架）。", len(result)))
 		writeJSON(w, map[string]any{
 			"plan_id": req.PlanID,
 			"status":  "completed",
@@ -117,11 +135,19 @@ func (h *PlanHandler) ConfirmPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute the plan (has actions)
-	report, err := h.engine.ExecutePlan(r.Context(), req.PlanID)
+	report, err := h.engine.ExecutePlan(r.Context(), req.PlanID, effectiveFocusPageID)
 	if err != nil {
 		http.Error(w, "plan execution failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	successCount := 0
+	for _, a := range report.Actions {
+		if a.Status == "completed" {
+			successCount++
+		}
+	}
+	saveResultMessage(fmt.Sprintf("我之前的执行计划已执行完成（共 %d 个操作，成功 %d 个）。", len(report.Actions), successCount))
 
 	writeJSON(w, report)
 }
@@ -223,17 +249,25 @@ func (h *PlanHandler) loadPlan(ctx context.Context, planID string) (*model.Plan,
 	var executedAt sql.NullString
 	var outline sql.NullString
 	var conversationID sql.NullInt64
+	var focusPageID sql.NullInt64
+	var calQuestion sql.NullString
 
 	err := h.db.QueryRowContext(ctx,
-		`SELECT id, conversation_id, reasoning, status, outline, phase_index, total_phases, created_at, executed_at
+		`SELECT id, conversation_id, reasoning, status, outline, phase_index, total_phases, focus_page_id, calibration_question, created_at, executed_at
 		 FROM plans WHERE id = ?`, planID).Scan(
-		&plan.ID, &conversationID, &plan.Reasoning, &plan.Status, &outline, &plan.PhaseIndex, &plan.TotalPhases, &plan.CreatedAt, &executedAt)
+		&plan.ID, &conversationID, &plan.Reasoning, &plan.Status, &outline, &plan.PhaseIndex, &plan.TotalPhases, &focusPageID, &calQuestion, &plan.CreatedAt, &executedAt)
 	if err != nil {
 		return nil, err
 	}
 
 	if conversationID.Valid {
 		plan.ConversationID = &conversationID.Int64
+	}
+	if focusPageID.Valid {
+		plan.FocusPageID = &focusPageID.Int64
+	}
+	if calQuestion.Valid {
+		plan.CalibrationQuestion = json.RawMessage(calQuestion.String)
 	}
 	if executedAt.Valid {
 		plan.ExecutedAt = &executedAt.String
@@ -287,9 +321,9 @@ func (h *PlanHandler) SavePlan(ctx context.Context, p *model.Plan) error {
 
 	// Insert plan
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO plans (id, conversation_id, reasoning, status, outline, phase_index, total_phases, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.ConversationID, p.Reasoning, p.Status, p.Outline, p.PhaseIndex, p.TotalPhases, p.CreatedAt)
+		`INSERT INTO plans (id, conversation_id, reasoning, status, outline, phase_index, total_phases, focus_page_id, calibration_question, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.ConversationID, p.Reasoning, p.Status, p.Outline, p.PhaseIndex, p.TotalPhases, p.FocusPageID, p.CalibrationQuestion, p.CreatedAt)
 	if err != nil {
 		return err
 	}

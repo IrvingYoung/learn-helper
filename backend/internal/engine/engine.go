@@ -54,7 +54,7 @@ var placeholderPattern = regexp.MustCompile(`\{\{action:([^.}]+)\.([^}]+)\}\}`)
 
 // ExecutePlan loads actions for the given plan, sorts them topologically,
 // and executes them in order with dependency propagation.
-func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string) (*ExecutionReport, error) {
+func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string, focusPageID *int64) (*ExecutionReport, error) {
 	// 1. Load actions
 	actions, err := e.loadActions(ctx, planID)
 	if err != nil {
@@ -62,6 +62,15 @@ func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string) (*Exec
 	}
 	if len(actions) == 0 {
 		return &ExecutionReport{PlanID: planID, Status: "completed"}, nil
+	}
+
+	// 1.5 Inject focusPageID into create_page actions that lack parent_id
+	if focusPageID != nil {
+		for i := range actions {
+			if actions[i].Type == "create_page" && !hasParentID(actions[i].Params) {
+				actions[i].Params = injectParentID(actions[i].Params, *focusPageID)
+			}
+		}
 	}
 
 	// 2. Topological sort
@@ -108,7 +117,7 @@ func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string) (*Exec
 		_ = e.updateActionStatus(ctx, action.ID, "running", "")
 		// Since this is a user-confirmed plan execution, inject published content_status
 		// so pages skip the draft confirmation step.
-		if action.Type == "create_page" || action.Type == "update_page" {
+		if action.Type == "create_page" || action.Type == "update_page" || action.Type == "patch_page" {
 			resolvedParams = injectContentStatus(resolvedParams, "published")
 		}
 
@@ -383,6 +392,8 @@ func (e *ExecutionEngine) executeAction(ctx context.Context, actionType string, 
 		return e.execCreatePage(ctx, params)
 	case "update_page":
 		return e.execUpdatePage(ctx, params)
+	case "patch_page":
+		return e.execPatchPage(ctx, params)
 	case "delete_page":
 		return e.execDeletePage(ctx, params)
 	case "link_pages":
@@ -566,6 +577,152 @@ func (e *ExecutionEngine) execUpdatePage(ctx context.Context, params map[string]
 	return map[string]any{
 		"page_id": pageID,
 	}, nil
+}
+
+// execPatchPage applies incremental patch operations to a wiki page.
+// Supports: replace (heading-based section replacement) and append.
+func (e *ExecutionEngine) execPatchPage(ctx context.Context, params map[string]any) (any, error) {
+	pageID, ok := toInt64(params["page_id"])
+	if !ok {
+		return nil, fmt.Errorf("patch_page: page_id is required")
+	}
+
+	page, err := e.queries.GetWikiPageByID(ctx, pageID)
+	if err != nil {
+		return nil, fmt.Errorf("get page %d: %w", pageID, err)
+	}
+
+	opsRaw, ok := params["operations"]
+	if !ok {
+		return nil, fmt.Errorf("patch_page: operations is required")
+	}
+	opsList, ok := opsRaw.([]any)
+	if !ok || len(opsList) == 0 {
+		return nil, fmt.Errorf("patch_page: operations must be a non-empty array")
+	}
+
+	content := page.Content
+
+	for i, opRaw := range opsList {
+		op, ok := opRaw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("patch_page: operation %d is invalid", i)
+		}
+
+		opType, _ := op["type"].(string)
+		switch opType {
+		case "replace":
+			target, _ := op["target"].(string)
+			if target == "" {
+				return nil, fmt.Errorf("patch_page: operation %d (replace): target is required", i)
+			}
+			newContent, _ := op["content"].(string)
+			if newContent == "" {
+				return nil, fmt.Errorf("patch_page: operation %d (replace): content is required", i)
+			}
+			content, err = replaceSection(content, target, newContent)
+			if err != nil {
+				return nil, fmt.Errorf("patch_page: operation %d: %w", i, err)
+			}
+		case "append":
+			appendContent, _ := op["content"].(string)
+			if appendContent == "" {
+				return nil, fmt.Errorf("patch_page: operation %d (append): content is required", i)
+			}
+			if content != "" && !strings.HasSuffix(content, "\n") {
+				content += "\n"
+			}
+			content += appendContent
+		default:
+			return nil, fmt.Errorf("patch_page: operation %d: unknown type %q (supported: replace, append)", i, opType)
+		}
+	}
+
+	// Update content
+	contentStatus := page.ContentStatus
+	if content != page.Content && contentStatus == "empty" {
+		contentStatus = "draft"
+	}
+	if err := e.queries.UpdateWikiPageContent(ctx, model.UpdateWikiPageContentParams{
+		Content:       content,
+		ContentStatus: contentStatus,
+		ID:            pageID,
+	}); err != nil {
+		return nil, fmt.Errorf("patch page content: %w", err)
+	}
+
+	// Re-parse links
+	e.updatePageLinks(ctx, pageID, content)
+
+	return map[string]any{
+		"page_id": pageID,
+	}, nil
+}
+
+// headingLevel returns the markdown heading level of a line (0 if not a heading).
+func headingLevel(line string) int {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "#") {
+		return 0
+	}
+	level := 0
+	for _, ch := range trimmed {
+		if ch == '#' {
+			level++
+		} else if ch == ' ' {
+			break
+		} else {
+			return 0
+		}
+	}
+	return level
+}
+
+// replaceSection replaces content from a markdown heading to the next same-or-higher-level heading.
+func replaceSection(content, target, newContent string) (string, error) {
+	lines := strings.Split(content, "\n")
+
+	// Find target heading
+	targetLine := strings.TrimSpace(target)
+	targetIndex := -1
+	targetLevel := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == targetLine {
+			targetIndex = i
+			targetLevel = headingLevel(trimmed)
+			break
+		}
+	}
+
+	if targetIndex == -1 {
+		// Collect available headings for error message
+		var headings []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if headingLevel(trimmed) > 0 {
+				headings = append(headings, trimmed)
+			}
+		}
+		return "", fmt.Errorf("heading %q not found.\nAvailable headings:\n%s", target, strings.Join(headings, "\n"))
+	}
+
+	// Find end of section: next heading with level <= targetLevel
+	endIndex := len(lines)
+	for i := targetIndex + 1; i < len(lines); i++ {
+		if level := headingLevel(lines[i]); level > 0 && level <= targetLevel {
+			endIndex = i
+			break
+		}
+	}
+
+	// Replace section
+	var result []string
+	result = append(result, lines[:targetIndex]...)
+	result = append(result, newContent)
+	result = append(result, lines[endIndex:]...)
+
+	return strings.Join(result, "\n"), nil
 }
 
 // execDeletePage removes links/backlinks referencing this page,
@@ -1071,3 +1228,28 @@ func injectContentStatus(paramsJSON string, status string) string {
 	}
 	return paramsJSON[:idx] + `,"content_status":"` + status + `"` + paramsJSON[idx:]
 }
+
+// hasParentID checks if the action params JSON contains a parent_id field.
+func hasParentID(paramsJSON json.RawMessage) bool {
+	var p map[string]any
+	if err := json.Unmarshal(paramsJSON, &p); err != nil {
+		return false
+	}
+	_, ok := p["parent_id"]
+	return ok
+}
+
+// injectParentID adds parent_id to the action params JSON.
+func injectParentID(paramsJSON json.RawMessage, parentID int64) json.RawMessage {
+	var p map[string]any
+	if err := json.Unmarshal(paramsJSON, &p); err != nil {
+		return paramsJSON
+	}
+	p["parent_id"] = parentID
+	result, err := json.Marshal(p)
+	if err != nil {
+		return paramsJSON
+	}
+	return json.RawMessage(result)
+}
+

@@ -175,6 +175,12 @@ func main() {
 	db.Exec(`ALTER TABLE plans ADD COLUMN phase_index INTEGER`)
 	db.Exec(`ALTER TABLE plans ADD COLUMN total_phases INTEGER`)
 
+	// Migrate: add focus_page_id column to plans if missing
+	db.Exec(`ALTER TABLE plans ADD COLUMN focus_page_id INTEGER REFERENCES wiki_pages(id)`)
+
+	// Migrate: add calibration_question column to plans if missing
+	db.Exec(`ALTER TABLE plans ADD COLUMN calibration_question TEXT`)
+
 	db.Exec(`INSERT OR IGNORE INTO wiki_pages (title, slug, page_type, content, content_status, sort_order) VALUES ('概览', 'overview', 'overview', '# 知识库概览\n\n欢迎使用 LLM Wiki！\n\n通过与 AI 对话来构建你的知识库。试试说：\n\n- "我要学 Go 后端"\n- "总结一下 Redis 的核心数据结构"\n- "帮我梳理数据库索引的知识"', 'published', 0)`)
 
 	wikiHandler := handler.NewWikiHandler(db)

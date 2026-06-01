@@ -1,4 +1,4 @@
-import type { WikiPage, WikiTreeNode, Conversation, ConversationMessage, Plan, ExecutionReport } from "../types";
+import type { WikiPage, WikiTreeNode, Conversation, ConversationMessage, Plan, ExecutionReport, ToolCallInfo } from "../types";
 
 const BASE = "/api";
 
@@ -59,7 +59,18 @@ export async function getConversationMessages(id: number): Promise<ConversationM
   const res = await fetch(`${BASE}/ai/conversations/${id}/messages`);
   if (!res.ok) throw new Error("Failed to fetch conversation messages");
   const data = await res.json();
-  return data.messages ?? [];
+  const messages: ConversationMessage[] = data.messages ?? [];
+  // Parse tool_calls from JSON string to array (API returns raw JSON string from DB)
+  for (const msg of messages) {
+    if (typeof msg.tool_calls === "string") {
+      try {
+        msg.tool_calls = JSON.parse(msg.tool_calls);
+      } catch {
+        msg.tool_calls = undefined;
+      }
+    }
+  }
+  return messages;
 }
 
 export async function deleteConversation(id: number): Promise<void> {
@@ -86,6 +97,7 @@ export async function streamChat(
   onMeta: (data: { conversation_id?: number; plan?: Plan }) => void,
   onStatus?: (data: { step: number; max_steps: number; status: string }) => void,
   onError?: (error: string) => void,
+  onToolCall?: (data: ToolCallInfo) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/ai/chat`, {
     method: "POST",
@@ -140,6 +152,38 @@ export async function streamChat(
       return;
     }
 
+    if (currentEvent === "tool_call_start" && onToolCall) {
+      try {
+        const data = JSON.parse(currentData);
+        onToolCall({
+          id: data.id,
+          name: data.name,
+          input: data.input || {},
+          output: "",
+          error: "",
+        });
+      } catch { /* ignore */ }
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
+    if (currentEvent === "tool_result" && onToolCall) {
+      try {
+        const data = JSON.parse(currentData);
+        onToolCall({
+          id: data.id,
+          name: data.name,
+          input: data.input || {},
+          output: data.output || "",
+          error: data.error || "",
+        });
+      } catch { /* ignore */ }
+      currentEvent = "";
+      currentData = "";
+      return;
+    }
+
     // Unknown events (done, etc.) — ignore
     currentEvent = "";
     currentData = "";
@@ -184,11 +228,11 @@ export async function streamChat(
 
 // Plan API
 
-export async function confirmPlan(planId: string): Promise<ExecutionReport> {
+export async function confirmPlan(planId: string, focusPageId?: number | null): Promise<ExecutionReport> {
   const res = await fetch(`${BASE}/plans/confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ plan_id: planId }),
+    body: JSON.stringify({ plan_id: planId, focus_page_id: focusPageId ?? null }),
   });
   if (!res.ok) throw new Error("Failed to confirm plan");
   return res.json();

@@ -41,6 +41,14 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface ToolCallInfo {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  output: string;
+  error?: string;
+}
+
 export interface ConversationMessage {
   id: number;
   role: 'user' | 'assistant';
@@ -49,6 +57,7 @@ export interface ConversationMessage {
   token_count: number | null;
   created_at: string;
   plan?: Plan;
+  tool_calls?: ToolCallInfo[];
 }
 
 export type PlanStatus = 'pending' | 'confirmed' | 'executing' | 'completed' | 'rejected' | 'completed_with_failures';
@@ -94,6 +103,7 @@ export interface Plan {
   phase_index?: number;
   total_phases?: number;
   calibration_question?: CalibrationQuestion;
+  focus_page_id?: number | null;
   actions: PlanAction[];
   created_at: string;
   executed_at?: string;
@@ -102,7 +112,7 @@ export interface Plan {
 export interface ExecutionReport {
   plan_id: string;
   status: PlanStatus;
-  outline?: Record<string, unknown>;
+  outline?: Record<string, { page_id: number; slug: string; path: string }>;
   actions: {
     id: string;
     type: ActionType;

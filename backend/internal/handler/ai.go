@@ -144,7 +144,7 @@ func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id, role, content, model_provider, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at`, id)
+	rows, err := h.db.QueryContext(r.Context(), `SELECT id, role, content, model_provider, tool_calls, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at`, id)
 	if err != nil {
 		http.Error(w, "Failed to fetch messages", http.StatusInternalServerError)
 		return
@@ -152,21 +152,25 @@ func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Reque
 	defer rows.Close()
 
 	type msg struct {
-		ID            int64  `json:"id"`
-		Role          string `json:"role"`
-		Content       string `json:"content"`
-		ModelProvider string `json:"model_provider"`
-		CreatedAt     string `json:"created_at"`
+		ID            int64   `json:"id"`
+		Role          string  `json:"role"`
+		Content       string  `json:"content"`
+		ModelProvider string  `json:"model_provider"`
+		ToolCalls     *string `json:"tool_calls"`
+		CreatedAt     string  `json:"created_at"`
 	}
 
 	var result []msg
 	for rows.Next() {
 		var m msg
-		var mp sql.NullString
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &mp, &m.CreatedAt); err != nil {
+		var mp, tc sql.NullString
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &mp, &tc, &m.CreatedAt); err != nil {
 			continue
 		}
 		m.ModelProvider = mp.String
+		if tc.Valid {
+			m.ToolCalls = &tc.String
+		}
 		result = append(result, m)
 	}
 
@@ -349,10 +353,11 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		// Verify plan is pending before executing
 		var planStatus string
 		var outline sql.NullString
+		var planFocusPageID sql.NullInt64
 		var actionCount int64
 		err := h.db.QueryRowContext(ctx,
-			"SELECT p.status, p.outline, (SELECT COUNT(*) FROM plan_actions WHERE plan_id = ?) FROM plans p WHERE p.id = ?",
-			req.PlanID, req.PlanID).Scan(&planStatus, &outline, &actionCount)
+			"SELECT p.status, p.outline, p.focus_page_id, (SELECT COUNT(*) FROM plan_actions WHERE plan_id = ?) FROM plans p WHERE p.id = ?",
+			req.PlanID, req.PlanID).Scan(&planStatus, &outline, &planFocusPageID, &actionCount)
 		if err != nil || planStatus != "pending" {
 			http.Error(w, "plan not found or not pending", http.StatusBadRequest)
 			return
@@ -363,26 +368,36 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("update plan status: %v", err), http.StatusInternalServerError)
 			return
 		}
+		// Resolve effective focusPageID: request body takes priority over plan's saved value
+		effectiveFocusPageID := req.FocusPageID
+		if effectiveFocusPageID == nil && planFocusPageID.Valid {
+			id := planFocusPageID.Int64
+			effectiveFocusPageID = &id
+		}
 		eng := engine.NewExecutionEngine(h.db, h.queries)
 		var confirmContent string
 		if outline.Valid && outline.String != "" && actionCount == 0 {
-			result, err := eng.ExecOutline(ctx, outline.String, nil)
+			result, err := eng.ExecOutline(ctx, outline.String, effectiveFocusPageID)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("outline execution failed: %v", err), http.StatusInternalServerError)
 				return
 			}
-			resultJSON, _ := json.Marshal(result)
-			confirmContent = fmt.Sprintf("大纲已确认，知识骨架已创建：\n%s", string(resultJSON))
+			confirmContent = fmt.Sprintf("我提议的大纲已创建完成（共 %d 个页面骨架）。", len(result))
 		} else {
-			report, err := eng.ExecutePlan(ctx, req.PlanID)
+			report, err := eng.ExecutePlan(ctx, req.PlanID, effectiveFocusPageID)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("plan execution failed: %v", err), http.StatusInternalServerError)
 				return
 			}
-			reportJSON, _ := json.Marshal(report)
-			confirmContent = fmt.Sprintf("操作计划已执行完成：\n%s", string(reportJSON))
+			successCount := 0
+			for _, a := range report.Actions {
+				if a.Status == "completed" {
+					successCount++
+				}
+			}
+			confirmContent = fmt.Sprintf("我提议的执行计划已执行完成（共 %d 个操作，成功 %d 个）。", len(report.Actions), successCount)
 		}
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
 			req.ConversationID, confirmContent, config.Provider)
 	}
 
@@ -407,6 +422,40 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		var role, content string
 		if rows.Scan(&role, &content) == nil {
 			aiMessages = append(aiMessages, ai.Message{Role: role, Content: content})
+		}
+	}
+
+	// Sliding window: keep only recent messages to avoid context drift and tool-calling degradation
+	const maxContextMessages = 40
+	if len(aiMessages) > maxContextMessages {
+		kept := aiMessages[len(aiMessages)-maxContextMessages:]
+		dropped := len(aiMessages) - maxContextMessages
+		aiMessages = append([]ai.Message{{Role: "user", Content: fmt.Sprintf("[系统提示：早期 %d 条消息已压缩以节省上下文空间]", dropped)}}, kept...)
+	}
+
+	// Inject selected text into the last user message for AI context,
+	// without persisting the merged text to DB (frontend renders clean originals)
+	if req.SelectedText != "" && len(aiMessages) > 0 {
+		last := &aiMessages[len(aiMessages)-1]
+		if last.Role == "user" {
+			prefix := fmt.Sprintf("关于选中的内容「%s」", req.SelectedText)
+			if last.Content != "" {
+				last.Content = prefix + "：\n\n" + last.Content
+			} else {
+				last.Content = prefix
+			}
+		}
+	}
+
+	// Inject current page context into the last user message (like selected_text)
+	if req.CurrentSlug != "" && len(aiMessages) > 0 {
+		last := &aiMessages[len(aiMessages)-1]
+		if last.Role == "user" {
+			page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
+			if err == nil {
+				context := fmt.Sprintf("\n\n我当前正在查看的页面是「%s」。", page.Title)
+				last.Content += context
+			}
 		}
 	}
 
@@ -445,7 +494,8 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	// until it stops calling tools, requests user confirmation, or hits max iterations.
 
 	fullContent := &strings.Builder{}
-	const maxIterations = 10
+	var toolCallResults []ToolCallResult
+	const maxIterations = 20
 
 reactLoop:
 	for iteration := 0; iteration < maxIterations; iteration++ {
@@ -556,14 +606,52 @@ reactLoop:
 			// Execute auto tools, stream results in real-time
 			for _, tc := range autoCalls {
 				log.Printf("[ReAct] executing auto tool: %s", tc.Name)
+
+				// Send tool_call_start SSE event
+				startInput := json.RawMessage(tc.Input)
+				if startInput == nil {
+					startInput = json.RawMessage("{}")
+				}
+				startData, _ := json.Marshal(ToolCallStartEvent{
+					ID:    tc.ID,
+					Name:  tc.Name,
+					Input: startInput,
+				})
+				sseWrite(w, "tool_call_start", string(startData), canFlush, flusher)
+
 				result := h.executeAutoTool(ctx, tc)
+
+				// Send tool_result SSE event with truncated output
+				// Detect tool execution error from result string
+				errStr := ""
+				if strings.Contains(result, "失败") {
+					errStr = result
+				}
+				truncated := truncateString(result, 8000)
+				resultData, _ := json.Marshal(ToolCallResult{
+					ID:     tc.ID,
+					Name:   tc.Name,
+					Input:  startInput,
+					Output: truncated,
+					Error:  errStr,
+				})
+				sseWrite(w, "tool_result", string(resultData), canFlush, flusher)
+
+				toolCallResults = append(toolCallResults, ToolCallResult{
+					ID:     tc.ID,
+					Name:   tc.Name,
+					Input:  startInput,
+					Output: truncated,
+					Error:  errStr,
+				})
+
 				log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
 				aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
 			}
 
 			// Create Plan from propose_plan call
 			log.Printf("[ReAct] creating plan from propose_plan, input_len=%d", len(planCall.Input))
-			plan, err := h.createPlanFromToolCall(req.ConversationID, planCall.Input)
+			plan, err := h.createPlanFromToolCall(req.ConversationID, planCall.Input, req.FocusPageID)
 			if err != nil {
 				log.Printf("[ReAct] createPlanFromToolCall FAILED: %v", err)
 				sseWrite(w, "error", fmt.Sprintf("create plan failed: %v", err), canFlush, flusher)
@@ -573,14 +661,17 @@ reactLoop:
 
 			// Save assistant message with plan info
 			planSummary := ""
-			if len(plan.Outline) > 0 && len(plan.Actions) == 0 {
+			if len(plan.CalibrationQuestion) > 0 {
+				planSummary = fmt.Sprintf("[校准问题] %s\n请在右侧面板中回答。", plan.Reasoning)
+			} else if len(plan.Outline) > 0 && len(plan.Actions) == 0 {
 				planSummary = fmt.Sprintf("[操作计划 - 大纲] %s\n大纲已生成，请在右侧查看。", plan.Reasoning)
 			} else {
 				planSummary = fmt.Sprintf("[操作计划] %s\n共 %d 个操作待确认。", plan.Reasoning, len(plan.Actions))
 			}
+			toolCallsJSON, _ := json.Marshal(toolCallResults)
 			_, _ = h.db.ExecContext(ctx,
-				"INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)",
-				req.ConversationID, planSummary, config.Provider)
+				"INSERT INTO messages (conversation_id, role, content, model_provider, token_count, tool_calls) VALUES (?, 'assistant', ?, ?, 0, ?)",
+				req.ConversationID, planSummary, config.Provider, string(toolCallsJSON))
 
 			// Send plan to frontend via SSE meta event
 			metaData := map[string]any{
@@ -608,7 +699,45 @@ reactLoop:
 
 		for _, tc := range autoCalls {
 			log.Printf("[ReAct] executing auto tool: %s", tc.Name)
+
+			// Send tool_call_start SSE event
+			startInput := json.RawMessage(tc.Input)
+			if startInput == nil {
+				startInput = json.RawMessage("{}")
+			}
+			startData, _ := json.Marshal(ToolCallStartEvent{
+				ID:    tc.ID,
+				Name:  tc.Name,
+				Input: startInput,
+			})
+			sseWrite(w, "tool_call_start", string(startData), canFlush, flusher)
+
 			result := h.executeAutoTool(ctx, tc)
+
+			// Send tool_result SSE event with truncated output
+			// Detect tool execution error from result string
+			errStr := ""
+			if strings.Contains(result, "失败") {
+				errStr = result
+			}
+			truncated := truncateString(result, 8000)
+			resultData, _ := json.Marshal(ToolCallResult{
+				ID:     tc.ID,
+				Name:   tc.Name,
+				Input:  startInput,
+				Output: truncated,
+				Error:  errStr,
+			})
+			sseWrite(w, "tool_result", string(resultData), canFlush, flusher)
+
+			toolCallResults = append(toolCallResults, ToolCallResult{
+				ID:     tc.ID,
+				Name:   tc.Name,
+				Input:  startInput,
+				Output: truncated,
+				Error:  errStr,
+			})
+
 			log.Printf("[ReAct] auto tool %s result_len=%d", tc.Name, len(result))
 			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: tc.ID})
 		}
@@ -626,8 +755,9 @@ reactLoop:
 	// ====== Save assistant message ======
 	assistantText := strings.TrimSpace(fullContent.String())
 	if assistantText != "" {
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-			req.ConversationID, assistantText, config.Provider)
+		toolCallsJSON, _ := json.Marshal(toolCallResults)
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count, tool_calls) VALUES (?, 'assistant', ?, ?, 0, ?)`,
+			req.ConversationID, assistantText, config.Provider, string(toolCallsJSON))
 	}
 
 	// Auto-title after first response: use first 48 chars of user's first message
@@ -733,20 +863,32 @@ func (a *wikiContextDBAdapter) GetPageContentsForFallback(ctx context.Context) (
 	return out, nil
 }
 
-// createPlanFromToolCall creates a Plan from a propose_plan tool call input.
-// Supports both old format (single "params" field) and new format (type-specific "*_params" fields).
-
-// extractFirstJSON finds the first balanced JSON object {...} in a string.
-// This strips any non-JSON prefix (e.g. function call wrappers like
-// propose_plan({...}) or explanatory text before code fences).
 func extractFirstJSON(s string) string {
 	start := strings.Index(s, "{")
 	if start < 0 {
 		return s
 	}
 	depth := 0
+	inString := false
+	escaped := false
 	for i := start; i < len(s); i++ {
-		switch s[i] {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch c {
 		case '{':
 			depth++
 		case '}':
@@ -759,19 +901,21 @@ func extractFirstJSON(s string) string {
 	return s // no balanced closing brace; return as-is
 }
 
-func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string) (*model.Plan, error) {
+func (h *AIHandler) createPlanFromToolCall(conversationID int64, input string, focusPageID *int64) (*model.Plan, error) {
 	var proposal struct {
-		Reasoning   string          `json:"reasoning"`
-		Outline     json.RawMessage `json:"outline"`
-		Phases      json.RawMessage `json:"phases"`
-		PhaseIndex  *int64          `json:"phase_index"`
-		TotalPhases *int64          `json:"total_phases"`
-		Actions     []struct {
+		Reasoning           string          `json:"reasoning"`
+		Outline             json.RawMessage `json:"outline"`
+		Phases              json.RawMessage `json:"phases"`
+		PhaseIndex          *int64          `json:"phase_index"`
+		TotalPhases         *int64          `json:"total_phases"`
+		CalibrationQuestion json.RawMessage `json:"calibration_question"`
+		Actions             []struct {
 			ID               string         `json:"id"`
 			Type             string         `json:"type"`
 			Params           map[string]any `json:"params"`
 			CreatePageParams map[string]any `json:"create_page_params"`
 			UpdatePageParams map[string]any `json:"update_page_params"`
+			PatchPageParams  map[string]any `json:"patch_page_params"`
 			DeletePageParams map[string]any `json:"delete_page_params"`
 			LinkPagesParams  map[string]any `json:"link_pages_params"`
 			MovePageParams   map[string]any `json:"move_page_params"`
@@ -844,14 +988,16 @@ parsed:
 	}
 
 	plan := &model.Plan{
-		ID:             planID,
-		ConversationID: &conversationID,
-		Reasoning:      proposal.Reasoning,
-		Status:         "pending",
-		Outline:        proposal.Outline,
-		PhaseIndex:     proposal.PhaseIndex,
-		TotalPhases:    proposal.TotalPhases,
-		CreatedAt:      now,
+		ID:                  planID,
+		ConversationID:      &conversationID,
+		Reasoning:           proposal.Reasoning,
+		Status:              "pending",
+		Outline:             proposal.Outline,
+		PhaseIndex:          proposal.PhaseIndex,
+		TotalPhases:         proposal.TotalPhases,
+		FocusPageID:         focusPageID,
+		CalibrationQuestion: proposal.CalibrationQuestion,
+		CreatedAt:           now,
 	}
 
 	for i, a := range proposal.Actions {
@@ -865,6 +1011,10 @@ parsed:
 		case "update_page":
 			if len(a.UpdatePageParams) > 0 {
 				params = a.UpdatePageParams
+			}
+		case "patch_page":
+			if len(a.PatchPageParams) > 0 {
+				params = a.PatchPageParams
 			}
 		case "delete_page":
 			if len(a.DeletePageParams) > 0 {
@@ -1326,6 +1476,30 @@ func (h *AIHandler) updateOverviewPage() {
 		Content: b.String(), Tags: overview.Tags, ParentID: overview.ParentID,
 		ContentStatus: "published", SortOrder: overview.SortOrder, ID: overview.ID,
 	})
+}
+
+// ToolCallStartEvent is sent via SSE when a tool starts executing.
+type ToolCallStartEvent struct {
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
+// ToolCallResult is the persisted result of a tool execution.
+type ToolCallResult struct {
+	ID     string          `json:"id"`
+	Name   string          `json:"name"`
+	Input  json.RawMessage `json:"input"`
+	Output string          `json:"output"`
+	Error  string          `json:"error,omitempty"`
+}
+
+func truncateString(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen]) + "...(截断)"
+	}
+	return s
 }
 
 func sseWrite(w http.ResponseWriter, eventType, data string, canFlush bool, flusher http.Flusher) {

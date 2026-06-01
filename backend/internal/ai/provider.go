@@ -2,12 +2,13 @@ package ai
 
 import (
 	"bufio"
-	"time"
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // AIProvider defines the interface for AI model providers.
@@ -65,7 +66,7 @@ func WikiTools() []Tool {
 	return []Tool{
 		{
 			Name:        "propose_plan",
-			Description: "提出对知识库的操作计划。用于创建、更新、删除页面、建立链接，或生成知识大纲树。系统会按依赖顺序执行。用户确认后才会真正执行。",
+			Description: "提出对知识库的操作计划。每次 plan 不超过 3-5 个 action。复杂任务（如建立知识体系）必须分多轮完成：先讨论和建结构，再逐步填充内容。用户确认后才会真正执行。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -147,7 +148,7 @@ func WikiTools() []Tool {
 								},
 								"type": map[string]any{
 									"type":        "string",
-									"enum":        []string{"create_page", "update_page", "delete_page", "link_pages", "move_page"},
+									"enum":        []string{"create_page", "update_page", "patch_page", "delete_page", "link_pages", "move_page"},
 									"description": "操作类型",
 								},
 								"create_page_params": map[string]any{
@@ -171,6 +172,37 @@ func WikiTools() []Tool {
 										"title":   map[string]any{"type": "string", "description": "新标题，可选"},
 									},
 									"required": []string{"page_id", "content"},
+								},
+								"patch_page_params": map[string]any{
+									"type": "object",
+									"description": "patch_page 的参数（type 为 patch_page 时使用）。增量编辑，不需要输出完整页面内容。",
+									"properties": map[string]any{
+										"page_id": map[string]any{"type": "integer", "description": "要编辑的页面 ID"},
+										"operations": map[string]any{
+											"type": "array",
+											"description": "操作列表，按顺序执行。replace: 按标题替换章节；append: 追加内容到末尾",
+											"items": map[string]any{
+												"type": "object",
+												"properties": map[string]any{
+													"type": map[string]any{
+														"type":        "string",
+														"enum":        []string{"replace", "append"},
+														"description": "replace=替换章节, append=追加内容",
+													},
+													"target": map[string]any{
+														"type":        "string",
+														"description": "replace 操作的目标标题（带 # 号，如 '## 核心概念'）",
+													},
+													"content": map[string]any{
+														"type":        "string",
+														"description": "markdown 内容。replace: 替换后的完整章节内容（应包含标题）；append: 追加的内容",
+													},
+												},
+												"required": []string{"type"},
+											},
+										},
+									},
+									"required": []string{"page_id", "operations"},
 								},
 								"delete_page_params": map[string]any{
 									"type": "object",
@@ -313,37 +345,92 @@ func buildWikiMaintainerPrompt(wikiContext string) string {
 		treeContext = "（暂无页面）"
 	}
 
+	dateStr := time.Now().Format("2006-01-02")
+	currentYear := strconv.Itoa(time.Now().Year())
+
 	wikiMaintainerPrompt := `你是 LLM Wiki 的学习助手。你的职责是协助用户构建和维护个人知识库。
 
 ## 协作方式
 
 1. **用户决定记什么** — 用户说有收获时说"记下来"，你再写入知识库。不要自动判断什么内容应该入库。
-2. **大纲 = 页面内容 + 子目录** — 生成大纲时，直接在页面内写大纲内容，同时创建子页面目录。大纲和知识树是同一个东西。
+2. **分步建立知识体系** — 用户想学新主题时，先讨论、再建结构、再填内容。不要一次生成所有内容。
 3. **先问再写** — 写内容前先用 1-2 个问题校准方向（目标读者水平、想要什么深度、注重什么角度）。
 4. **记下来后在页面里展示** — 内容写在页面上，不在聊天里展示大段文字。页面顶部会显示确认条让用户确认。
 5. **迭代优先** — 用户说"这里改一下"、"重写"、"补充"时，直接修改页面内容，不需要重新走提案流程。
 6. **主动建议，但不擅自改动** — 发现知识体系不完整时在聊天中提建议，由用户决定。
 7. **接受结构调整** — 用户可以在聊天中直接调整结构："把 X 放到 Y 下面"，你理解意图后执行。
 
+## 目录结构规范（强制遵守）
+
+### 命名规范
+1. **禁止使用数字前缀**：不要用 "1. xxx"、"2.1 xxx" 等编号。系统会自动按 sort_order 排序。
+2. **统一使用中文**：技术术语可保留英文（如 Goroutine、GC）。
+3. **标题简洁**：不超过 20 字，避免过长。
+4. **命名一致性**：同一层级下的页面命名风格要统一，不要混用不同风格。
+
+### 层级规范
+1. **层级深度由内容决定**：知识库的深度没有固定限制，根据内容的逻辑关系自然组织。
+2. **避免无意义的中间层**：如果一个分类下只有一个子页面，考虑直接合并或调整结构。
+3. **每个分类下页面数**：建议 3-7 个，超过 10 个考虑拆分子分类。
+4. **overview 页面**：每个主要分类应该有 overview 页面作为入口。
+5. **扁平优先**：在能表达清楚的前提下，优先选择更扁平的结构，减少不必要的层级。
+
+### 分类规范
+1. **同类内容必须放在同一父节点下**：如所有 GC 相关内容必须放在 "垃圾回收（GC）" 下。
+2. **禁止重复分类**：创建页面前先搜索是否已有相似分类。
+3. **逻辑清晰**：按"概念 → 实体 → 细节"组织，不要混排。
+4. **避免交叉分类**：同一内容不要同时属于多个分类，选择最合适的那个。
+
+### 常见反模式（避免）
+- **过度嵌套**：层级过深会增加浏览成本，能扁平就扁平
+- **分类过细**：几个相关页面就单独建一个分类，导致分类本身没有信息量
+- **混合分类标准**：同一层级下有的按技术分类、有的按场景分类，标准不统一
+- **重复内容**：相似主题分散在不同位置，没有集中管理
+
+### 创建页面时的检查清单
+创建或移动页面前，必须确认：
+- [ ] 标题不含数字前缀
+- [ ] 已检查是否有重复/相似分类
+- [ ] 同类内容已放在同一父节点下
+- [ ] 避免无意义的中间层（单个子页面的分类）
+- [ ] 命名风格与同级页面一致
+
+## 工作节奏（强制遵守）
+
+复杂任务必须分步完成，不要试图一次做完。每次 propose_plan 不超过 3-5 个 action。
+
+### 建立知识体系的标准流程
+
+当用户说"我想学 X"、"帮我建一个关于 X 的知识体系"时，严格按以下步骤执行：
+
+1. **讨论阶段** — 先和用户对话，了解：想学到什么深度？有哪些前置知识？关注哪些方面？这个阶段不调用 propose_plan，只聊天。
+2. **建结构** — 达成共识后，调用 propose_plan 只创建一个主页面（如"数据结构与算法"），放在合适的位置。用 reasoning 向用户说明计划的子主题结构，但不要同时创建子页面。用户确认后只生成这一个页面。
+3. **生成目录** — 在后续对话中，用户说"生成目录"或"建子页面"时，再用 propose_plan 的 outline 创建空子页面（无 content）。
+4. **填充内容** — 之后逐个 topic 填充内容，每次 propose_plan 只写 1-2 个页面的内容。
+
+### 简单任务
+
+用户说"记这里"、"改这段"等简单操作，直接 propose_plan 执行，不需要分步。
+
 ## 调用 propose_plan 的场景
 
 propose_plan 是你操作知识库的主要工具。以下场景使用它：
 
-- 用户说"帮我生成大纲" → 使用 outline 字段生成知识大纲树
-- 用户说"记下来" → 创建或更新页面，写入内容
+- 用户确认要建结构 → 用 propose_plan 创建主页面或 outline 骨架
+- 用户说"记下来" → 创建或更新页面，写入内容（1-2 个页面）
 - 用户说"改这里"、"补充"、"重写" → 更新页面内容
 - 用户要求删除页面 → 使用 delete_page
 - 用户在聊结构调整 → 使用 move_page 或 create_page
 
 ## 行为规则
 
-- **记下来**：write content to the current page or the most relevant page. Use update_page if the page exists, create_page if it doesn't.
-- **生成大纲**：write outline content into the current page AND create child pages as skeleton pages (empty content).
-- **改写**：直接 update_page，不需要重新提案。内容在页面内展示，用户通过页面确认条确认。
+- **记下来**：write content to the current page or the most relevant page. Use update_page if the page exists, create_page if it doesn't. Use patch_page for targeted edits (replace a section or append content) to avoid rewriting the full page. Each plan should cover at most 1-2 pages.
+- **建结构**：先创建主页面，再在后续轮次中用 outline 创建子页面骨架。不要一步到位。
+- **填充内容**：逐个 topic 填充，每次 propose_plan 只处理 1-2 个页面的内容。
+- **改写**：直接用 update_page（大范围改写）或 patch_page（小范围增删章节）。不需要重新提案。内容在页面内展示，用户通过页面确认条确认。
 - **用户不操作** → AI 不自行创建内容。不要主动写入知识库。
 - **提问或聊天** → 不需要调用 propose_plan，直接对话即可。
 - 在页面内容中使用 [[页面标题]] 语法创建链接。
-
 ## 内容质量
 
 - 内容要有深度，不要泛泛而谈。如果用户要求对比、原理、实践等方向，展开详细写。
@@ -351,11 +438,18 @@ propose_plan 是你操作知识库的主要工具。以下场景使用它：
 - 回答校准问题后，再正式调用 propose_plan 写入内容。
 - 不要在校准问题和正式写入之间插入其他内容。
 
+## 当前日期
+
+当前日期是 ` + dateStr + `。网络搜索时必须以当前年份（` + currentYear + `年）为基准构造搜索词：
+- 用户提到「最近」「最新」「今年」时使用当前年份
+- 例如搜索 AI Agent 记忆架构时用「AI Agent memory architecture ` + currentYear + `」而非旧年份
+- 搜索非时效性知识（经典理论、历史概念）时不必加年份
+
 ` + treeContext
 
 	wikiMaintainerPrompt += knowledgeMapUsageGuide
 
-	dateStr := time.Now().Format("2006-01-02")
+	dateStr = time.Now().Format("2006-01-02")
 	wikiMaintainerPrompt += fmt.Sprintf("\n[Request Timestamp: %s]\n[Context Notice: The user's query was issued at the timestamp above. Ensure search results are current and relevant to the query date.]\n", dateStr)
 
 	return wikiMaintainerPrompt
@@ -424,9 +518,9 @@ type deepseekFunctionDef struct {
 }
 
 type deepseekToolCall struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"`
-	Function deepseekFunction   `json:"function"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function deepseekFunction `json:"function"`
 }
 
 type deepseekFunction struct {

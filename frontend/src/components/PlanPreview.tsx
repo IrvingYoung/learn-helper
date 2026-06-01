@@ -5,6 +5,7 @@ interface PlanPreviewProps {
   plan: Plan;
   onConfirm: (planId: string) => void;
   confirming: boolean;
+  onCalibrationAnswer?: (answer: string) => void;
 }
 
 function OutlineTree({ node, depth }: { node: OutlineNode; depth: number }) {
@@ -131,7 +132,7 @@ function ActionList({ actions }: { actions: PlanAction[] }) {
   );
 }
 
-export function PlanPreview({ plan, onConfirm, confirming }: PlanPreviewProps) {
+export function PlanPreview({ plan, onConfirm, confirming, onCalibrationAnswer }: PlanPreviewProps) {
   const hasOutline = plan.outline && plan.outline.length > 0;
   const hasActions = plan.actions && plan.actions.length > 0;
 
@@ -203,7 +204,29 @@ export function PlanPreview({ plan, onConfirm, confirming }: PlanPreviewProps) {
           </div>
         )}
 
-        {!hasOutline && !hasActions && (
+        {plan.calibration_question && (
+          <div className="px-4 py-4">
+            <h3 className="text-xs font-semibold text-th-text-secondary uppercase tracking-wider mb-3">校准问题</h3>
+            <p className="text-sm text-th-text-primary leading-relaxed mb-4">{plan.calibration_question.question}</p>
+            {plan.calibration_question.options && plan.calibration_question.options.length > 0 && (
+              <div className="space-y-2">
+                {plan.calibration_question.options.map((option, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onCalibrationAnswer?.(option)}
+                    className="w-full text-left px-3 py-2.5 rounded-lg border border-th-border hover:border-th-accent hover:bg-th-accent-bg text-sm text-th-text-primary transition-colors"
+                  >
+                    <span className="text-th-text-muted mr-2">{i + 1}.</span>
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-th-text-muted mt-3">也可以在聊天中自由回复</p>
+          </div>
+        )}
+
+        {!hasOutline && !hasActions && !plan.calibration_question && (
           <div className="flex-1 flex items-center justify-center p-6">
             <div className="text-center">
               <svg className="w-8 h-8 mx-auto text-th-text-muted mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -224,8 +247,8 @@ export function PlanPreview({ plan, onConfirm, confirming }: PlanPreviewProps) {
         )}
       </div>
 
-      {/* Footer with confirm button */}
-      <div className="px-4 py-3 border-t border-th-border bg-th-bg-secondary/50 shrink-0">
+      {/* Footer with confirm button - hidden for calibration questions */}
+      {!plan.calibration_question && <div className="px-4 py-3 border-t border-th-border bg-th-bg-secondary/50 shrink-0">
         <button
           onClick={() => onConfirm(plan.id)}
           disabled={confirming}
@@ -248,7 +271,7 @@ export function PlanPreview({ plan, onConfirm, confirming }: PlanPreviewProps) {
             </>
           )}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

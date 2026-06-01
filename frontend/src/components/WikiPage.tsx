@@ -3,12 +3,13 @@ import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, createEmptyWikiPage, renameWikiPage, moveWikiPage, deleteWikiPage } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { WikiPage, WikiTreeNode, Plan } from '../types';
+import type { WikiPage, WikiTreeNode, Plan, ExecutionReport, OutlineNode } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
 import { PlanPreview } from './PlanPreview';
-import { confirmPlan } from '../lib/api';
+import { TabbedPageReview } from './TabbedPageReview';
+import { confirmPlan, rejectPlan } from '../lib/api';
 
 const LAYOUT_KEY = 'wiki-layout';
 const DEFAULT_LAYOUT: Record<string, number> = { left: 20, center: 50, right: 30 };
@@ -31,10 +32,12 @@ export function WikiPageLayout() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
   const rightPanelRef = useRef<PanelImperativeHandle>(null);
-  const chatPanelRef = useRef<{ setSelectedText: (text: string, pageTitle: string) => void }>(null);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const chatPanelRef = useRef<{ setSelectedText: (text: string, pageTitle: string) => void; sendMessage: (text: string) => void; continueAfterConfirm: () => void }>(null);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(() => localStorage.getItem('wiki-selected-slug'));
+  const [newPageNodeId, setNewPageNodeId] = useState<number | null>(null);
   const [pendingOutlinePlan, setPendingOutlinePlan] = useState<Plan | null>(null);
   const [confirmingOutline, setConfirmingOutline] = useState(false);
+  const [reviewSlugs, setReviewSlugs] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [provider, setProvider] = useState('claude');
   const [model, setModel] = useState('claude-sonnet-4-7-20250514');
@@ -60,6 +63,12 @@ export function WikiPageLayout() {
   }, []);
   const { theme, toggleTheme } = useTheme();
   const [treeVersion, setTreeVersion] = useState(0);
+
+  // Persist selected page across refreshes
+  useEffect(() => {
+    if (selectedSlug) localStorage.setItem('wiki-selected-slug', selectedSlug);
+    else localStorage.removeItem('wiki-selected-slug');
+  }, [selectedSlug]);
 
   const { data: tree } = useSWR(['wiki-tree', treeVersion], fetchWikiTree);
   const { data: page, mutate: mutatePage } = useSWR(
@@ -107,18 +116,77 @@ export function WikiPageLayout() {
   const handleConfirmOutline = useCallback(async (planId: string) => {
     setConfirmingOutline(true);
     try {
-      await confirmPlan(planId);
+      const report: ExecutionReport & { outline?: Record<string, { slug: string }> } = await confirmPlan(planId, pendingOutlinePlan?.focus_page_id ?? displayPage?.id ?? null);
       setPendingOutlinePlan(null);
       handlePageChanged();
+
+      // Extract page slugs from execution report for tabbed review.
+      // Note: pendingOutlinePlan in this closure still holds the pre-null value
+      // since React batches state updates and hasn't re-rendered yet.
+      const slugs: string[] = [];
+      const seen = new Set<string>();
+
+      // Action-based plans: collect slugs from create_page / update_page results
+      if (report.actions) {
+        for (const action of report.actions) {
+          if (action.status === "completed") {
+            const slug = (action.result as { slug?: string } | undefined)?.slug;
+            if (slug && !seen.has(slug)) {
+              slugs.push(slug);
+              seen.add(slug);
+            }
+          }
+        }
+      }
+
+      // Outline plans: collect slugs from outline results, preserving outline order
+      if (report.outline) {
+        const outlineResults = report.outline;
+        if (pendingOutlinePlan?.outline) {
+          const walkOutline = (nodes: OutlineNode[]) => {
+            for (const node of nodes) {
+              if (node.id && outlineResults[node.id]?.slug) {
+                const slug = outlineResults[node.id].slug;
+                if (!seen.has(slug)) {
+                  slugs.push(slug);
+                  seen.add(slug);
+                }
+              }
+              if (node.children) walkOutline(node.children);
+            }
+          };
+          walkOutline(pendingOutlinePlan.outline);
+        } else {
+          for (const value of Object.values(outlineResults)) {
+            const slug = value.slug;
+            if (slug && !seen.has(slug)) {
+              slugs.push(slug);
+              seen.add(slug);
+            }
+          }
+        }
+      }
+
+      if (slugs.length > 0) {
+        setReviewSlugs(slugs);
+      }
+
+      // Trigger AI to continue analyzing results
+      chatPanelRef.current?.continueAfterConfirm();
     } catch (err) {
       console.error("Outline confirmation failed:", err);
     } finally {
       setConfirmingOutline(false);
     }
-  }, [handlePageChanged]);
+  }, [handlePageChanged, pendingOutlinePlan]);
 
   const handlePlanReceived = useCallback((plan: Plan) => {
     setPendingOutlinePlan(plan);
+    setReviewSlugs([]);
+  }, []);
+
+  const handleReviewDone = useCallback(() => {
+    setReviewSlugs([]);
   }, []);
 
 
@@ -128,7 +196,9 @@ export function WikiPageLayout() {
 
   const handleAddChild = async (parentId: number) => {
     try {
-      await createEmptyWikiPage("新页面", parentId);
+      const page = await createEmptyWikiPage("新页面", parentId);
+      setSelectedSlug(page.slug);
+      setNewPageNodeId(page.id);
       handlePageChanged();
     } catch (err) {
       console.error("Failed to add child page:", err);
@@ -283,6 +353,7 @@ export function WikiPageLayout() {
               onRename={handleRename}
               onMove={handleMove}
               onDelete={handleDelete}
+              newNodeId={newPageNodeId}
             />
           </div>
         </Panel>
@@ -309,11 +380,26 @@ export function WikiPageLayout() {
           }}
         >
           <div className="h-full overflow-hidden">
-            {pendingOutlinePlan ? (
+            {reviewSlugs.length > 0 ? (
+              <TabbedPageReview
+                slugs={reviewSlugs}
+                onDone={handleReviewDone}
+                onSelectPage={(slug) => setSelectedSlug(slug)}
+                onContentConfirmed={handleContentConfirmed}
+              />
+            ) : pendingOutlinePlan ? (
               <PlanPreview
                 plan={pendingOutlinePlan}
                 onConfirm={handleConfirmOutline}
                 confirming={confirmingOutline}
+                onCalibrationAnswer={async (answer) => {
+                  // Reject the calibration plan and send answer as chat message
+                  if (pendingOutlinePlan) {
+                    try { await rejectPlan(pendingOutlinePlan.id); } catch {}
+                  }
+                  setPendingOutlinePlan(null);
+                  chatPanelRef.current?.sendMessage(`我的选择：${answer}`);
+                }}
               />
             ) : (
               <PageViewer
