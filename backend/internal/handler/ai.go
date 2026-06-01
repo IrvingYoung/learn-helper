@@ -310,7 +310,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ConversationID int64  `json:"conversation_id"`
 		Message        string `json:"message"`
-		PlanID         string `json:"plan_id"`
 		FocusPageID    *int64 `json:"focus_page_id"`
 		CurrentSlug    string `json:"current_slug"`
 		SelectedText   string `json:"selected_text"`
@@ -320,8 +319,8 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[AIChat] request: convID=%d msg=%q current_slug=%q selected_text=%q focusPageID=%v planID=%q",
-		req.ConversationID, req.Message, req.CurrentSlug, req.SelectedText, req.FocusPageID, req.PlanID)
+	log.Printf("[AIChat] request: convID=%d msg=%q current_slug=%q selected_text=%q focusPageID=%v",
+		req.ConversationID, req.Message, req.CurrentSlug, req.SelectedText, req.FocusPageID)
 
 	ctx := r.Context()
 
@@ -365,59 +364,6 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		var currentTitle sql.NullString
 		h.db.QueryRowContext(ctx, `SELECT title FROM conversations WHERE id = ?`, req.ConversationID).Scan(&currentTitle)
 		needsTitle = !currentTitle.Valid || currentTitle.String == ""
-	}
-
-	// Handle plan confirmation
-	if req.PlanID != "" {
-		// Verify plan is pending before executing
-		var planStatus string
-		var outline sql.NullString
-		var planFocusPageID sql.NullInt64
-		var actionCount int64
-		err := h.db.QueryRowContext(ctx,
-			"SELECT p.status, p.outline, p.focus_page_id, (SELECT COUNT(*) FROM plan_actions WHERE plan_id = ?) FROM plans p WHERE p.id = ?",
-			req.PlanID, req.PlanID).Scan(&planStatus, &outline, &planFocusPageID, &actionCount)
-		if err != nil || planStatus != "pending" {
-			http.Error(w, "plan not found or not pending", http.StatusBadRequest)
-			return
-		}
-		// Mark as confirmed
-		_, err = h.db.ExecContext(ctx, "UPDATE plans SET status = 'confirmed' WHERE id = ?", req.PlanID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("update plan status: %v", err), http.StatusInternalServerError)
-			return
-		}
-		// Resolve effective focusPageID: request body takes priority over plan's saved value
-		effectiveFocusPageID := req.FocusPageID
-		if effectiveFocusPageID == nil && planFocusPageID.Valid {
-			id := planFocusPageID.Int64
-			effectiveFocusPageID = &id
-		}
-		eng := engine.NewExecutionEngine(h.db, h.queries)
-		var confirmContent string
-		if outline.Valid && outline.String != "" && actionCount == 0 {
-			result, err := eng.ExecOutline(ctx, outline.String, effectiveFocusPageID)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("outline execution failed: %v", err), http.StatusInternalServerError)
-				return
-			}
-			confirmContent = fmt.Sprintf("我提议的大纲已创建完成（共 %d 个页面骨架）。", len(result))
-		} else {
-			report, err := eng.ExecutePlan(ctx, req.PlanID, effectiveFocusPageID)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("plan execution failed: %v", err), http.StatusInternalServerError)
-				return
-			}
-			successCount := 0
-			for _, a := range report.Actions {
-				if a.Status == "completed" {
-					successCount++
-				}
-			}
-			confirmContent = fmt.Sprintf("我提议的执行计划已执行完成（共 %d 个操作，成功 %d 个）。", len(report.Actions), successCount)
-		}
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'assistant', ?, ?, 0)`,
-			req.ConversationID, confirmContent, config.Provider)
 	}
 
 	// --- Common path: provider, load history, context, streaming ---

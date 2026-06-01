@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -94,7 +95,7 @@ func seedParentPage(t *testing.T, db *sql.DB, title string) int64 {
 
 func pathFor(id int64) string {
 	// Matches engine.execCreatePage convention.
-	return formatInt(id) + "/"
+	return strconv.FormatInt(id, 10) + "/"
 }
 
 func latestLogEntry(t *testing.T, db *sql.DB) (action, pageTitle, source string, pageIDValid bool, pageID int64) {

@@ -13,24 +13,7 @@ import (
 	"learn-helper/internal/model"
 )
 
-// ExecutionReport summarizes the result of executing a plan.
-type ExecutionReport struct {
-	PlanID  string          `json:"plan_id"`
-	Status  string          `json:"status"`
-	Actions []ActionResult  `json:"actions"`
-}
-
-// ActionResult captures the outcome of a single action execution.
-type ActionResult struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
-	Result any    `json:"result,omitempty"`
-	Error  string `json:"error,omitempty"`
-}
-
-// ExecutionEngine orchestrates plan execution with topological ordering,
-// placeholder replacement, and wiki page mutations.
+// ExecutionEngine orchestrates wiki page mutations for individual write tool calls.
 type ExecutionEngine struct {
 	db            *sql.DB
 	queries       *model.Queries
@@ -47,292 +30,6 @@ func NewExecutionEngine(db *sql.DB, queries *model.Queries) *ExecutionEngine {
 // Passing nil clears the callback.
 func (e *ExecutionEngine) SetOnPageWritten(fn func(pageID int64)) {
 	e.onPageWritten = fn
-}
-
-// placeholderPattern matches {{action:a1.page_id}} style references.
-var placeholderPattern = regexp.MustCompile(`\{\{action:([^.}]+)\.([^}]+)\}\}`)
-
-// ExecutePlan loads actions for the given plan, sorts them topologically,
-// and executes them in order with dependency propagation.
-func (e *ExecutionEngine) ExecutePlan(ctx context.Context, planID string, focusPageID *int64) (*ExecutionReport, error) {
-	// 1. Load actions
-	actions, err := e.loadActions(ctx, planID)
-	if err != nil {
-		return nil, fmt.Errorf("load actions: %w", err)
-	}
-	if len(actions) == 0 {
-		return &ExecutionReport{PlanID: planID, Status: "completed"}, nil
-	}
-
-	// 1.4 Inject focusPageID into create_page actions that lack parent_id
-	if focusPageID != nil {
-		for i := range actions {
-			if actions[i].Type == "create_page" && !hasParentID(actions[i].Params) {
-				// Distinguish "no parent_id key" from "placeholder parent_id"
-				// so we can log differently — the latter is a real risk
-				// (parent may resolve to wrong page if engine continues).
-				if hasPlaceholderParentID(actions[i].Params) {
-					log.Printf("WARN: focus fallback applied for action %s — parent_id is unresolved placeholder, falling back to focusPageID=%d", actions[i].ID, *focusPageID)
-				}
-				actions[i].Params = injectParentID(actions[i].Params, *focusPageID)
-			}
-		}
-	}
-
-	// 1.6 Implicit dependency inference: scan each action's params for
-	// {{action:X.field}} placeholders and add X to the in-memory depends_on
-	// set if not already present. Only used for topo sort; the loaded
-	// model.PlanAction.DependsOn is left untouched for audit.
-	augmentedActions := make([]model.PlanAction, len(actions))
-	for i, a := range actions {
-		augmentedActions[i] = a
-		declared := parseDependsOn(string(a.DependsOn))
-		declaredSet := map[string]bool{}
-		for _, d := range declared {
-			declaredSet[d] = true
-		}
-		inferred := inferDependencies(string(a.Params))
-		added := false
-		for _, ref := range inferred {
-			if !declaredSet[ref] {
-				declared = append(declared, ref)
-				declaredSet[ref] = true
-				added = true
-			}
-		}
-		if added {
-			merged, _ := json.Marshal(declared)
-			augmentedActions[i].DependsOn = merged
-		}
-	}
-
-	// 2. Topological sort (using augmented depends_on; original loaded actions unchanged)
-	sorted, err := topoSort(augmentedActions)
-	if err != nil {
-		return nil, fmt.Errorf("topological sort: %w", err)
-	}
-
-	// 3. Update plan status to 'executing'
-	if _, err := e.db.ExecContext(ctx,
-		`UPDATE plans SET status = 'executing' WHERE id = ?`, planID); err != nil {
-		return nil, fmt.Errorf("update plan status: %w", err)
-	}
-
-	// 4. Execute actions in order
-	actionResultMap := make(map[string]any) // actionID -> result
-	failedSet := make(map[string]bool)
-	results := make([]ActionResult, 0, len(sorted))
-
-	for _, action := range sorted {
-		ar := ActionResult{ID: action.ID, Type: action.Type}
-
-		// Check if any dependency failed
-		if e.dependsOnFailed(action, failedSet) {
-			ar.Status = "skipped"
-			ar.Error = "dependency failed"
-			failedSet[action.ID] = true
-			_ = e.updateActionStatus(ctx, action.ID, "skipped", "")
-			results = append(results, ar)
-			continue
-		}
-
-		// Replace placeholders in params
-		resolvedParams, err := e.replacePlaceholders(string(action.Params), actionResultMap)
-		if err != nil {
-			ar.Status = "failed"
-			ar.Error = fmt.Sprintf("replace placeholders: %v", err)
-			failedSet[action.ID] = true
-			_ = e.updateActionStatus(ctx, action.ID, "failed", ar.Error)
-			results = append(results, ar)
-			continue
-		}
-
-		_ = e.updateActionStatus(ctx, action.ID, "running", "")
-		// Since this is a user-confirmed plan execution, inject published content_status
-		// so pages skip the draft confirmation step.
-		if action.Type == "create_page" || action.Type == "update_page" || action.Type == "patch_page" {
-			resolvedParams = injectContentStatus(resolvedParams, "published")
-		}
-
-		// Execute the action
-		result, err := e.executeAction(ctx, action.Type, resolvedParams)
-		if err != nil {
-			ar.Status = "failed"
-			ar.Error = err.Error()
-			failedSet[action.ID] = true
-			_ = e.updateActionStatus(ctx, action.ID, "failed", ar.Error)
-			results = append(results, ar)
-			continue
-		}
-
-		ar.Status = "completed"
-		ar.Result = result
-		actionResultMap[action.ID] = result
-
-		resultJSON, _ := json.Marshal(result)
-		_ = e.updateActionStatus(ctx, action.ID, "completed", string(resultJSON))
-		results = append(results, ar)
-	}
-
-	// 5. Determine final plan status
-	finalStatus := "completed"
-	for _, ar := range results {
-		if ar.Status == "failed" || ar.Status == "skipped" {
-			finalStatus = "completed_with_failures"
-			break
-		}
-	}
-
-	// 6. Update plan status and executed_at
-	if _, err := e.db.ExecContext(ctx,
-		`UPDATE plans SET status = ?, executed_at = datetime('now') WHERE id = ?`,
-		finalStatus, planID); err != nil {
-		log.Printf("WARN: failed to update plan final status: %v", err)
-	}
-
-	return &ExecutionReport{PlanID: planID, Status: finalStatus, Actions: results}, nil
-}
-
-// ---------------------------------------------------------------------------
-// Topological sort (Kahn's algorithm)
-// ---------------------------------------------------------------------------
-
-// topoSortNode is a minimal representation used by the generic topoSort.
-type topoSortNode struct {
-	ID        string
-	DependsOn []string
-}
-
-// topoSort performs a topological sort using Kahn's algorithm.
-// Returns an error if a cycle is detected.
-func topoSort(actions []model.PlanAction) ([]model.PlanAction, error) {
-	// Build adjacency and in-degree maps
-	nodes := make(map[string]*topoSortNode)
-	actionMap := make(map[string]*model.PlanAction)
-	inDegree := make(map[string]int)
-	adj := make(map[string][]string) // dependency -> dependents
-
-	for i := range actions {
-		a := &actions[i]
-		nodes[a.ID] = &topoSortNode{ID: a.ID, DependsOn: parseDependsOn(string(a.DependsOn))}
-		actionMap[a.ID] = a
-		inDegree[a.ID] = 0
-		adj[a.ID] = nil
-	}
-
-	for _, node := range nodes {
-		for _, dep := range node.DependsOn {
-			if _, ok := nodes[dep]; !ok {
-				// Reference to non-existent action; skip (will fail at execution)
-				continue
-			}
-			adj[dep] = append(adj[dep], node.ID)
-			inDegree[node.ID]++
-		}
-	}
-
-	// Seed queue with zero in-degree nodes
-	queue := make([]string, 0)
-	for id, deg := range inDegree {
-		if deg == 0 {
-			queue = append(queue, id)
-		}
-	}
-
-	var sorted []model.PlanAction
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		sorted = append(sorted, *actionMap[id])
-
-		for _, dependent := range adj[id] {
-			inDegree[dependent]--
-			if inDegree[dependent] == 0 {
-				queue = append(queue, dependent)
-			}
-		}
-	}
-
-	if len(sorted) != len(actions) {
-		return nil, fmt.Errorf("circular dependency detected among plan actions")
-	}
-
-	return sorted, nil
-}
-
-// parseDependsOn parses a JSON array string like '["a1","a2"]' into a string slice.
-func parseDependsOn(dependsOn string) []string {
-	dependsOn = strings.TrimSpace(dependsOn)
-	if dependsOn == "" || dependsOn == "[]" {
-		return nil
-	}
-	var deps []string
-	if err := json.Unmarshal([]byte(dependsOn), &deps); err != nil {
-		// Try comma-separated fallback
-		parts := strings.Split(dependsOn, ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				deps = append(deps, p)
-			}
-		}
-	}
-	return deps
-}
-
-// ---------------------------------------------------------------------------
-// Placeholder replacement
-// ---------------------------------------------------------------------------
-
-// replacePlaceholders replaces {{action:a1.page_id}} patterns in paramsJSON
-// with actual values from the actionResultMap. If any placeholder cannot
-// be resolved (referenced action not yet executed, or field missing from
-// the result), it returns an error naming every unresolved placeholder.
-func (e *ExecutionEngine) replacePlaceholders(paramsJSON string, actionResultMap map[string]any) (string, error) {
-	if !strings.Contains(paramsJSON, "{{action:") {
-		return paramsJSON, nil
-	}
-
-	var unresolved []string
-	result := placeholderPattern.ReplaceAllStringFunc(paramsJSON, func(match string) string {
-		subs := placeholderPattern.FindStringSubmatch(match)
-		if len(subs) < 3 {
-			return match
-		}
-		actionID := subs[1]
-		field := subs[2]
-
-		res, ok := actionResultMap[actionID]
-		if !ok {
-			unresolved = append(unresolved, actionID+"."+field)
-			return match
-		}
-
-		val := resolveField(res, field)
-		if val == nil {
-			unresolved = append(unresolved, actionID+"."+field)
-			return match
-		}
-		return fmt.Sprintf("%v", val)
-	})
-
-	if len(unresolved) > 0 {
-		return "", fmt.Errorf("unresolved placeholders: %s", strings.Join(unresolved, ", "))
-	}
-	return result, nil
-}
-
-// resolveField extracts a field from a map result (e.g., "page_id" from a create_page result).
-func resolveField(result any, field string) any {
-	m, ok := result.(map[string]any)
-	if !ok {
-		return nil
-	}
-	v, ok := m[field]
-	if !ok {
-		return nil
-	}
-	return v
 }
 
 // ---------------------------------------------------------------------------
@@ -981,12 +678,13 @@ func (e *ExecutionEngine) execMovePage(ctx context.Context, params map[string]an
 }
 
 // ---------------------------------------------------------------------------
-// *FromAction wrappers
+// Per-tool wrappers
 //
-// These thin wrappers accept a model.PlanAction (typically constructed ad-hoc
-// by the AI handler from an approved tool call) and dispatch to the per-action
-// helpers above. They are the entry points used by the per-tool ReAct loop,
-// which has no plan row, no action row, and no placeholder resolution.
+// These thin wrappers accept a json.RawMessage params blob (typically
+// constructed ad-hoc by the AI handler from an approved tool call) and
+// dispatch to the per-action helpers above. They are the entry points used
+// by the per-tool ReAct loop, which has no plan row, no action row, and no
+// placeholder resolution.
 // ---------------------------------------------------------------------------
 
 // marshalActionResult JSON-encodes a helper result so the AI can parse it.
@@ -999,12 +697,12 @@ func marshalActionResult(r any) string {
 	return string(b)
 }
 
-// CreatePageFromAction executes a create_page action built ad-hoc by the handler.
+// CreatePageFromAction executes a create_page tool call built ad-hoc by the handler.
 // If focusPageID is set and the action's params lack a parent_id, focusPageID
-// is used as parent_id (matches ExecutePlan's focus fallback semantics).
-func (e *ExecutionEngine) CreatePageFromAction(ctx context.Context, a model.PlanAction, focusPageID *int64) (string, error) {
+// is used as parent_id (matches the legacy ExecutePlan focus fallback semantics).
+func (e *ExecutionEngine) CreatePageFromAction(ctx context.Context, params json.RawMessage, focusPageID *int64) (string, error) {
 	var p map[string]any
-	if err := json.Unmarshal(a.Params, &p); err != nil {
+	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("create_page: parse params: %w", err)
 	}
 	// Focus fallback: if no parent_id, use focusPageID
@@ -1020,10 +718,10 @@ func (e *ExecutionEngine) CreatePageFromAction(ctx context.Context, a model.Plan
 	return marshalActionResult(result), nil
 }
 
-// UpdatePageFromAction executes an update_page action built ad-hoc by the handler.
-func (e *ExecutionEngine) UpdatePageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+// UpdatePageFromAction executes an update_page tool call built ad-hoc by the handler.
+func (e *ExecutionEngine) UpdatePageFromAction(ctx context.Context, params json.RawMessage) (string, error) {
 	var p map[string]any
-	if err := json.Unmarshal(a.Params, &p); err != nil {
+	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("update_page: parse params: %w", err)
 	}
 	result, err := e.execUpdatePage(ctx, p)
@@ -1033,10 +731,10 @@ func (e *ExecutionEngine) UpdatePageFromAction(ctx context.Context, a model.Plan
 	return marshalActionResult(result), nil
 }
 
-// PatchPageFromAction executes a patch_page action built ad-hoc by the handler.
-func (e *ExecutionEngine) PatchPageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+// PatchPageFromAction executes a patch_page tool call built ad-hoc by the handler.
+func (e *ExecutionEngine) PatchPageFromAction(ctx context.Context, params json.RawMessage) (string, error) {
 	var p map[string]any
-	if err := json.Unmarshal(a.Params, &p); err != nil {
+	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("patch_page: parse params: %w", err)
 	}
 	result, err := e.execPatchPage(ctx, p)
@@ -1046,10 +744,10 @@ func (e *ExecutionEngine) PatchPageFromAction(ctx context.Context, a model.PlanA
 	return marshalActionResult(result), nil
 }
 
-// DeletePageFromAction executes a delete_page action built ad-hoc by the handler.
-func (e *ExecutionEngine) DeletePageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+// DeletePageFromAction executes a delete_page tool call built ad-hoc by the handler.
+func (e *ExecutionEngine) DeletePageFromAction(ctx context.Context, params json.RawMessage) (string, error) {
 	var p map[string]any
-	if err := json.Unmarshal(a.Params, &p); err != nil {
+	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("delete_page: parse params: %w", err)
 	}
 	result, err := e.execDeletePage(ctx, p)
@@ -1059,10 +757,10 @@ func (e *ExecutionEngine) DeletePageFromAction(ctx context.Context, a model.Plan
 	return marshalActionResult(result), nil
 }
 
-// LinkPagesFromAction executes a link_pages action built ad-hoc by the handler.
-func (e *ExecutionEngine) LinkPagesFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+// LinkPagesFromAction executes a link_pages tool call built ad-hoc by the handler.
+func (e *ExecutionEngine) LinkPagesFromAction(ctx context.Context, params json.RawMessage) (string, error) {
 	var p map[string]any
-	if err := json.Unmarshal(a.Params, &p); err != nil {
+	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("link_pages: parse params: %w", err)
 	}
 	result, err := e.execLinkPages(ctx, p)
@@ -1072,10 +770,10 @@ func (e *ExecutionEngine) LinkPagesFromAction(ctx context.Context, a model.PlanA
 	return marshalActionResult(result), nil
 }
 
-// MovePageFromAction executes a move_page action built ad-hoc by the handler.
-func (e *ExecutionEngine) MovePageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+// MovePageFromAction executes a move_page tool call built ad-hoc by the handler.
+func (e *ExecutionEngine) MovePageFromAction(ctx context.Context, params json.RawMessage) (string, error) {
 	var p map[string]any
-	if err := json.Unmarshal(a.Params, &p); err != nil {
+	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("move_page: parse params: %w", err)
 	}
 	result, err := e.execMovePage(ctx, p)
@@ -1245,56 +943,6 @@ func (e *ExecutionEngine) removeLink(ctx context.Context, pageID, linkID int64) 
 }
 
 // ---------------------------------------------------------------------------
-// Database helpers
-// ---------------------------------------------------------------------------
-
-func (e *ExecutionEngine) loadActions(ctx context.Context, planID string) ([]model.PlanAction, error) {
-	rows, err := e.db.QueryContext(ctx,
-		`SELECT id, plan_id, type, params, depends_on, status, result, sort_order, created_at
-		 FROM plan_actions WHERE plan_id = ? ORDER BY sort_order`, planID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var actions []model.PlanAction
-	for rows.Next() {
-		var a model.PlanAction
-		if err := rows.Scan(
-			&a.ID, &a.PlanID, &a.Type, &a.Params, &a.DependsOn,
-			&a.Status, &a.Result, &a.SortOrder, &a.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		actions = append(actions, a)
-	}
-	return actions, rows.Err()
-}
-
-func (e *ExecutionEngine) updateActionStatus(ctx context.Context, actionID, status, result string) error {
-	if result != "" {
-		_, err := e.db.ExecContext(ctx,
-			`UPDATE plan_actions SET status = ?, result = ? WHERE id = ?`,
-			status, result, actionID)
-		return err
-	}
-	_, err := e.db.ExecContext(ctx,
-		`UPDATE plan_actions SET status = ? WHERE id = ?`,
-		status, actionID)
-	return err
-}
-
-func (e *ExecutionEngine) dependsOnFailed(action model.PlanAction, failedSet map[string]bool) bool {
-	deps := parseDependsOn(string(action.DependsOn))
-	for _, dep := range deps {
-		if failedSet[dep] {
-			return true
-		}
-	}
-	return false
-}
-
-// ---------------------------------------------------------------------------
 // Utility helpers
 // ---------------------------------------------------------------------------
 
@@ -1359,94 +1007,5 @@ func int64Val(params map[string]any, key string, defaultVal int64) int64 {
 		return v
 	}
 	return defaultVal
-}
-
-// injectContentStatus sets content_status in the params JSON for create_page/update_page
-// actions during user-confirmed plan execution, so pages skip the draft confirmation step.
-func injectContentStatus(paramsJSON string, status string) string {
-	if strings.Contains(paramsJSON, `"content_status"`) {
-		return paramsJSON // already set, don't override
-	}
-	// Insert content_status before the closing brace
-	idx := strings.LastIndex(paramsJSON, "}")
-	if idx < 0 {
-		return paramsJSON
-	}
-	return paramsJSON[:idx] + `,"content_status":"` + status + `"` + paramsJSON[idx:]
-}
-
-// hasParentID checks if the action params JSON contains a parent_id field.
-// A parent_id whose value is an unresolved {{action:...}} placeholder string
-// is treated as "no parent_id" so the focusPageID fallback can fire.
-func hasParentID(paramsJSON json.RawMessage) bool {
-	var p map[string]any
-	if err := json.Unmarshal(paramsJSON, &p); err != nil {
-		return false
-	}
-	v, ok := p["parent_id"]
-	if !ok {
-		return false
-	}
-	if s, isStr := v.(string); isStr && isPlaceholderString(s) {
-		return false
-	}
-	return true
-}
-
-// isPlaceholderString reports whether s looks like a {{action:...}} placeholder.
-func isPlaceholderString(s string) bool {
-	return strings.Contains(s, "{{action:")
-}
-
-// inferDependencies scans a params JSON for {{action:X.field}} placeholders
-// and returns the set of referenced action IDs. Order is not significant.
-// Returns nil if no placeholders are present.
-func inferDependencies(paramsJSON string) []string {
-	if !strings.Contains(paramsJSON, "{{action:") {
-		return nil
-	}
-	seen := map[string]bool{}
-	var out []string
-	matches := placeholderPattern.FindAllStringSubmatch(paramsJSON, -1)
-	for _, m := range matches {
-		if len(m) < 2 {
-			continue
-		}
-		id := m[1]
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
-// hasPlaceholderParentID checks if the action params JSON contains a
-// parent_id field whose value is an unresolved {{action:...}} placeholder.
-func hasPlaceholderParentID(paramsJSON json.RawMessage) bool {
-	var p map[string]any
-	if err := json.Unmarshal(paramsJSON, &p); err != nil {
-		return false
-	}
-	v, ok := p["parent_id"]
-	if !ok {
-		return false
-	}
-	s, isStr := v.(string)
-	return isStr && isPlaceholderString(s)
-}
-
-// injectParentID adds parent_id to the action params JSON.
-func injectParentID(paramsJSON json.RawMessage, parentID int64) json.RawMessage {
-	var p map[string]any
-	if err := json.Unmarshal(paramsJSON, &p); err != nil {
-		return paramsJSON
-	}
-	p["parent_id"] = parentID
-	result, err := json.Marshal(p)
-	if err != nil {
-		return paramsJSON
-	}
-	return json.RawMessage(result)
 }
 

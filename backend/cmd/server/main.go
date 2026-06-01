@@ -279,7 +279,6 @@ func main() {
 	aiHandler := handler.NewAIHandler(db)
 	queries := model.New(db)
 	eng := engine.NewExecutionEngine(db, queries)
-	planHandler := handler.NewPlanHandler(db, queries, eng)
 
 	// --- Summary worker: generates AI summaries for wiki pages asynchronously ---
 	// We try to load the active AI config and start the worker. If no config is
@@ -398,12 +397,6 @@ func main() {
 			r.Get("/configs", aiHandler.GetAIConfigs)
 			r.Post("/configs", aiHandler.UpsertAIConfig)
 		})
-
-		// Plan routes
-		r.Get("/plans", planHandler.GetPlan)
-		r.Post("/plans", planHandler.CreatePlan)
-		r.Post("/plans/confirm", planHandler.ConfirmPlan)
-		r.Post("/plans/reject", planHandler.RejectPlan)
 	})
 
 	port := os.Getenv("PORT")

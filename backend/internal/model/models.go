@@ -6,7 +6,6 @@ package model
 
 import (
 	"database/sql"
-	"encoding/json"
 	"time"
 )
 
@@ -73,35 +72,6 @@ type Message struct {
 	TokenCount     sql.NullInt64
 	ToolCalls      sql.NullString
 	CreatedAt      sql.NullTime
-}
-
-type Plan struct {
-	ID                  string          `json:"id"`
-	ConversationID      *int64          `json:"conversation_id,omitempty"`
-	Reasoning           string          `json:"reasoning"`
-	Status              string          `json:"status"`
-	Outline             json.RawMessage `json:"outline,omitempty"`
-	PhaseIndex          *int64          `json:"phase_index,omitempty"`
-	TotalPhases         *int64          `json:"total_phases,omitempty"`
-	Actions             []PlanAction    `json:"actions,omitempty"`
-	CreatedAt           string          `json:"created_at"`
-	ExecutedAt          *string         `json:"executed_at,omitempty"`
-	FocusPageID         *int64          `json:"focus_page_id,omitempty"`
-	CalibrationQuestion json.RawMessage `json:"calibration_question,omitempty"`
-	Stage               string          `json:"stage,omitempty"`
-}
-
-type PlanAction struct {
-	ID        string          `json:"id"`
-	PlanID    string          `json:"plan_id"`
-	Type      string          `json:"type"`
-	Params    json.RawMessage `json:"params"`
-	DependsOn json.RawMessage `json:"depends_on"`
-	Status    string          `json:"status"`
-	Result    *string         `json:"result,omitempty"`
-	Error     sql.NullString  `json:"error,omitempty"`
-	SortOrder int64           `json:"sort_order"`
-	CreatedAt string          `json:"created_at"`
 }
 
 type Topic struct {

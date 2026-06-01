@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"learn-helper/internal/ai"
-	"learn-helper/internal/model"
 )
 
 // executeReadTool handles the auto-executed read tools.
@@ -33,33 +31,24 @@ func (h *AIHandler) executeWriteTool(ctx context.Context, tool, input string, fo
 		}
 	}
 
-	action := model.PlanAction{
-		ID:     c_actionID(tool),
-		Type:   tool,
-		Params: json.RawMessage(mustMarshal(parsed)),
-		Status: "pending",
-	}
+	params := json.RawMessage(mustMarshal(parsed))
 
 	switch tool {
 	case "create_page":
-		return h.engine.CreatePageFromAction(ctx, action, focusPageID)
+		return h.engine.CreatePageFromAction(ctx, params, focusPageID)
 	case "update_page":
-		return h.engine.UpdatePageFromAction(ctx, action)
+		return h.engine.UpdatePageFromAction(ctx, params)
 	case "patch_page":
-		return h.engine.PatchPageFromAction(ctx, action)
+		return h.engine.PatchPageFromAction(ctx, params)
 	case "delete_page":
-		return h.engine.DeletePageFromAction(ctx, action)
+		return h.engine.DeletePageFromAction(ctx, params)
 	case "link_pages":
-		return h.engine.LinkPagesFromAction(ctx, action)
+		return h.engine.LinkPagesFromAction(ctx, params)
 	case "move_page":
-		return h.engine.MovePageFromAction(ctx, action)
+		return h.engine.MovePageFromAction(ctx, params)
 	default:
 		return "", fmt.Errorf("unsupported write tool: %s", tool)
 	}
-}
-
-func c_actionID(tool string) string {
-	return fmt.Sprintf("ad-hoc-%s-%d", tool, time.Now().UnixNano())
 }
 
 func mustMarshal(v any) string {
