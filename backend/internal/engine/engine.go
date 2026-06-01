@@ -987,6 +987,111 @@ func (e *ExecutionEngine) execMovePage(ctx context.Context, params map[string]an
 }
 
 // ---------------------------------------------------------------------------
+// *FromAction wrappers
+//
+// These thin wrappers accept a model.PlanAction (typically constructed ad-hoc
+// by the AI handler from an approved tool call) and dispatch to the per-action
+// helpers above. They are the entry points used by the per-tool ReAct loop,
+// which has no plan row, no action row, and no placeholder resolution.
+// ---------------------------------------------------------------------------
+
+// marshalActionResult JSON-encodes a helper result so the AI can parse it.
+// Returns "" on marshal error (caller is expected to handle empty).
+func marshalActionResult(r any) string {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// CreatePageFromAction executes a create_page action built ad-hoc by the handler.
+// If focusPageID is set and the action's params lack a parent_id, focusPageID
+// is used as parent_id (matches ExecutePlan's focus fallback semantics).
+func (e *ExecutionEngine) CreatePageFromAction(ctx context.Context, a model.PlanAction, focusPageID *int64) (string, error) {
+	var p map[string]any
+	if err := json.Unmarshal(a.Params, &p); err != nil {
+		return "", fmt.Errorf("create_page: parse params: %w", err)
+	}
+	// Focus fallback: if no parent_id, use focusPageID
+	if focusPageID != nil {
+		if _, hasParent := p["parent_id"]; !hasParent {
+			p["parent_id"] = *focusPageID
+		}
+	}
+	result, err := e.execCreatePage(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	return marshalActionResult(result), nil
+}
+
+// UpdatePageFromAction executes an update_page action built ad-hoc by the handler.
+func (e *ExecutionEngine) UpdatePageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+	var p map[string]any
+	if err := json.Unmarshal(a.Params, &p); err != nil {
+		return "", fmt.Errorf("update_page: parse params: %w", err)
+	}
+	result, err := e.execUpdatePage(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	return marshalActionResult(result), nil
+}
+
+// PatchPageFromAction executes a patch_page action built ad-hoc by the handler.
+func (e *ExecutionEngine) PatchPageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+	var p map[string]any
+	if err := json.Unmarshal(a.Params, &p); err != nil {
+		return "", fmt.Errorf("patch_page: parse params: %w", err)
+	}
+	result, err := e.execPatchPage(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	return marshalActionResult(result), nil
+}
+
+// DeletePageFromAction executes a delete_page action built ad-hoc by the handler.
+func (e *ExecutionEngine) DeletePageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+	var p map[string]any
+	if err := json.Unmarshal(a.Params, &p); err != nil {
+		return "", fmt.Errorf("delete_page: parse params: %w", err)
+	}
+	result, err := e.execDeletePage(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	return marshalActionResult(result), nil
+}
+
+// LinkPagesFromAction executes a link_pages action built ad-hoc by the handler.
+func (e *ExecutionEngine) LinkPagesFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+	var p map[string]any
+	if err := json.Unmarshal(a.Params, &p); err != nil {
+		return "", fmt.Errorf("link_pages: parse params: %w", err)
+	}
+	result, err := e.execLinkPages(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	return marshalActionResult(result), nil
+}
+
+// MovePageFromAction executes a move_page action built ad-hoc by the handler.
+func (e *ExecutionEngine) MovePageFromAction(ctx context.Context, a model.PlanAction) (string, error) {
+	var p map[string]any
+	if err := json.Unmarshal(a.Params, &p); err != nil {
+		return "", fmt.Errorf("move_page: parse params: %w", err)
+	}
+	result, err := e.execMovePage(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	return marshalActionResult(result), nil
+}
+
+// ---------------------------------------------------------------------------
 // Link system helpers
 // ---------------------------------------------------------------------------
 

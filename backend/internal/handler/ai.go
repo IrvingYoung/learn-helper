@@ -25,14 +25,17 @@ import (
 type AIHandler struct {
 	db          *sql.DB
 	queries     *model.Queries
+	engine      *engine.ExecutionEngine
 	permissions *PermissionRegistry
 	askUsers    *AskUserRegistry
 }
 
 func NewAIHandler(db *sql.DB) *AIHandler {
+	q := model.New(db)
 	return &AIHandler{
 		db:          db,
-		queries:     model.New(db),
+		queries:     q,
+		engine:      engine.NewExecutionEngine(db, q),
 		permissions: NewPermissionRegistry(),
 		askUsers:    NewAskUserRegistry(),
 	}
