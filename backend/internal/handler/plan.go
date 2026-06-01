@@ -345,9 +345,3 @@ func (h *PlanHandler) SavePlan(ctx context.Context, p *model.Plan) error {
 
 	return tx.Commit()
 }
-
-// writeJSON sets the Content-Type header and encodes v to the response writer.
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
-}

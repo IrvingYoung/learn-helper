@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestPermissionResponseHandler_NotFound(t *testing.T) {
+func TestPermissionResponseHandler_UnknownRequestIDReturnsOK(t *testing.T) {
 	h := &AIHandler{permissions: NewPermissionRegistry()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/ai/permission_response", h.HandlePermissionResponse)
