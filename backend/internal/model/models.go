@@ -96,6 +96,7 @@ type PlanAction struct {
 	DependsOn json.RawMessage `json:"depends_on"`
 	Status    string          `json:"status"`
 	Result    *string         `json:"result,omitempty"`
+	Error     sql.NullString  `json:"error,omitempty"`
 	SortOrder int64           `json:"sort_order"`
 	CreatedAt string          `json:"created_at"`
 }

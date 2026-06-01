@@ -936,6 +936,96 @@ func (q *Queries) GetPrevTopic(ctx context.Context, arg GetPrevTopicParams) (Get
 	return i, err
 }
 
+const getRecentWikiLog = `-- name: GetRecentWikiLog :many
+SELECT id, action, page_id, page_title, page_path, source, summary, created_at
+FROM wiki_log
+WHERE created_at > ?
+ORDER BY created_at DESC
+LIMIT ?
+`
+
+type GetRecentWikiLogParams struct {
+	CreatedAt time.Time
+	Limit     int64
+}
+
+func (q *Queries) GetRecentWikiLog(ctx context.Context, arg GetRecentWikiLogParams) ([]WikiLog, error) {
+	rows, err := q.db.QueryContext(ctx, getRecentWikiLog, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WikiLog
+	for rows.Next() {
+		var i WikiLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Action,
+			&i.PageID,
+			&i.PageTitle,
+			&i.PagePath,
+			&i.Source,
+			&i.Summary,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRecentWikiLogForPage = `-- name: GetRecentWikiLogForPage :many
+SELECT id, action, page_id, page_title, page_path, source, summary, created_at
+FROM wiki_log
+WHERE page_id = ?
+ORDER BY created_at DESC
+LIMIT ?
+`
+
+type GetRecentWikiLogForPageParams struct {
+	PageID sql.NullInt64
+	Limit  int64
+}
+
+func (q *Queries) GetRecentWikiLogForPage(ctx context.Context, arg GetRecentWikiLogForPageParams) ([]WikiLog, error) {
+	rows, err := q.db.QueryContext(ctx, getRecentWikiLogForPage, arg.PageID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WikiLog
+	for rows.Next() {
+		var i WikiLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Action,
+			&i.PageID,
+			&i.PageTitle,
+			&i.PagePath,
+			&i.Source,
+			&i.Summary,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRecentlyUpdatedWikiPages = `-- name: GetRecentlyUpdatedWikiPages :many
 SELECT id, title, slug, page_type, content_status, updated_at
 FROM wiki_pages
@@ -1152,6 +1242,52 @@ func (q *Queries) GetTopicBySlug(ctx context.Context, slug string) (GetTopicBySl
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getWikiLogBetween = `-- name: GetWikiLogBetween :many
+SELECT id, action, page_id, page_title, page_path, source, summary, created_at
+FROM wiki_log
+WHERE created_at > ? AND created_at < ?
+ORDER BY created_at DESC
+LIMIT ?
+`
+
+type GetWikiLogBetweenParams struct {
+	CreatedAt   time.Time
+	CreatedAt_2 time.Time
+	Limit       int64
+}
+
+func (q *Queries) GetWikiLogBetween(ctx context.Context, arg GetWikiLogBetweenParams) ([]WikiLog, error) {
+	rows, err := q.db.QueryContext(ctx, getWikiLogBetween, arg.CreatedAt, arg.CreatedAt_2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WikiLog
+	for rows.Next() {
+		var i WikiLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Action,
+			&i.PageID,
+			&i.PageTitle,
+			&i.PagePath,
+			&i.Source,
+			&i.Summary,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getWikiPageByID = `-- name: GetWikiPageByID :one
@@ -1373,6 +1509,32 @@ func (q *Queries) GetWikiPageTree(ctx context.Context) ([]GetWikiPageTreeRow, er
 		return nil, err
 	}
 	return items, nil
+}
+
+const insertWikiLog = `-- name: InsertWikiLog :exec
+INSERT INTO wiki_log (action, page_id, page_title, page_path, source, summary)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertWikiLogParams struct {
+	Action    string
+	PageID    sql.NullInt64
+	PageTitle string
+	PagePath  sql.NullString
+	Source    string
+	Summary   sql.NullString
+}
+
+func (q *Queries) InsertWikiLog(ctx context.Context, arg InsertWikiLogParams) error {
+	_, err := q.db.ExecContext(ctx, insertWikiLog,
+		arg.Action,
+		arg.PageID,
+		arg.PageTitle,
+		arg.PagePath,
+		arg.Source,
+		arg.Summary,
+	)
+	return err
 }
 
 const listPendingSummaries = `-- name: ListPendingSummaries :many

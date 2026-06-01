@@ -244,3 +244,28 @@ FROM wiki_pages
 WHERE summary_status = 'empty' AND content != ''
 ORDER BY id
 LIMIT ?;
+
+-- name: InsertWikiLog :exec
+INSERT INTO wiki_log (action, page_id, page_title, page_path, source, summary)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: GetRecentWikiLog :many
+SELECT id, action, page_id, page_title, page_path, source, summary, created_at
+FROM wiki_log
+WHERE created_at > ?
+ORDER BY created_at DESC
+LIMIT ?;
+
+-- name: GetRecentWikiLogForPage :many
+SELECT id, action, page_id, page_title, page_path, source, summary, created_at
+FROM wiki_log
+WHERE page_id = ?
+ORDER BY created_at DESC
+LIMIT ?;
+
+-- name: GetWikiLogBetween :many
+SELECT id, action, page_id, page_title, page_path, source, summary, created_at
+FROM wiki_log
+WHERE created_at > ? AND created_at < ?
+ORDER BY created_at DESC
+LIMIT ?;
