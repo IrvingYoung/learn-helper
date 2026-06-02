@@ -9,6 +9,7 @@ func TestClassifyToolCalls(t *testing.T) {
 		wantR   []string
 		wantW   []string
 		wantAsk []string
+		wantLS  []string
 	}{
 		{
 			name:    "all reads",
@@ -26,11 +27,17 @@ func TestClassifyToolCalls(t *testing.T) {
 			wantAsk: []string{"ask_user"},
 		},
 		{
+			name:    "load_skill alone",
+			in:      []string{"load_skill"},
+			wantLS:  []string{"load_skill"},
+		},
+		{
 			name:    "mixed",
-			in:      []string{"read_page", "create_page", "ask_user", "update_page"},
+			in:      []string{"read_page", "create_page", "ask_user", "update_page", "load_skill"},
 			wantR:   []string{"read_page"},
 			wantW:   []string{"create_page", "update_page"},
 			wantAsk: []string{"ask_user"},
+			wantLS:  []string{"load_skill"},
 		},
 		{
 			name:    "unknown tool → writeBatch (treated as write, will fail at execute)",
@@ -44,10 +51,11 @@ func TestClassifyToolCalls(t *testing.T) {
 			for _, n := range tc.in {
 				calls = append(calls, aiToolCall{Name: n})
 			}
-			r, w, a := classifyToolCalls(calls)
+			r, w, a, ls := classifyToolCalls(calls)
 			gotR := names(r)
 			gotW := names(w)
 			gotA := names(a)
+			gotLS := names(ls)
 			if !equal(gotR, tc.wantR) {
 				t.Errorf("reads: got %v want %v", gotR, tc.wantR)
 			}
@@ -56,6 +64,9 @@ func TestClassifyToolCalls(t *testing.T) {
 			}
 			if !equal(gotA, tc.wantAsk) {
 				t.Errorf("asks: got %v want %v", gotA, tc.wantAsk)
+			}
+			if !equal(gotLS, tc.wantLS) {
+				t.Errorf("load_skills: got %v want %v", gotLS, tc.wantLS)
 			}
 		})
 	}

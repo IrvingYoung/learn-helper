@@ -245,19 +245,35 @@ func WikiTools() []Tool {
 				"required": []string{"url"},
 			},
 		},
+
+		// ── load_skill (progressive disclosure: catalog is in system prompt,
+		//     body is loaded on demand via this tool) ──
+		{
+			Name:        "load_skill",
+			Description: "按需加载一个 skill 的完整 markdown body 到当前 context。当你判断当前任务需要某个 skill 的专门指导时调用（例如用户说「用通俗方式讲」→ 加载 explain-page；用户说「帮我做学习大纲」→ 加载 study-outline）。返回的 body 是 markdown 格式，按它的指示回复。skill 名称不带前导 /。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string", "description": "skill 名称（不带 / 前缀），如 explain-page"},
+				},
+				"required": []string{"name"},
+			},
+		},
 	}
 }
 
 // WikiToolsForCron returns the same tool set as WikiTools but excludes
-// ask_user. Cron tasks run autonomously with no human in the loop, so the AI
-// must not be able to call ask_user (which would block forever waiting for a
-// response). All other read and write tools are retained so the AI can still
-// fetch, search, read, and modify the wiki on its own.
+// ask_user and load_skill. Cron tasks run autonomously with no human in the
+// loop, so the AI must not be able to call ask_user (which would block
+// forever waiting for a response). load_skill is excluded because cron tasks
+// have their own task prompts and don't go through the /command flow.
+// All other read and write tools are retained so the AI can still fetch,
+// search, read, and modify the wiki on its own.
 func WikiToolsForCron() []Tool {
 	all := WikiTools()
 	out := make([]Tool, 0, len(all))
 	for _, t := range all {
-		if t.Name == "ask_user" {
+		if t.Name == "ask_user" || t.Name == "load_skill" {
 			continue
 		}
 		out = append(out, t)
@@ -291,14 +307,39 @@ const knowledgeMapUsageGuide = `
 - (暂无摘要) = 内容为空，AI 不会生成（空页）
 `
 
-// BuildSystemPrompt constructs the system prompt with wiki context.
-func BuildSystemPrompt(role string, wikiContext string) string {
+// BuildSystemPrompt constructs the system prompt with wiki context and
+// (optionally) a skill catalog appended at the end. reg may be nil for
+// contexts without skills (e.g. cron tasks). The catalog is the "always-in-
+// context" part of progressive disclosure; skill bodies are loaded on demand
+// via the load_skill tool, not stuffed into the system prompt.
+func BuildSystemPrompt(role, wikiContext string, reg *skills.Registry) string {
 	switch role {
 	case RoleWikiMaintainer:
-		return buildWikiMaintainerPrompt(wikiContext)
+		base := buildWikiMaintainerPrompt(wikiContext)
+		return base + BuildSkillCatalogSection(reg)
 	default:
 		return "You are a helpful assistant."
 	}
+}
+
+// BuildSkillCatalogSection returns a markdown section listing all available
+// skills. The LLM uses this to decide when to call load_skill. Returns an
+// empty string if reg is nil or has no skills.
+func BuildSkillCatalogSection(reg *skills.Registry) string {
+	if reg == nil {
+		return ""
+	}
+	all := reg.List()
+	if len(all) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("\n\n## 可用 Skill\n\n")
+	sb.WriteString("如果当前任务需要专门的工作模式（例如「用通俗方式讲」「帮我做学习大纲」），调用 `load_skill(name)` 加载对应 skill 的完整指令到 context。body 是按需加载的——不在这里展开，避免污染 system prompt。skill 名称不带前导 /。\n\n")
+	for _, s := range all {
+		sb.WriteString(fmt.Sprintf("- `%s`: %s\n", s.Name, s.Description))
+	}
+	return sb.String()
 }
 
 func buildWikiMaintainerPrompt(wikiContext string) string {
@@ -412,17 +453,13 @@ context.kind 四种:
 	return wikiMaintainerPrompt
 }
 
-// BuildChatSystemPrompt constructs the system prompt with wiki context and
-// (optionally) appends a user-invoked skill's body. A nil skill is a no-op
-// (returns the base prompt unchanged). When skill is non-nil, the body is
-// appended verbatim under a "## 当前 Skill: <name>" header so the LLM sees
-// the skill context as an addition to, not a replacement for, the base.
-func BuildChatSystemPrompt(role, wikiContext string, skill *skills.Skill) string {
-	base := BuildSystemPrompt(role, wikiContext)
-	if skill == nil {
-		return base
-	}
-	return base + "\n\n## 当前 Skill: " + skill.Name + "\n\n" + skill.Body
+// BuildChatSystemPrompt is a thin wrapper kept for backward compatibility.
+// The skill body is no longer injected into the system prompt — it is loaded
+// on demand via the load_skill tool (called either by the LLM itself, or
+// synthesized by the chat handler when the user types /<name>). Pass nil for
+// reg in contexts without a skill registry.
+func BuildChatSystemPrompt(role, wikiContext string, reg *skills.Registry) string {
+	return BuildSystemPrompt(role, wikiContext, reg)
 }
 
 // DeepSeek API types

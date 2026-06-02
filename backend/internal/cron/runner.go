@@ -155,7 +155,7 @@ func (r *Runner) Run(ctx context.Context, task *Task, opts RunOpts) error {
 	// 7. Build the system prompt: base wiki_maintainer + cron prefix.
 	//    We still pass task.Prompt so the cron mode prefix can reference it,
 	//    but the actual instruction lives in the user message.
-	baseSystemPrompt := ai.BuildSystemPrompt(ai.RoleWikiMaintainer, "")
+	baseSystemPrompt := ai.BuildSystemPrompt(ai.RoleWikiMaintainer, "", nil)
 	systemPrompt := ai.BuildCronSystemPrompt(baseSystemPrompt, task.Prompt, lastSummary, time.Now())
 
 	// 8. Build ChatRequest

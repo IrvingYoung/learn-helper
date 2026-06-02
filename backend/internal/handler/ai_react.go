@@ -191,10 +191,10 @@ reactLoop:
 		for _, tc := range respToolCalls {
 			calls = append(calls, aiToolCall{Name: tc.Name, ID: tc.ID, Input: tc.Input})
 		}
-		readBatch, writeBatch, askBatch := classifyToolCalls(calls)
+		readBatch, writeBatch, askBatch, loadSkillBatch := classifyToolCalls(calls)
 
-		log.Printf("%s iteration=%d reads=%d writes=%d asks=%d",
-			logPrefix, iteration, len(readBatch), len(writeBatch), len(askBatch))
+		log.Printf("%s iteration=%d reads=%d writes=%d asks=%d load_skills=%d",
+			logPrefix, iteration, len(readBatch), len(writeBatch), len(askBatch), len(loadSkillBatch))
 
 		// Build assistant turn blocks (text + tool_use for every tool call)
 		var blocks []ai.ContentBlock
@@ -217,6 +217,18 @@ reactLoop:
 			log.Printf("%s read tool: %s", logPrefix, c.Name)
 			sink.WriteToolCallStart(c.ID, c.Name, c.Input)
 			result := h.executeReadTool(ctx, c)
+			sink.WriteToolResult(c.ID, c.Name, result, "")
+			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: c.ID})
+			toolCallResults = append(toolCallResults, ToolCallResult{
+				ID: c.ID, Name: c.Name, Input: json.RawMessage(c.Input), Output: result,
+			})
+		}
+
+		// Execute load_skill (auto; LLM-initiated progressive disclosure)
+		for _, c := range loadSkillBatch {
+			log.Printf("%s load_skill tool: %s", logPrefix, c.Name)
+			sink.WriteToolCallStart(c.ID, c.Name, c.Input)
+			result := h.executeLoadSkillTool(ctx, c)
 			sink.WriteToolResult(c.ID, c.Name, result, "")
 			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: c.ID})
 			toolCallResults = append(toolCallResults, ToolCallResult{

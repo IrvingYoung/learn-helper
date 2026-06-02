@@ -479,8 +479,11 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[AIChat] wikiContext length=%d", len(wikiContext))
 	log.Printf("[AIChat] wikiContext excerpt: %s", wikiContext[:min(len(wikiContext), 500)])
-	// Look up skill if specified
-	var skillObj *skills.Skill
+	// Look up skill if specified (for /command user-initiated loading).
+	// The body is NOT injected into the system prompt — instead we synthesize
+	// a load_skill tool call + result and append it to the message history so
+	// the LLM sees the skill was loaded through the same channel as an
+	// LLM-initiated load_skill call. (Progressive disclosure.)
 	if req.Skill != "" {
 		s, ok := h.SkillRegistry.Get(req.Skill)
 		if !ok {
@@ -497,9 +500,10 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		skillObj = s
+		log.Printf("[AIChat] skill=%q body_len=%d conv=%d (synthesizing tool call)", s.Name, len(s.Body), req.ConversationID)
+		aiMessages = append(aiMessages, synthesizeLoadSkillCall(s)...)
 	}
-	systemPrompt := ai.BuildChatSystemPrompt(convRole, wikiContext, skillObj)
+	systemPrompt := ai.BuildChatSystemPrompt(convRole, wikiContext, h.SkillRegistry)
 
 	// Build the chat request
 	chatReq := ai.ChatRequest{
@@ -1088,4 +1092,28 @@ func boolToInt64(b bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+// synthesizeLoadSkillCall returns a pair of messages that mimic an
+// LLM-initiated load_skill tool call + result, for the case where the USER
+// invoked the skill via /<name>. The assistant turn has a single tool_use
+// block (load_skill), followed by a tool result containing the body. From
+// the LLM's perspective, it looks identical to a self-initiated load.
+//
+// We append these at the end of the conversation so the most-recent context
+// is the loaded skill body, which the LLM will use for the response to the
+// user's current message.
+func synthesizeLoadSkillCall(s *skills.Skill) []ai.Message {
+	callID := fmt.Sprintf("skill_user_%d", time.Now().UnixNano())
+	blocks := []ai.ContentBlock{{
+		Type:  ai.ContentTypeToolUse,
+		ID:    callID,
+		Name:  "load_skill",
+		Input: json.RawMessage(fmt.Sprintf(`{"name":%q}`, s.Name)),
+	}}
+	assistantJSON, _ := ai.ContentBlocksToJSON(blocks)
+	return []ai.Message{
+		{Role: "assistant", Content: assistantJSON},
+		{Role: "tool", ToolCallID: callID, ToolName: "load_skill", Content: s.Body},
+	}
 }

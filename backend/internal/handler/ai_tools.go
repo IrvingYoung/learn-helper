@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 
 	"learn-helper/internal/ai"
 )
@@ -54,4 +56,34 @@ func (h *AIHandler) executeWriteTool(ctx context.Context, tool, input string, fo
 func mustMarshal(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// executeLoadSkillTool handles the LLM-initiated load_skill tool call.
+// Looks up the named skill in the registry and returns its body. If the
+// name is unknown, returns an error message (the LLM should pick a
+// different skill or proceed without).
+func (h *AIHandler) executeLoadSkillTool(ctx context.Context, c aiToolCall) string {
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(c.Input), &input); err != nil {
+		return fmt.Sprintf("error: load_skill input must be {\"name\": \"...\"}: %v", err)
+	}
+	if input.Name == "" {
+		return "error: load_skill requires a non-empty `name`"
+	}
+	if h.SkillRegistry == nil {
+		return "error: skill registry not configured on this server"
+	}
+	skill, ok := h.SkillRegistry.Get(input.Name)
+	if !ok {
+		available := h.SkillRegistry.List()
+		names := make([]string, 0, len(available))
+		for _, s := range available {
+			names = append(names, s.Name)
+		}
+		return fmt.Sprintf("error: unknown skill %q. available: %s", input.Name, strings.Join(names, ", "))
+	}
+	log.Printf("[load_skill] name=%q body_len=%d", skill.Name, len(skill.Body))
+	return skill.Body
 }
