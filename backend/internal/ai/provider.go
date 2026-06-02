@@ -301,15 +301,34 @@ const knowledgeMapUsageGuide = `## 知识地图使用
 `
 
 // BuildSystemPrompt constructs the system prompt with wiki context and
-// (optionally) a skill catalog appended at the end. reg may be nil for
-// contexts without skills (e.g. cron tasks). The catalog is the "always-in-
-// context" part of progressive disclosure; skill bodies are loaded on demand
-// via the load_skill tool, not stuffed into the system prompt.
+// (optionally) a skill catalog. reg may be nil for contexts without skills
+// (e.g. cron tasks). The catalog is the "always-in-context" part of
+// progressive disclosure; skill bodies are loaded on demand via load_skill.
+//
+// Layout (deliberately ordered for provider prompt-cache hits — OpenAI and
+// DeepSeek cache on the prompt prefix, so any per-request content placed
+// mid-prompt invalidates the cache for everything that follows):
+//
+//	[STATIC, cacheable across all requests]
+//	  wikiMaintainerStaticPrompt   role/rules/workflow/conventions/metadata
+//	  skill catalog                stable across the server's lifetime
+//	  knowledgeMapUsageGuide       how to read the map
+//	[DYNAMIC, miss every request]
+//	  current date                 changes daily — out of the cached prefix
+//	  wikiContext                  rendered knowledge map (changes per write)
+//
+// The skill catalog and knowledge-map guide stay inside the cached prefix:
+// Registry.List() sorts by name, and the guide is a const.
 func BuildSystemPrompt(role, wikiContext string, reg *skills.Registry) string {
 	switch role {
 	case RoleWikiMaintainer:
-		base := buildWikiMaintainerPrompt(wikiContext)
-		return base + BuildSkillCatalogSection(reg)
+		var b strings.Builder
+		b.WriteString(wikiMaintainerStaticPrompt)
+		b.WriteString(BuildSkillCatalogSection(reg))
+		b.WriteString("\n\n")
+		b.WriteString(knowledgeMapUsageGuide)
+		b.WriteString(buildWikiMaintainerDynamic(wikiContext))
+		return b.String()
 	default:
 		return "You are a helpful assistant."
 	}
@@ -335,16 +354,12 @@ func BuildSkillCatalogSection(reg *skills.Registry) string {
 	return sb.String()
 }
 
-func buildWikiMaintainerPrompt(wikiContext string) string {
-	treeContext := wikiContext
-	if treeContext == "" {
-		treeContext = "（暂无页面）"
-	}
-
-	dateStr := time.Now().Format("2006-01-02")
-	currentYear := strconv.Itoa(time.Now().Year())
-
-	wikiMaintainerPrompt := `你是 LLM Wiki 的学习助手，帮用户构建和维护个人知识库。
+// wikiMaintainerStaticPrompt is the fully static portion of the
+// wiki_maintainer system prompt — no per-request fields embedded. Kept as a
+// top-level const so the provider prompt-prefix cache (OpenAI/DeepSeek) can
+// match it byte-for-byte across requests. The dynamic suffix (current date
+// + wikiContext) is appended by buildWikiMaintainerDynamic at request time.
+const wikiMaintainerStaticPrompt = `你是 LLM Wiki 的学习助手，帮用户构建和维护个人知识库。
 
 ## 核心原则（务必遵守）
 
@@ -433,17 +448,24 @@ func buildWikiMaintainerPrompt(wikiContext string) string {
   - AI 写入 empty 页时引擎自动转 draft
   - **AI 不主动转 published**，由用户在前端确认
   - 看到 empty 页不要假设它"该有内容"——可能是结构骨架
-
-## 当前日期
-
-` + dateStr + `。网络搜索时用当前年份（` + currentYear + `）构造时效相关查询；非时效问题（经典理论）不必加年份。
-
 `
 
-	wikiMaintainerPrompt += knowledgeMapUsageGuide
-	wikiMaintainerPrompt += treeContext
+// buildWikiMaintainerDynamic returns the per-request suffix: the current
+// date (changes daily) followed by the rendered knowledge map (changes on
+// any wiki write). Kept separate from the static prefix above so the
+// provider prompt-prefix cache can hit on everything that precedes it.
+func buildWikiMaintainerDynamic(wikiContext string) string {
+	treeContext := wikiContext
+	if treeContext == "" {
+		treeContext = "（暂无页面）"
+	}
+	dateStr := time.Now().Format("2006-01-02")
+	currentYear := strconv.Itoa(time.Now().Year())
+	return fmt.Sprintf(`## 当前日期
 
-	return wikiMaintainerPrompt
+%s。网络搜索时用当前年份（%s）构造时效相关查询；非时效问题（经典理论）不必加年份。
+
+%s`, dateStr, currentYear, treeContext)
 }
 
 // BuildChatSystemPrompt is a thin wrapper kept for backward compatibility.
