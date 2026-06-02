@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 
@@ -262,36 +261,4 @@ func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, ">", "&gt;")
 	s = strings.ReplaceAll(s, `"`, "&quot;")
 	return s
-}
-
-// --- SPA dist/index.html loader ---
-
-// getDistIndexHTML reads the built SPA's index.html. Looks in several
-// conventional paths so the binary works both from `backend/` (dev) and
-// from a deployment dir (prod). Override with the LH_SPA_DIST env var.
-//
-// Returns an error if no candidate path contains the file. The caller
-// (GetShareSSRPage) converts this to a 500 with a useful message.
-func getDistIndexHTML() ([]byte, error) {
-	cwd, _ := os.Getwd()
-
-	candidates := []string{}
-	if v := os.Getenv("LH_SPA_DIST"); v != "" {
-		candidates = append(candidates, v+"/index.html")
-	}
-	// Common dev layouts: running `go run ./cmd/server` from backend/ or repo root.
-	candidates = append(candidates,
-		cwd+"/frontend/dist/index.html",
-		cwd+"/../frontend/dist/index.html",
-		cwd+"/dist/index.html",
-		"./frontend/dist/index.html",
-		"../frontend/dist/index.html",
-		"./dist/index.html",
-	)
-	for _, p := range candidates {
-		if b, err := os.ReadFile(p); err == nil {
-			return b, nil
-		}
-	}
-	return nil, os.ErrNotExist
 }

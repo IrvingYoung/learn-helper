@@ -1,0 +1,15 @@
+{
+    email admin@yourdomain.top
+}
+
+yourdomain.top, www.yourdomain.top {
+    encode gzip zstd
+
+    @api path /api/*
+    reverse_proxy @api 127.0.0.1:8080
+
+    @share path /share/*
+    reverse_proxy @share 127.0.0.1:8080
+
+    reverse_proxy 127.0.0.1:8080
+}

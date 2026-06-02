@@ -27,10 +27,7 @@ func (p *OpenCodeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 		model = p.model
 	}
 
-	messages := make([]deepseekMessage, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		messages = append(messages, messageToDeepSeekMessage(m))
-	}
+	messages := buildDeepSeekMessages(req)
 
 	ocReq := deepseekRequest{
 		Model:     model,
@@ -126,10 +123,7 @@ func (p *OpenCodeProvider) StreamChat(ctx context.Context, req ChatRequest) (<-c
 		model = p.model
 	}
 
-	messages := make([]deepseekMessage, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		messages = append(messages, messageToDeepSeekMessage(m))
-	}
+	messages := buildDeepSeekMessages(req)
 
 	ocReq := deepseekRequest{
 		Model:    model,

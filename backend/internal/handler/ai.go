@@ -695,6 +695,14 @@ func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string 
 		return h.executeSearchPages(ctx, tc)
 	case "read_page":
 		return h.executeReadPage(ctx, tc)
+	case "list_backlinks":
+		return h.executeListBacklinks(ctx, tc)
+	case "list_links":
+		return h.executeListLinks(ctx, tc)
+	case "list_children":
+		return h.executeListChildren(ctx, tc)
+	case "find_broken_links":
+		return h.executeFindBrokenLinks(ctx, tc)
 	case "websearch":
 		return h.executeWebSearch(ctx, tc)
 	case "webfetch":
@@ -721,15 +729,19 @@ func (h *AIHandler) executeLookupPage(ctx context.Context, tc ai.ToolCall) strin
 		"id":             page.ID,
 		"title":          page.Title,
 		"slug":           page.Slug,
+		"page_type":      page.PageType,
 		"content_status": page.ContentStatus,
+		"parent_id":      page.ParentID.Int64,
 	})
 
-	// Build subtree context for this page
-	subtreeContext := buildKnowledgeMap(ctx, &wikiContextDBAdapter{q: h.queries}, &page.ID)
-
+	// Note: we deliberately do NOT include a subtree dump here. lookup_page
+	// is a cheap "does this page exist + what's its ID" call (~200 tokens).
+	// If the AI wants to explore the subtree it should call list_children
+	// explicitly — that way the cost is predictable per the caller's
+	// depth choice.
 	return fmt.Sprintf(
-		"[系统] 工具 lookup_page 已执行完毕，查询「%s」结果：%s\n\n%s",
-		details.Title, string(result), subtreeContext,
+		"[系统] lookup_page 查询「%s」结果：%s",
+		details.Title, string(result),
 	)
 }
 

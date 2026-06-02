@@ -1,0 +1,41 @@
+[Unit]
+Description=LLM Wiki (Go backend)
+Documentation=https://github.com/irving/learn-helper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=learnhelper
+Group=learnhelper
+WorkingDirectory=/opt/learn-helper
+EnvironmentFile=/opt/learn-helper/.env
+ExecStart=/opt/learn-helper/learn-helper
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/learn-helper
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+# Resource limits
+LimitNOFILE=65536
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=learn-helper
+
+[Install]
+WantedBy=multi-user.target

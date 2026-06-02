@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 	"log"
 	"net/http"
@@ -176,7 +177,15 @@ CREATE INDEX IF NOT EXISTS idx_plans_conversation ON plans(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_plan_actions_plan ON plan_actions(plan_id);
 `
 
+//go:embed all:dist
+var embeddedDistFS embed.FS
+
 func main() {
+	// Wire the embedded SPA dist filesystem so production serves the
+	// frontend assets from inside this binary. Must run before any request
+	// can reach a handler that calls getDistIndexHTML().
+	handler.SetSPAFS(embeddedDistFS)
+
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
 		dbPath = "learn-helper.db"
