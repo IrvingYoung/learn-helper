@@ -3,16 +3,18 @@
 # Post-deploy smoke test. Run from a dev machine after `git push` and CI deploy.
 #
 # Usage:
-#   ./scripts/verify-deploy.sh https://yourdomain.top
+#   ./scripts/verify-deploy.sh http://VPS_IP:8080
+#
+# Default (if no arg): http://127.0.0.1:8080 — useful for local testing.
 #
 set -euo pipefail
 
-HOST="${1:-https://yourdomain.top}"
+HOST="${1:-http://127.0.0.1:8080}"
 fail=0
 
 note() { printf "  %-40s %s\n" "$1" "$2"; }
 
-# 1. HTTPS reachable
+# 1. HTTP root reachable
 code=$(curl -s -o /dev/null -w '%{http_code}' "$HOST/")
 if [[ "$code" == "200" ]]; then note "GET /"  "OK ($code)";
 else note "GET /"  "FAIL ($code)"; fail=1; fi
@@ -31,20 +33,17 @@ else
   note "GET /share/<slug> (og: meta)"  "WARN: no og: meta in response"
 fi
 
-# 4. Backend NOT directly exposed
-if curl -s --max-time 3 "$HOST:8080/" >/dev/null 2>&1; then
-  note "Backend 127.0.0.1:8080 not exposed"  "FAIL (port reachable)"
-  fail=1
+# 4. Public ports scan (SSH + 8080 only).
+#    Strip scheme and port from $HOST to get just the hostname/IP.
+host_only="${HOST#http://}"; host_only="${host_only#https://}"
+host_only="${host_only%%/*}"; host_only="${host_only%%:*}"
+ports=$(nmap -p 22,8080 "$host_only" 2>/dev/null \
+  | awk '/^[0-9]+\/tcp/{sub(/\/tcp$/,"",$1); print $1}' | sort -nu) || ports=""
+expected=$'22\n8080'
+if [[ "$ports" == "$expected" ]]; then
+  note "Ports 22/8080 only"  "OK"
 else
-  note "Backend 127.0.0.1:8080 not exposed"  "OK"
-fi
-
-# 5. Public ports scan
-ports=$(nmap -p 22,80,443 "$HOST" 2>/dev/null | awk '/^PORT/{next} /^$/{exit} {print $1}' | sort -u)
-if [[ "$ports" == "22"$'\n'"80"$'\n'"443" || "$ports" == $'22\n80\n443' ]]; then
-  note "Ports 22/80/443 only"  "OK"
-else
-  note "Ports 22/80/443 only"  "WARN: extra ports open"
+  note "Ports 22/8080 only"  "WARN: ports = $(printf '%s' "$ports" | tr '\n' ',')"
 fi
 
 if [[ "$fail" -ne 0 ]]; then

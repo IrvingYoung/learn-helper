@@ -56,7 +56,9 @@ pnpm dev
 
 ## Deployment
 
-For full deployment instructions (VPS provisioning, domain, CI/CD, systemd, Caddy, backups), see:
+**Current: HTTP + IP (no domain).** Go binds `0.0.0.0:8080` directly; no reverse proxy, no TLS.
+
+For full deployment instructions (VPS provisioning, IP + port, CI/CD, systemd, backups), see:
 
 - [`docs/deploy.md`](docs/deploy.md) — first-time setup
 - [`docs/runbook.md`](docs/runbook.md) — day-2 ops (restart, rollback, restore, troubleshooting)
@@ -102,11 +104,17 @@ cd ../backend && go run ./cmd/server
 
 dev 模式只看 `pnpm dev` 主页 + 用分享按钮复制链接是否拿到完整 URL,够了。
 
-### ⚠️ 安全
+### ⚠️ 安全 (有反代时)
 
-**后端 :8080 绝对不能直接公网暴露**(只挂反代,反代只暴露 80/443)。  
+**有反代时:后端 :8080 绝对不能直接公网暴露**(只挂反代,反代只暴露 80/443)。  
 直接暴露 :8080 等于把 `/api/wiki/{id}` 这种写接口也开放给公网,任何人
 拿到 URL 就能增删改你的 wiki 内容。go:embed 的 SPA 路径同理。
+
+### ⚠️ 安全 (无域名/HTTP+IP 模式)
+
+当前无域名部署直接 bind `0.0.0.0:8080`,所有 API/写接口在公网明文可访问。
+这是个人使用的 trade-off。**不要在公网环境跑含敏感数据的请求**。
+`docs/deploy.md` 末尾 "Upgrading to HTTPS + domain" 段是迁移路径。
 
 ### og:image 替换
 

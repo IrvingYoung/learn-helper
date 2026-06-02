@@ -53,7 +53,7 @@ ssh learnhelper@HOST 'sudo mv /opt/learn-helper/learn-helper.db /opt/learn-helpe
 ssh learnhelper@HOST 'sudo systemctl start learn-helper'
 
 # 5. Verify
-./scripts/verify-deploy.sh https://yourdomain.top
+./scripts/verify-deploy.sh http://<VPS_IP>:8080
 ```
 
 ## View logs
@@ -67,9 +67,6 @@ ssh learnhelper@HOST 'sudo journalctl -u learn-helper -n 200 --no-pager'
 
 # Only errors
 ssh learnhelper@HOST 'sudo journalctl -u learn-helper -p err --no-pager'
-
-# Caddy logs
-ssh learnhelper@HOST 'sudo journalctl -u caddy -f'
 ```
 
 ## Common problems
@@ -87,9 +84,9 @@ Common causes:
 - **Port already in use**: another process is on 8080. `ssh learnhelper@HOST 'sudo lsof -i :8080'`.
 - **Permission denied on DB**: `.env` paths wrong, or `learn-helper.db` owned by `root` from a manual copy.
 
-### Site shows 502 Bad Gateway
+### Site shows connection refused / 502
 
-Caddy can't reach Go on 127.0.0.1:8080. The Go process crashed or never started.
+The Go process crashed or never started. Without Caddy, a 502 from a reverse proxy isn't possible — you'd see "connection refused" or a blank page.
 
 ```bash
 ssh learnhelper@HOST 'sudo systemctl status learn-helper'
@@ -98,19 +95,8 @@ ssh learnhelper@HOST 'sudo journalctl -u learn-helper -n 50 --no-pager'
 
 ### Share link preview doesn't show in IM
 
-1. Verify og: meta: `curl -s 'https://yourdomain.top/share/<slug>?t=<token>' | grep og:`
-2. IM crawlers cache aggressively. Test with `https://www.opengraph.xyz/url/https%3A%2F%2Fyourdomain.top%2Fshare%2F<slug>` (or any OG preview tool) to see what the crawler sees.
-3. Make sure the URL is `https://` (not `http://`). Most IM clients refuse to preview plain http.
-4. Cloudflare may cache — set Bypass Cache for `/share/*` in Cloudflare Page Rules.
-
-### Caddy says "acme: error presenting challenge"
-
-DNS is not pointing at the VPS, or port 80 is blocked. Check:
-
-```bash
-dig +short yourdomain.top      # should match VPS IP
-ssh learnhelper@HOST 'sudo ufw status'   # should show 80/tcp ALLOW
-```
+1. Verify og: meta: `curl -s 'http://<VPS_IP>:8080/share/<slug>?t=<token>' | grep og:`
+2. **IM previews require HTTPS** — without a domain + TLS, no IM client will show a preview card. This is by design. See `docs/deploy.md` → "Upgrading to HTTPS + domain" when you have a domain.
 
 ### Disk full
 
@@ -136,14 +122,3 @@ ssh learnhelper@HOST 'ls -lhS /opt/learn-helper/backups/ | tail -5'
 ssh learnhelper@HOST 'sudo /etc/cron.daily/learn-helper-backup'
 ls -lh /opt/learn-helper/backups/   # on the server
 ```
-
-## Update Caddy config
-
-```bash
-# Local: edit infra/caddy/Caddyfile, commit, push.
-git push origin main    # only deploys the binary; Caddyfile is on the server
-```
-
-To push the Caddyfile to the server, either:
-- Add a deploy step to `.github/workflows/deploy.yml` that `scp`s it and `systemctl reload caddy`
-- Or manually: `scp infra/caddy/Caddyfile learnhelper@HOST:/tmp/Caddyfile && ssh learnhelper@HOST 'sudo cp /tmp/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy'`
