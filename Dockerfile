@@ -2,7 +2,10 @@
 
 # ---- Frontend build ----
 FROM node:20-alpine AS frontend
-RUN corepack enable
+# Skip corepack (would fetch pnpm from network); install pnpm directly via npm
+# with the China mirror so the binary and registry are both reachable.
+RUN npm install -g pnpm@9 --registry=https://registry.npmmirror.com
+ENV PNPM_REGISTRY=https://registry.npmmirror.com
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
@@ -12,6 +15,8 @@ RUN pnpm --filter learn-helper-frontend build
 
 # ---- Go binary build ----
 FROM golang:1.25-alpine AS backend
+# goproxy.cn mirrors proxy.golang.org from China
+ENV GOPROXY=https://goproxy.cn,direct
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
