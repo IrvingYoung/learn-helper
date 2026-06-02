@@ -25,6 +25,7 @@ import { AskUserCard } from "./AskUserCard";
 import { AskUserContextView } from "./AskUserContext";
 
 const STORAGE_KEY = "llm-wiki-active-conversation-id";
+const SKILL_CMD_RE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/;
 
 interface ChatPanelProps {
   focusPageId?: number | null;
@@ -312,7 +313,11 @@ export const ChatPanel = forwardRef<{
   async function handleSend(planId?: string, messageOverride?: string, skipEmptyCheck?: boolean) {
     if (loading) return;
 
-    const userContent = (messageOverride ?? input).trim();
+    // Parse /command
+    const rawInput = messageOverride ?? input;
+    const skillMatch = rawInput.match(SKILL_CMD_RE);
+    const skillName = skillMatch ? skillMatch[1] : undefined;
+    const userContent = skillMatch ? (skillMatch[2]?.trim() ?? "") : rawInput.trim();
     if (!userContent && !skipEmptyCheck) return;
 
     setStreamError(null);
@@ -365,6 +370,7 @@ export const ChatPanel = forwardRef<{
           focus_page_id: focusPageId,
           current_slug: currentSlug,
           selected_text: selectedText ?? undefined,
+          skill: skillName,
         },
         (chunk) => {
           fullContent += chunk;
