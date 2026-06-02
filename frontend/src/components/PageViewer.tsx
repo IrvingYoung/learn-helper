@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { WikiPage } from '../types';
 import { MarkdownContent } from './MarkdownContent';
 import { confirmPageContent } from '../lib/api';
+import { exportPageAsPng } from '../lib/share-as-image';
+import { ShareAsImageModal } from './ShareAsImageModal';
 
 interface PageViewerProps {
   page: WikiPage | null;
@@ -51,6 +53,13 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
     x: number;
     y: number;
   } | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareBlob, setShareBlob] = useState<Blob | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const shareMenuRef = useRef<HTMLDivElement | null>(null);
+  const articleRef = useRef<HTMLDivElement | null>(null);
 
   const handleConfirm = useCallback(async () => {
     if (!page) return;
@@ -89,6 +98,56 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
     setSelectionTooltip(null);
     window.getSelection()?.removeAllRanges();
   }, [selectionTooltip, page, onAskAI]);
+
+  const handleShare = useCallback(async () => {
+    if (!articleRef.current || !page) return;
+    setSelectionTooltip(null);
+    window.getSelection()?.removeAllRanges();
+    setGenerating(true);
+    setShareError(null);
+    setShareBlob(null);
+    setShareModalOpen(true);
+    try {
+      const blob = await exportPageAsPng(articleRef.current);
+      setShareBlob(blob);
+    } catch (err) {
+      console.error("Failed to export page as PNG:", err);
+      setShareError(err instanceof Error ? err.message : "生成图片失败");
+    } finally {
+      setGenerating(false);
+    }
+  }, [page]);
+
+  const handleShareClose = useCallback(() => {
+    setShareModalOpen(false);
+  }, []);
+
+  const handleShareRetry = useCallback(() => {
+    handleShare();
+  }, [handleShare]);
+
+  const handleShareAsImage = useCallback(() => {
+    setShareMenuOpen(false);
+    handleShare();
+  }, [handleShare]);
+
+  useEffect(() => {
+    if (!shareMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShareMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShareMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [shareMenuOpen]);
 
   useEffect(() => {
     if (!selectionTooltip) return;
@@ -145,7 +204,7 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
           </div>
         ) : (
           <div className="h-full overflow-y-auto custom-scroll">
-            <div className="relative max-w-2xl mx-auto px-6 py-10">
+            <div ref={articleRef} className="relative max-w-2xl mx-auto px-6 py-10">
 
               {/* Breadcrumb */}
               {breadcrumb.length > 1 && (
@@ -169,15 +228,48 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
               )}
 
               {/* Title block */}
-              <div className="mb-8">
-                <h1 className="font-display text-[34px] leading-[1.15] font-bold text-th-text-primary tracking-tight">
-                  {page.title}
-                </h1>
-                {page.page_type && page.page_type !== 'entity' && (
-                  <div className="mt-3 text-sm text-th-text-muted font-mono tracking-wide">
-                    {PAGE_TYPE_LABELS[page.page_type] || page.page_type}
-                  </div>
-                )}
+              <div className="mb-8 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h1 className="font-display text-[34px] leading-[1.15] font-bold text-th-text-primary tracking-tight">
+                    {page.title}
+                  </h1>
+                  {page.page_type && page.page_type !== 'entity' && (
+                    <div className="mt-3 text-sm text-th-text-muted font-mono tracking-wide">
+                      {PAGE_TYPE_LABELS[page.page_type] || page.page_type}
+                    </div>
+                  )}
+                </div>
+                <div ref={shareMenuRef} className="relative shrink-0" data-share-ui>
+                  <button
+                    onClick={() => setShareMenuOpen((v) => !v)}
+                    aria-label="分享"
+                    aria-haspopup="menu"
+                    aria-expanded={shareMenuOpen}
+                    className="inline-flex items-center justify-center w-8 h-8 text-th-text-muted hover:text-th-text-primary hover:bg-th-hover rounded transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+                    </svg>
+                  </button>
+                  {shareMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-full mt-1 min-w-[180px] bg-white rounded-md shadow-lg border border-gray-200 py-1 z-30"
+                    >
+                      <button
+                        role="menuitem"
+                        onClick={handleShareAsImage}
+                        disabled={generating}
+                        className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                        </svg>
+                        用图片分享
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Body */}
@@ -204,6 +296,7 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
             <div
               className="absolute top-0 right-0 pointer-events-none"
               aria-hidden="true"
+              data-share-ui
             >
               <div
                 className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium border-l border-b rounded-bl-md ${status.bg} ${status.text} ${status.border}`}
@@ -234,6 +327,15 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
           </div>
         )}
       </div>
+
+      <ShareAsImageModal
+        open={shareModalOpen}
+        blob={shareBlob}
+        error={shareError}
+        slug={page?.slug ?? ""}
+        onClose={handleShareClose}
+        onRetry={handleShareRetry}
+      />
     </div>
   );
 }
