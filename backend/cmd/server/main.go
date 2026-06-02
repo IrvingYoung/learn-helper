@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -184,7 +185,15 @@ func main() {
 	// Wire the embedded SPA dist filesystem so production serves the
 	// frontend assets from inside this binary. Must run before any request
 	// can reach a handler that calls getDistIndexHTML().
-	handler.SetSPAFS(embeddedDistFS)
+	//
+	// The embed directive puts files under a "dist" prefix, so we use
+	// fs.Sub to expose the dist contents at the FS root — getDistIndexHTML
+	// then reads "index.html" and "assets/..." directly.
+	spaRoot, err := fs.Sub(embeddedDistFS, "dist")
+	if err != nil {
+		log.Fatalf("embed dist sub: %v", err)
+	}
+	handler.SetSPAFS(spaRoot)
 
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
