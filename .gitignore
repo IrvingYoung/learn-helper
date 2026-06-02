@@ -7,3 +7,7 @@ frontend/dist/
 .claude/worktrees/
 .superpowers/
 package-lock.json
+
+# Backend embedded SPA dist: ignore built artifacts, keep .gitkeep
+backend/cmd/server/dist/*
+!backend/cmd/server/dist/.gitkeep
