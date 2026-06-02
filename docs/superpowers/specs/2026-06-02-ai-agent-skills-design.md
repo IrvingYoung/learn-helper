@@ -78,11 +78,14 @@ metadata:                     # 可选，原样保留，loader 不读
 
 ```
 backend/internal/ai/skills/
-├── loader.go         # 扫描目录、解析 frontmatter、构建 Registry
+├── loader.go         # LoadFromFS(fs.FS) *Registry — 解析 frontmatter、构建 Registry
 ├── loader_test.go
 ├── skill.go          # Skill 结构体 + Registry 定义
+├── embed.go          # //go:embed *.md — 默认加载源
 └── *.md              # skill 文件本体
 ```
+
+`LoadFromFS` 接 `fs.FS` 接口——`embed.go` 提供默认 `embed.FS`，main.go 里如果 `LH_SKILLS_DIR` 环境变量存在则改用 `os.DirFS(LH_SKILLS_DIR)` 调同一个 `LoadFromFS`。两路复用同一份解析逻辑。
 
 ### `Skill` 结构体
 
@@ -303,8 +306,8 @@ ReAct 循环（`internal/handler/ai_react.go`）**不**改逻辑：
 - `backend/internal/ai/skills/loader.go`
 - `backend/internal/ai/skills/loader_test.go`
 - `backend/internal/ai/skills/skill.go`
-- `backend/internal/ai/skills/<至少一个示例>.md`（如 `explain-page.md`）
 - `backend/internal/ai/skills/embed.go`（`//go:embed *.md`）
+- `backend/internal/ai/skills/<至少一个示例>.md`（如 `explain-page.md`）
 
 **修改**：
 - `backend/internal/ai/provider.go` —— 新增 `BuildChatSystemPrompt`
