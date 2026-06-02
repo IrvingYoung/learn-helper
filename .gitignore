@@ -2,7 +2,8 @@
 *.db
 node_modules/
 dist/
-. DS_Store
+.DS_Store
 frontend/dist/
 .claude/worktrees/
 .superpowers/
+package-lock.json

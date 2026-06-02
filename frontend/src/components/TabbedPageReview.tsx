@@ -8,6 +8,7 @@ interface TabbedPageReviewProps {
   onDone: () => void;
   onSelectPage: (slug: string) => void;
   onContentConfirmed: (pageId: number) => void;
+  onInternalLink?: (href: string) => void;
 }
 
 const STATUS_STYLES: Record<string, { dot: string }> = {
@@ -16,7 +17,7 @@ const STATUS_STYLES: Record<string, { dot: string }> = {
   empty: { dot: "bg-[var(--badge-empty-dot)]" },
 };
 
-export function TabbedPageReview({ slugs, onDone, onSelectPage, onContentConfirmed }: TabbedPageReviewProps) {
+export function TabbedPageReview({ slugs, onDone, onSelectPage, onContentConfirmed, onInternalLink }: TabbedPageReviewProps) {
   const [pages, setPages] = useState<WikiPage[]>([]);
   const [activeSlug, setActiveSlug] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -138,13 +139,14 @@ export function TabbedPageReview({ slugs, onDone, onSelectPage, onContentConfirm
                 <h1 className="text-2xl font-bold text-th-text-primary font-display leading-tight">{activePage.title}</h1>
               </div>
               <div className="prose-custom">
-                <MarkdownContent content={activePage.content} onWikiLinkClick={(slug) => {
+                <MarkdownContent content={activePage.content} onInternalLink={onInternalLink ?? ((href) => {
+                  const slug = href.replace(/^\/+/, '').split(/[?#]/)[0];
                   if (pages.find((p) => p.slug === slug)) {
                     setActiveSlug(slug);
                   } else {
                     onSelectPage(slug);
                   }
-                }} />
+                })} />
               </div>
             </div>
           </div>

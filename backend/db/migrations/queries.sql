@@ -195,6 +195,10 @@ ORDER BY sort_order, id;
 -- Agent Loop migration: add tool_call_id and tool_name columns
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_call_id TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_name TEXT;
+-- Memory layering: add tool_summary to messages
+-- (heuristic one-liner per assistant turn that summarizes tool interactions,
+--  survives across requests so the model can recall what tools it used)
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_summary TEXT NOT NULL DEFAULT '';
 -- name: SearchWikiPages :many
 SELECT id, title, slug, page_type, content, tags, parent_id, content_status, sort_order, created_at, updated_at
 FROM wiki_pages

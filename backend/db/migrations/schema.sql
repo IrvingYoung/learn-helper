@@ -65,11 +65,14 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'tool')),
     content TEXT NOT NULL,
     model_provider TEXT,
     token_count INTEGER,
+    tool_call_id TEXT,
+    tool_name TEXT,
     tool_calls TEXT,
+    tool_summary TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

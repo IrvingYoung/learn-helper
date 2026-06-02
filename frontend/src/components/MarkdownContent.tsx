@@ -1,5 +1,5 @@
 import { memo } from "react";
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/cjs/styles/prism'
@@ -12,6 +12,7 @@ import java from 'react-syntax-highlighter/dist/cjs/languages/prism/java'
 import cpp from 'react-syntax-highlighter/dist/cjs/languages/prism/cpp'
 import sql from 'react-syntax-highlighter/dist/cjs/languages/prism/sql'
 import { useTheme } from '../contexts/ThemeContext'
+import { MermaidBlock } from './MermaidBlock'
 
 SyntaxHighlighter.registerLanguage('python', python)
 SyntaxHighlighter.registerLanguage('javascript', javascript)
@@ -25,9 +26,11 @@ SyntaxHighlighter.registerLanguage('sql', sql)
 interface MarkdownContentProps {
   content: string
   className?: string
-  onWikiLinkClick?: (title: string) => void
+  onInternalLink?: (href: string) => void
   compact?: boolean
 }
+
+const EXTERNAL_LINK_PATTERN = /^(https?:|mailto:|tel:|ftp:)/i
 
 function processWikiLinks(content: string): string {
   return content.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
@@ -35,8 +38,11 @@ function processWikiLinks(content: string): string {
   })
 }
 
+const urlTransform = (value: string) =>
+  value.startsWith('wiki:') ? value : defaultUrlTransform(value)
+
 export const MarkdownContent = memo(function MarkdownContent({
-  content, className = '', onWikiLinkClick, compact = false,
+  content, className = '', onInternalLink, compact = false,
 }: MarkdownContentProps) {
   const { theme } = useTheme()
   const syntaxStyle = theme === 'dark' ? oneDark : oneLight
@@ -47,6 +53,7 @@ export const MarkdownContent = memo(function MarkdownContent({
     <div className={`prose-custom ${compact ? 'prose-custom--compact' : ''} ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={urlTransform}
         components={{
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '')
@@ -57,10 +64,15 @@ export const MarkdownContent = memo(function MarkdownContent({
                 </code>
               )
             }
+            const lang = match[1]
+            const codeText = String(children).replace(/\n$/, '')
+            if (lang === 'mermaid') {
+              return <MermaidBlock code={codeText} />
+            }
             return (
               <SyntaxHighlighter
                 style={syntaxStyle}
-                language={match[1]}
+                language={lang}
                 PreTag="div"
                 className="rounded-md"
                 customStyle={{
@@ -71,7 +83,7 @@ export const MarkdownContent = memo(function MarkdownContent({
                   border: '1px solid var(--separator)',
                 }}
               >
-                {String(children).replace(/\n$/, '')}
+                {codeText}
               </SyntaxHighlighter>
             )
           },
@@ -119,14 +131,13 @@ export const MarkdownContent = memo(function MarkdownContent({
             return <strong className="font-semibold text-th-text-primary">{children}</strong>
           },
           a({ href, children, ...props }) {
-            if (href?.startsWith('wiki:')) {
+            if (href && !EXTERNAL_LINK_PATTERN.test(href)) {
               return (
                 <a
                   href={href}
                   onClick={(e) => {
                     e.preventDefault()
-                    const title = decodeURIComponent(href.slice(5))
-                    onWikiLinkClick?.(title)
+                    onInternalLink?.(href)
                   }}
                   {...props}
                 >

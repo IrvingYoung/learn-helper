@@ -11,7 +11,7 @@ import type {
 
 // Write tools require user permission before execution. When a `tool_call_start`
 // arrives for one of these, the frontend stamps the card as `pending`.
-const WRITE_TOOLS = new Set([
+export const WRITE_TOOLS = new Set([
   "create_page",
   "update_page",
   "patch_page",
@@ -130,14 +130,17 @@ export async function streamChat(
   onToolCall?: (data: ToolCallInfo) => void,
   onPermissionRequired?: (data: PermissionRequestEvent) => void,
   onAskUserRequest?: (data: AskUserRequestEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`${BASE}/ai/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
+    signal,
   });
 
   if (!res.ok) {
+    if (signal?.aborted) return;
     throw new Error(`Chat failed: ${await res.text()}`);
   }
 
@@ -238,37 +241,42 @@ export async function streamChat(
     currentData = "";
   };
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
-    for (const line of lines) {
-      if (line.startsWith("event: ")) {
-        dispatchEvent();
-        currentEvent = line.slice(7);
-        currentData = "";
-        continue;
-      }
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        if (data === "[DONE]") continue;
-        if (currentData !== "") {
-          currentData += "\n";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) {
+          dispatchEvent();
+          currentEvent = line.slice(7);
+          currentData = "";
+          continue;
         }
-        currentData += data;
-        continue;
-      }
-      // Empty line — dispatch pending event
-      if (line === "") {
-        dispatchEvent();
-        currentEvent = "";
-        currentData = "";
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+          if (currentData !== "") {
+            currentData += "\n";
+          }
+          currentData += data;
+          continue;
+        }
+        // Empty line — dispatch pending event
+        if (line === "") {
+          dispatchEvent();
+          currentEvent = "";
+          currentData = "";
+        }
       }
     }
+  } catch (e) {
+    if (signal?.aborted) return;
+    throw e;
   }
 
   // Final dispatch in case stream ends without trailing empty line

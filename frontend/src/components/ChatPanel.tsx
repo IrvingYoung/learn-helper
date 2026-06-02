@@ -16,6 +16,7 @@ import {
   streamChat,
   postPermissionResponse,
   postAskUserResponse,
+  WRITE_TOOLS,
 } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
@@ -29,6 +30,7 @@ interface ChatPanelProps {
   focusPageId?: number | null;
   currentSlug?: string;
   currentPageTitle?: string;
+  onWriteToolComplete?: (tc: ToolCallInfo) => void;
 }
 
 export const ChatPanel = forwardRef<{
@@ -36,7 +38,7 @@ export const ChatPanel = forwardRef<{
 	sendMessage: (text: string) => void;
 	continueAfterConfirm: () => void;
 }, ChatPanelProps>(
-  function ChatPanel({ focusPageId, currentSlug, currentPageTitle }, ref) {
+  function ChatPanel({ focusPageId, currentSlug, currentPageTitle, onWriteToolComplete }, ref) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -53,6 +55,7 @@ export const ChatPanel = forwardRef<{
 
   const inputRef = useRef<HTMLInputElement>(null);
   const prevLoadingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [selectedTextPage, setSelectedTextPage] = useState<string | null>(null);
@@ -91,6 +94,9 @@ export const ChatPanel = forwardRef<{
         let newConvId: number | undefined;
         const toolCallAccum = new Map<string, ToolCallInfo>();
 
+        const controller = new AbortController();
+        abortRef.current = controller;
+
         await streamChat(
           {
             conversation_id: activeConv!.id,
@@ -122,6 +128,9 @@ export const ChatPanel = forwardRef<{
           (tc) => {
             toolCallAccum.set(tc.id, tc);
             setStreamingToolCalls(new Map(toolCallAccum));
+            if (tc.status === "done" && WRITE_TOOLS.has(tc.name)) {
+              onWriteToolComplete?.(tc);
+            }
           },
           (pr) => {
             setPermissionRequest(pr);
@@ -129,6 +138,7 @@ export const ChatPanel = forwardRef<{
           (au) => {
             setAskUserRequest(au);
           },
+          controller.signal,
         );
 
         if (newConvId && newConvId !== activeConv!.id) {
@@ -149,6 +159,7 @@ export const ChatPanel = forwardRef<{
           return msgs;
         });
       } finally {
+        abortRef.current = null;
         setLoading(false);
         loadConversations();
       }
@@ -292,6 +303,12 @@ export const ChatPanel = forwardRef<{
     }
   }
 
+  function handleStop() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+  }
+
   async function handleSend(planId?: string, messageOverride?: string, skipEmptyCheck?: boolean) {
     if (loading) return;
 
@@ -337,6 +354,9 @@ export const ChatPanel = forwardRef<{
       let newConvId: number | undefined;
       const toolCallAccum = new Map<string, ToolCallInfo>();
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       await streamChat(
         {
           conversation_id: conv.id,
@@ -370,6 +390,9 @@ export const ChatPanel = forwardRef<{
         (tc) => {
           toolCallAccum.set(tc.id, tc);
           setStreamingToolCalls(new Map(toolCallAccum));
+          if (tc.status === "done" && WRITE_TOOLS.has(tc.name)) {
+            onWriteToolComplete?.(tc);
+          }
         },
         (pr) => {
           setPermissionRequest(pr);
@@ -377,6 +400,7 @@ export const ChatPanel = forwardRef<{
         (au) => {
           setAskUserRequest(au);
         },
+        controller.signal,
       );
 
       // If API created a new conversation (e.g. auto-named), switch to it
@@ -429,6 +453,7 @@ export const ChatPanel = forwardRef<{
         return msgs;
       });
     } finally {
+      abortRef.current = null;
       setLoading(false);
       // Refresh conversation list to pick up any auto-generated title
       loadConversations();
@@ -460,11 +485,7 @@ export const ChatPanel = forwardRef<{
             ) : (
               <div className="min-w-0">
                 {msg.content ? (
-                  isLast && loading ? (
-                    <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words text-th-text-primary">{msg.content}</p>
-                  ) : (
-                    <MarkdownContent content={msg.content} compact />
-                  )
+                  <MarkdownContent content={msg.content} compact />
                 ) : isLast && loading ? (
                   <div className="flex items-center gap-1 py-1 text-th-text-muted">
                     <span className="block w-1 h-3.5 bg-th-accent rounded-sm animate-cursor-scan" />
@@ -709,22 +730,27 @@ export const ChatPanel = forwardRef<{
             }}
             disabled={loading}
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={loading || !input.trim()}
-            className="px-3 rounded-xl text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150 flex items-center justify-center"
-          >
-            {loading ? (
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          {loading ? (
+            <button
+              onClick={handleStop}
+              className="px-3 rounded-xl text-white bg-th-danger hover:opacity-90 active:scale-[0.97] transition-all duration-150 flex items-center justify-center"
+              title="停止"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
-            ) : (
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim()}
+              className="px-3 rounded-xl text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150 flex items-center justify-center"
+            >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
               </svg>
-            )}
-          </button>
+            </button>
+          )}
         </div>
       </div>
     </div>

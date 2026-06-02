@@ -9,6 +9,7 @@ interface PageViewerProps {
   breadcrumb?: { title: string; slug: string }[];
   onViewPage?: (slug: string) => void;
   onSelectPage: (slug: string) => void;
+  onInternalLink?: (href: string) => void;
   onAskAI?: (text: string, pageTitle: string) => void;
   onContentConfirmed?: (pageId: number) => void;
 }
@@ -43,7 +44,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   entity: '实体',
 };
 
-export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onAskAI, onContentConfirmed }: PageViewerProps) {
+export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onInternalLink, onAskAI, onContentConfirmed }: PageViewerProps) {
   const [confirming, setConfirming] = useState(false);
   const [selectionTooltip, setSelectionTooltip] = useState<{
     text: string;
@@ -181,7 +182,7 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onA
 
               {/* Body */}
               <div onMouseUp={handleContentMouseUp} className="prose-custom">
-                <MarkdownContent content={page.content} onWikiLinkClick={onSelectPage} />
+                <MarkdownContent content={page.content} onInternalLink={onInternalLink ?? ((href) => onSelectPage(href.replace(/^\/+/, '')))} />
               </div>
 
               {/* Backlinks */}

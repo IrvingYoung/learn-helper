@@ -2,10 +2,6 @@
   "name": "learn-helper",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "build": "pnpm --parallel -r build",
