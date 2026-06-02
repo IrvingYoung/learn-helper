@@ -328,6 +328,13 @@ export const ChatPanel = forwardRef<{
   async function handleSend(planId?: string, messageOverride?: string, skipEmptyCheck?: boolean) {
     if (loading) return;
 
+    // Always close the skill panel + clear input when sending
+    if (!messageOverride) {
+      setInput("");
+      setSkillPanelOpen(false);
+      setSkillPanelIndex(0);
+    }
+
     // Parse /command
     const rawInput = messageOverride ?? input;
     const skillMatch = rawInput.match(SKILL_CMD_RE);
@@ -354,7 +361,6 @@ export const ChatPanel = forwardRef<{
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMsg]);
-      if (!messageOverride) setInput("");
     }
 
     setLoading(true);
