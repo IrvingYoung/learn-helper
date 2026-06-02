@@ -54,7 +54,12 @@ pnpm dev
 - sqlc (go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest)
 - sqlite3 (可选，用于手动操作数据库)
 
-## 部署(公网分享)
+## Deployment
+
+For full deployment instructions (VPS provisioning, domain, CI/CD, systemd, Caddy, backups), see:
+
+- [`docs/deploy.md`](docs/deploy.md) — first-time setup
+- [`docs/runbook.md`](docs/runbook.md) — day-2 ops (restart, rollback, restore, troubleshooting)
 
 如果要把 wiki 页面通过公网 URL 分享出去(在 IM 里粘贴链接时有 og: 预览卡),
 需要走一个反代,把特定路径转发给 Go,其他路径给前端。
