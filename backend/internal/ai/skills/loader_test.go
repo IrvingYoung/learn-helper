@@ -38,3 +38,79 @@ func TestLoadFromFS_HappyPath(t *testing.T) {
 		t.Errorf("SourcePath = %q", s.SourcePath)
 	}
 }
+
+func TestLoadFromFS_MissingName(t *testing.T) {
+	fsys := fstest.MapFS{
+		"bad.md": &fstest.MapFile{Data: []byte("---\ndescription: hi\n---\nbody")},
+	}
+	_, err := LoadFromFS(fsys)
+	if err == nil {
+		t.Fatal("expected error for missing name")
+	}
+	if !strings.Contains(err.Error(), "bad.md") {
+		t.Errorf("error should mention file path: %v", err)
+	}
+}
+
+func TestLoadFromFS_MissingDescription(t *testing.T) {
+	fsys := fstest.MapFS{
+		"bad.md": &fstest.MapFile{Data: []byte("---\nname: x\n---\nbody")},
+	}
+	_, err := LoadFromFS(fsys)
+	if err == nil || !strings.Contains(err.Error(), "description") {
+		t.Fatalf("expected error mentioning description, got %v", err)
+	}
+}
+
+func TestLoadFromFS_DuplicateName(t *testing.T) {
+	fsys := fstest.MapFS{
+		"a.md": &fstest.MapFile{Data: []byte("---\nname: foo\ndescription: A\n---\nx")},
+		"b.md": &fstest.MapFile{Data: []byte("---\nname: foo\ndescription: B\n---\ny")},
+	}
+	_, err := LoadFromFS(fsys)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected duplicate error, got %v", err)
+	}
+}
+
+func TestLoadFromFS_EmptyBodyIsOK(t *testing.T) {
+	fsys := fstest.MapFS{
+		"empty.md": &fstest.MapFile{Data: []byte("---\nname: e\ndescription: E\n---\n")},
+	}
+	r, err := LoadFromFS(fsys)
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	s, _ := r.Get("e")
+	if s.Body != "" {
+		t.Errorf("expected empty body, got %q", s.Body)
+	}
+}
+
+func TestLoadFromFS_OrderingIsAlphabetical(t *testing.T) {
+	fsys := fstest.MapFS{
+		"z.md": &fstest.MapFile{Data: []byte("---\nname: zed\ndescription: Z\n---\n")},
+		"a.md": &fstest.MapFile{Data: []byte("---\nname: aardvark\ndescription: A\n---\n")},
+	}
+	r, _ := LoadFromFS(fsys)
+	got := r.List()
+	if len(got) != 2 || got[0].Name != "aardvark" || got[1].Name != "zed" {
+		t.Errorf("unexpected order: %+v", got)
+	}
+}
+
+func TestLoadFromFS_BodyMayContainFences(t *testing.T) {
+	fsys := fstest.MapFS{
+		"x.md": &fstest.MapFile{Data: []byte("---\nname: x\ndescription: X\n---\n" +
+			"body line 1\n---\nbody line 2\n")},
+	}
+	r, err := LoadFromFS(fsys)
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	s, _ := r.Get("x")
+	want := "body line 1\n---\nbody line 2\n"
+	if s.Body != want {
+		t.Errorf("body = %q, want %q", s.Body, want)
+	}
+}
