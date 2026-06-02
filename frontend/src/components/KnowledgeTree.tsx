@@ -36,11 +36,13 @@ interface KnowledgeTreeProps {
   onAskAIMove?: (nodeId: number) => void;
   onDelete?: (nodeId: number, hasChildren: boolean) => void;
   newNodeId?: number | null;
+  readOnly?: boolean;
 }
 
 export function KnowledgeTree({
   tree, selectedSlug, onSelect, collapsed,
   onAddChild, onRename, onMove, onAskAIMove, onDelete, newNodeId,
+  readOnly = false,
 }: KnowledgeTreeProps) {
   const [menuState, setMenuState] = useState<{
     x: number; y: number; nodeId: number; nodeTitle: string; hasChildren: boolean;
@@ -223,7 +225,7 @@ export function KnowledgeTree({
     <div className="h-full overflow-y-auto p-4 bg-th-bg-tertiary custom-scroll">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-medium text-th-text-muted tracking-wide uppercase text-xs">知识库</div>
-        {onAddChild && (
+        {onAddChild && !readOnly && (
           <button
             onClick={() => onAddChild(null)}
             className="w-5 h-5 flex items-center justify-center text-th-text-muted hover:text-th-text-primary hover:bg-th-hover rounded transition-colors"
@@ -274,19 +276,19 @@ export function KnowledgeTree({
             depth={0}
             expandedIds={expandedIds}
             onToggle={handleToggle}
-            onContextMenu={searchQuery ? undefined : handleContextMenu}
-            onAddChild={onAddChild}
-            onRename={onRename}
-            onMove={onMove}
-            renameNodeId={renameNodeId}
-            onRenameStarted={() => setRenameNodeId(null)}
-            draggedId={draggedId}
-            draggedDescendants={draggedDescendants}
-            onDragStart={(id) => setDraggedId(id)}
-            onDragEnd={() => { setDraggedId(null); setDropHoverId(null); }}
-            dropHoverId={dropHoverId}
-            onDropHover={setDropHoverId}
-            disabled={!!searchQuery}
+            onContextMenu={searchQuery || readOnly ? undefined : handleContextMenu}
+            onAddChild={readOnly ? undefined : onAddChild}
+            onRename={readOnly ? undefined : onRename}
+            onMove={readOnly ? undefined : onMove}
+            renameNodeId={readOnly ? undefined : renameNodeId}
+            onRenameStarted={readOnly ? undefined : () => setRenameNodeId(null)}
+            draggedId={readOnly ? undefined : draggedId}
+            draggedDescendants={readOnly ? undefined : draggedDescendants}
+            onDragStart={readOnly ? undefined : (id) => setDraggedId(id)}
+            onDragEnd={readOnly ? undefined : () => { setDraggedId(null); setDropHoverId(null); }}
+            dropHoverId={readOnly ? undefined : dropHoverId}
+            onDropHover={readOnly ? undefined : setDropHoverId}
+            disabled={!!searchQuery || readOnly}
           />
         ))}
         {effectiveTree.length === 0 && (
