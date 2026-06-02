@@ -32,6 +32,13 @@ func getDistIndexHTML() ([]byte, error) {
 	return readDistIndexFromDisk()
 }
 
+// IndexHTML is the exported wrapper around getDistIndexHTML for use by the
+// HTTP layer (main.go) to serve the SPA as a catch-all route. Callers should
+// set Content-Type: text/html and return 500 on error.
+func IndexHTML() ([]byte, error) {
+	return getDistIndexHTML()
+}
+
 // readDistIndexFromDisk is the disk-fallback path. Looks in several
 // conventional paths so the binary works from `backend/` (dev) and from
 // a deployment dir (prod). Override with the LH_SPA_DIST env var.

@@ -494,6 +494,19 @@ func main() {
 		})
 	})
 
+	// Catch-all SPA fallback: any GET that didn't match a more specific route
+	// returns the embedded index.html so the React Router takes over on the
+	// client. Required when there's no reverse proxy serving the dist files.
+	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+		body, err := handler.IndexHTML()
+		if err != nil {
+			http.Error(w, "SPA not loaded", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(body)
+	})
+
 	// --- Cron tasks: scheduler + HTTP API ---
 	cronDB := cron.NewSQLDBAdapter(db)
 	// *handler.AIHandler satisfies cron.RunnerHooks (its RunReAct signature
