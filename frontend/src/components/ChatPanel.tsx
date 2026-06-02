@@ -359,6 +359,7 @@ export const ChatPanel = forwardRef<{
         model_provider: null,
         token_count: null,
         created_at: new Date().toISOString(),
+        skill: skillName,
       };
       setMessages((prev) => [...prev, userMsg]);
     }
@@ -508,7 +509,17 @@ export const ChatPanel = forwardRef<{
             }`}
           >
             {msg.role === "user" ? (
-              <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+              <div>
+                {msg.skill && (
+                  <div className="flex items-center gap-1 mb-1.5 text-[11px] text-th-text-muted">
+                    <span className="font-mono px-1.5 py-0.5 rounded bg-th-accent-bg text-th-accent">
+                      /{msg.skill}
+                    </span>
+                    <span>skill 已激活</span>
+                  </div>
+                )}
+                <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+              </div>
             ) : (
               <div className="min-w-0">
                 {msg.content ? (

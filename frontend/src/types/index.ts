@@ -66,6 +66,7 @@ export interface ConversationMessage {
   token_count: number | null;
   created_at: string;
   tool_calls?: ToolCallInfo[];
+  skill?: string;
 }
 
 export type PlanStatus = 'pending' | 'confirmed' | 'executing' | 'completed' | 'rejected' | 'completed_with_failures';
