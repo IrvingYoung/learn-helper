@@ -153,12 +153,16 @@ reactLoop:
 
 		var textBuilder strings.Builder
 		var respToolCalls []ai.ToolCall
+		var respReasoning string // DeepSeek thinking mode — must be passed back next turn
 
 	streamLoop:
 		for chunk := range streamCh {
 			if chunk.Content != "" {
 				sink.WriteContent(chunk.Content)
 				textBuilder.WriteString(chunk.Content)
+			}
+			if chunk.ReasoningContent != "" {
+				respReasoning += chunk.ReasoningContent
 			}
 			if chunk.ToolCall != nil {
 				respToolCalls = append(respToolCalls, *chunk.ToolCall)
@@ -196,7 +200,9 @@ reactLoop:
 		log.Printf("%s iteration=%d reads=%d writes=%d asks=%d load_skills=%d",
 			logPrefix, iteration, len(readBatch), len(writeBatch), len(askBatch), len(loadSkillBatch))
 
-		// Build assistant turn blocks (text + tool_use for every tool call)
+		// Build assistant turn blocks (text + tool_use for every tool call,
+		// plus reasoning_content for DeepSeek thinking mode — required on
+		// the next request or the API rejects with invalid_request_error).
 		var blocks []ai.ContentBlock
 		if respContent != "" {
 			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeText, Text: respContent})
@@ -209,7 +215,11 @@ reactLoop:
 			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input})
 		}
 		if assistantContent, err := ai.ContentBlocksToJSON(blocks); err == nil {
-			aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: assistantContent})
+			msg := ai.Message{Role: "assistant", Content: assistantContent}
+			if respReasoning != "" {
+				msg.ReasoningContent = respReasoning
+			}
+			aiMessages = append(aiMessages, msg)
 		}
 
 		// Execute read tools (auto)

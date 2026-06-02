@@ -500,7 +500,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		log.Printf("[AIChat] skill=%q body_len=%d conv=%d (synthesizing tool call)", s.Name, len(s.Body), req.ConversationID)
+		log.Printf("[AIChat] skill=%q body_len=%d conv=%d (injecting as user message)", s.Name, len(s.Body), req.ConversationID)
 		aiMessages = append(aiMessages, synthesizeLoadSkillCall(s)...)
 	}
 	systemPrompt := ai.BuildChatSystemPrompt(convRole, wikiContext, h.SkillRegistry)
@@ -1094,26 +1094,23 @@ func boolToInt64(b bool) int64 {
 	return 0
 }
 
-// synthesizeLoadSkillCall returns a pair of messages that mimic an
-// LLM-initiated load_skill tool call + result, for the case where the USER
-// invoked the skill via /<name>. The assistant turn has a single tool_use
-// block (load_skill), followed by a tool result containing the body. From
-// the LLM's perspective, it looks identical to a self-initiated load.
+// synthesizeLoadSkillCall returns a single user-role message containing the
+// skill body as context. This is the /<name> equivalent of an LLM-initiated
+// load_skill tool call: the body lands in the conversation (not the system
+// prompt), one-shot, and the LLM uses it to inform the response.
 //
-// We append these at the end of the conversation so the most-recent context
-// is the loaded skill body, which the LLM will use for the response to the
-// user's current message.
+// We do NOT synthesize a tool_use + tool_result pair (the "clean" agent
+// pattern) because DeepSeek's thinking mode requires the assistant message
+// to carry back `reasoning_content` from the previous turn. A fabricated
+// assistant message without that field is rejected by the API. Injecting the
+// body as a user message sidesteps the requirement while delivering the same
+// information to the LLM.
 func synthesizeLoadSkillCall(s *skills.Skill) []ai.Message {
-	callID := fmt.Sprintf("skill_user_%d", time.Now().UnixNano())
-	blocks := []ai.ContentBlock{{
-		Type:  ai.ContentTypeToolUse,
-		ID:    callID,
-		Name:  "load_skill",
-		Input: json.RawMessage(fmt.Sprintf(`{"name":%q}`, s.Name)),
-	}}
-	assistantJSON, _ := ai.ContentBlocksToJSON(blocks)
+	body := fmt.Sprintf(
+		"[Skill '%s' is now active. Follow these instructions.]\n\n%s\n\n[End of skill instructions]",
+		s.Name, s.Body,
+	)
 	return []ai.Message{
-		{Role: "assistant", Content: assistantJSON},
-		{Role: "tool", ToolCallID: callID, ToolName: "load_skill", Content: s.Body},
+		{Role: "user", Content: body},
 	}
 }

@@ -16,21 +16,23 @@ const (
 
 // ContentBlock represents a structured content block in AI messages.
 type ContentBlock struct {
-	Type     ContentBlockType `json:"type"`
-	Text     string           `json:"text,omitempty"`      // for text blocks
-	ID       string           `json:"id,omitempty"`         // tool_use_id / tool_call_id
-	Name     string           `json:"name,omitempty"`       // tool name
-	Input    json.RawMessage  `json:"input,omitempty"`      // for tool_use: JSON input
-	Content  string           `json:"content,omitempty"`    // for tool_result: result content
-	IsError  bool             `json:"is_error,omitempty"`   // for tool_result: error flag
+	Type            ContentBlockType `json:"type"`
+	Text            string           `json:"text,omitempty"`             // for text blocks
+	ID              string           `json:"id,omitempty"`                // tool_use_id / tool_call_id
+	Name            string           `json:"name,omitempty"`              // tool name
+	Input           json.RawMessage  `json:"input,omitempty"`             // for tool_use: JSON input
+	Content         string           `json:"content,omitempty"`           // for tool_result: result content
+	IsError         bool             `json:"is_error,omitempty"`          // for tool_result: error flag
+	ReasoningContent string          `json:"reasoning_content,omitempty"` // DeepSeek thinking mode — must be passed back next turn
 }
 
 // Message represents a message in AI conversation history.
 type Message struct {
-	Role       string `json:"role"`
-	Content    string `json:"content"` // plain text or JSON array of ContentBlock
-	ToolCallID string `json:"tool_call_id,omitempty"`
-	ToolName   string `json:"tool_name,omitempty"`
+	Role             string `json:"role"`
+	Content          string `json:"content"` // plain text or JSON array of ContentBlock
+	ToolCallID       string `json:"tool_call_id,omitempty"`
+	ToolName         string `json:"tool_name,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"` // DeepSeek thinking mode — set on assistant turns
 }
 
 // IsStructuredContent checks if the content string is a JSON array of ContentBlocks.
@@ -75,7 +77,8 @@ type ChatRequest struct {
 
 // ChatResponse represents a non-streaming response from an AI provider.
 type ChatResponse struct {
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	TokenCount int        `json:"token_count"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"` // DeepSeek thinking mode — must be passed back next turn
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	TokenCount       int        `json:"token_count"`
 }

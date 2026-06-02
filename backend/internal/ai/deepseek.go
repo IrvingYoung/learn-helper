@@ -85,8 +85,9 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 	var dsResp struct {
 		Choices []struct {
 			Message struct {
-				Content   string              `json:"content"`
-				ToolCalls []deepseekToolCall  `json:"tool_calls,omitempty"`
+				Content          string             `json:"content"`
+				ReasoningContent string             `json:"reasoning_content,omitempty"`
+				ToolCalls        []deepseekToolCall `json:"tool_calls,omitempty"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
@@ -99,9 +100,11 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 
 	var toolCalls []ToolCall
 	content := ""
+	reasoning := ""
 	if len(dsResp.Choices) > 0 {
 		msg := dsResp.Choices[0].Message
 		content = msg.Content
+		reasoning = msg.ReasoningContent
 		for _, tc := range msg.ToolCalls {
 			toolCalls = append(toolCalls, ToolCall{
 				ID:    tc.ID,
@@ -112,9 +115,10 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 	}
 
 	return &ChatResponse{
-		Content:    content,
-		ToolCalls:  toolCalls,
-		TokenCount: dsResp.Usage.TotalTokens,
+		Content:          content,
+		ReasoningContent: reasoning,
+		ToolCalls:        toolCalls,
+		TokenCount:       dsResp.Usage.TotalTokens,
 	}, nil
 }
 
@@ -224,9 +228,10 @@ func messageToDeepSeekMessage(m Message) deepseekMessage {
 				}
 			}
 			return deepseekMessage{
-				Role:      "assistant",
-				Content:   textBuilder.String(),
-				ToolCalls: toolCalls,
+				Role:             "assistant",
+				Content:          textBuilder.String(),
+				ToolCalls:        toolCalls,
+				ReasoningContent: m.ReasoningContent, // pass back thinking-mode content
 			}
 		}
 		// For user messages, just extract text
@@ -239,8 +244,13 @@ func messageToDeepSeekMessage(m Message) deepseekMessage {
 		return deepseekMessage{Role: m.Role, Content: textBuilder.String()}
 	}
 
-	// Old format: plain text
-	return deepseekMessage{Role: m.Role, Content: m.Content}
+	// Old format: plain text. Assistant turns may carry reasoning_content
+	// (DeepSeek thinking mode) — pass it through.
+	return deepseekMessage{
+		Role:             m.Role,
+		Content:          m.Content,
+		ReasoningContent: m.ReasoningContent,
+	}
 }
 
 func (p *DeepSeekProvider) GetModel() string {

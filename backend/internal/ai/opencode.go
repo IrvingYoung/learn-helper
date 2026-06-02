@@ -83,8 +83,9 @@ func (p *OpenCodeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 	var ocResp struct {
 		Choices []struct {
 			Message struct {
-				Content   string             `json:"content"`
-				ToolCalls []deepseekToolCall `json:"tool_calls,omitempty"`
+				Content          string             `json:"content"`
+				ReasoningContent string             `json:"reasoning_content,omitempty"`
+				ToolCalls        []deepseekToolCall `json:"tool_calls,omitempty"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
@@ -97,9 +98,11 @@ func (p *OpenCodeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 
 	var toolCalls []ToolCall
 	content := ""
+	reasoning := ""
 	if len(ocResp.Choices) > 0 {
 		msg := ocResp.Choices[0].Message
 		content = msg.Content
+		reasoning = msg.ReasoningContent
 		for _, tc := range msg.ToolCalls {
 			toolCalls = append(toolCalls, ToolCall{
 				ID:    tc.ID,
@@ -110,9 +113,10 @@ func (p *OpenCodeProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 	}
 
 	return &ChatResponse{
-		Content:    content,
-		ToolCalls:  toolCalls,
-		TokenCount: ocResp.Usage.TotalTokens,
+		Content:          content,
+		ReasoningContent: reasoning,
+		ToolCalls:        toolCalls,
+		TokenCount:       ocResp.Usage.TotalTokens,
 	}, nil
 }
 

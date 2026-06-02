@@ -51,9 +51,10 @@ var SystemPromptTemplates = map[string]string{
 
 // ChatChunk represents a piece of streamed AI response.
 type ChatChunk struct {
-	Content  string    // text content delta
-	ToolCall *ToolCall // completed tool call (only when Done=true and a tool was called)
-	Done     bool
+	Content          string    // text content delta
+	ReasoningContent string    // reasoning_content delta (DeepSeek thinking mode)
+	ToolCall         *ToolCall // completed tool call (only when Done=true and a tool was called)
+	Done             bool
 }
 
 // Tool represents a tool definition for AI function calling.
@@ -474,10 +475,11 @@ type deepseekRequest struct {
 }
 
 type deepseekMessage struct {
-	Role       string              `json:"role"`
-	Content    any                 `json:"content"`
-	ToolCalls  []deepseekToolCall  `json:"tool_calls,omitempty"`
-	ToolCallID string              `json:"tool_call_id,omitempty"`
+	Role             string             `json:"role"`
+	Content          any                `json:"content"`
+	ToolCalls        []deepseekToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string             `json:"tool_call_id,omitempty"`
+	ReasoningContent string             `json:"reasoning_content,omitempty"` // DeepSeek thinking mode — required on assistant turns
 }
 
 type deepseekTool struct {
@@ -512,6 +514,10 @@ func ParseDeepSeekSSE(body io.Reader, callback func(ChatChunk)) error {
 
 	// Track tool calls by index since they arrive in deltas
 	toolCalls := make(map[int]*ToolCall)
+	// Track reasoning_content deltas (DeepSeek thinking mode) — the
+	// accumulated string is sent in the final chunk so the ReAct loop
+	// can include it in the assistant message for the next request.
+	var reasoningBuilder strings.Builder
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -526,6 +532,11 @@ func ParseDeepSeekSSE(body io.Reader, callback func(ChatChunk)) error {
 			for _, tc := range toolCalls {
 				callback(ChatChunk{ToolCall: tc})
 			}
+			// Emit accumulated reasoning_content as a separate final chunk
+			// (separate from Done so the ReAct loop can pick it up).
+			if reasoning := reasoningBuilder.String(); reasoning != "" {
+				callback(ChatChunk{ReasoningContent: reasoning})
+			}
 			callback(ChatChunk{Done: true})
 			return nil
 		}
@@ -533,8 +544,9 @@ func ParseDeepSeekSSE(body io.Reader, callback func(ChatChunk)) error {
 		var resp struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content,omitempty"`
+					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Type     string `json:"type"`
@@ -561,6 +573,11 @@ func ParseDeepSeekSSE(body io.Reader, callback func(ChatChunk)) error {
 		// Text content
 		if choice.Delta.Content != "" {
 			callback(ChatChunk{Content: choice.Delta.Content})
+		}
+
+		// Reasoning content (DeepSeek thinking mode) — accumulate deltas
+		if choice.Delta.ReasoningContent != "" {
+			reasoningBuilder.WriteString(choice.Delta.ReasoningContent)
 		}
 
 		// Tool calls (accumulate across deltas)
