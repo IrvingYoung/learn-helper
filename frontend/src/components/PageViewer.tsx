@@ -322,14 +322,8 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
                       <button
                         role="menuitem"
                         onClick={handleCopyLink}
-                        disabled={!page?.share_token || !navigator.clipboard?.writeText}
-                        title={
-                          !page?.share_token
-                            ? "该页面尚未生成分享链接"
-                            : !navigator.clipboard?.writeText
-                            ? "当前浏览器不支持剪贴板写入"
-                            : undefined
-                        }
+                        disabled={!page?.share_token}
+                        title={!page?.share_token ? "该页面尚未生成分享链接" : undefined}
                         className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
