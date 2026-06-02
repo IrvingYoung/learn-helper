@@ -695,6 +695,14 @@ func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string 
 		return h.executeSearchPages(ctx, tc)
 	case "read_page":
 		return h.executeReadPage(ctx, tc)
+	case "list_backlinks":
+		return h.executeListBacklinks(ctx, tc)
+	case "list_links":
+		return h.executeListLinks(ctx, tc)
+	case "list_children":
+		return h.executeListChildren(ctx, tc)
+	case "find_broken_links":
+		return h.executeFindBrokenLinks(ctx, tc)
 	case "websearch":
 		return h.executeWebSearch(ctx, tc)
 	case "webfetch":
