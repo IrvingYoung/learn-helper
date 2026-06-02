@@ -1,0 +1,126 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-test:
+    name: Go test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - run: go test ./...
+        working-directory: backend
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter learn-helper-frontend build
+      - run: |
+          mkdir -p backend/cmd/server/dist
+          rsync -a --delete frontend/dist/ backend/cmd/server/dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: backend/cmd/server/dist/
+          retention-days: 1
+
+  go-build:
+    name: Go build (with embedded dist)
+    needs: [go-test, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: backend/cmd/server/dist
+      - run: |
+          cd backend
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o learn-helper ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: learn-helper
+          path: backend/learn-helper
+          retention-days: 7
+
+  caddy-validate:
+    name: Caddyfile validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Caddy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debian-keyring debian-archive-keyring curl gnupg
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/deb/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+          sudo apt-get update
+          sudo apt-get install -y caddy
+      - name: Validate
+        # Validate with a temporary minimal Caddyfile that does not require
+        # DNS resolution, just to confirm the syntax is correct.
+        run: |
+          # Strip the site block and validate the global options + a stub site.
+          cat > /tmp/Caddyfile.test <<'EOF'
+          {
+              email admin@example.com
+          }
+          example.com {
+              encode gzip
+              reverse_proxy 127.0.0.1:8080
+          }
+          EOF
+          caddy validate --config /tmp/Caddyfile.test --adapter caddyfile
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ./infra
+          additional_files: 'learn-helper-backup.sh'
+
+  systemd-verify:
+    name: systemd-analyze verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install systemd
+        run: sudo apt-get install -y systemd
+      - name: Verify
+        run: systemd-analyze verify infra/systemd/learn-helper.service
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.1
+        with:
+          args: -color
