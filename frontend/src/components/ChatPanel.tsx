@@ -794,13 +794,15 @@ export const ChatPanel = forwardRef<{
                     return;
                   }
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    const match = input.match(SKILL_CMD_RE);
-                    if (match) {
-                      e.preventDefault();
-                      setSkillPanelOpen(false);
-                      handleSend();
-                      return;
+                    // Select the highlighted skill, don't send
+                    e.preventDefault();
+                    const picked = filteredSkills[skillPanelIndex];
+                    if (picked) {
+                      setInput(`/${picked.name} `);
                     }
+                    setSkillPanelOpen(false);
+                    inputRef.current?.focus();
+                    return;
                   }
                 }
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
