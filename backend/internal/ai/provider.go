@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"learn-helper/internal/ai/skills"
 )
 
 // AIProvider defines the interface for AI model providers.
@@ -408,6 +410,19 @@ context.kind 四种:
 	wikiMaintainerPrompt += fmt.Sprintf("\n[Request Timestamp: %s]\n[Context Notice: The user's query was issued at the timestamp above. Ensure search results are current and relevant to the query date.]\n", dateStr)
 
 	return wikiMaintainerPrompt
+}
+
+// BuildChatSystemPrompt constructs the system prompt with wiki context and
+// (optionally) appends a user-invoked skill's body. A nil skill is a no-op
+// (returns the base prompt unchanged). When skill is non-nil, the body is
+// appended verbatim under a "## 当前 Skill: <name>" header so the LLM sees
+// the skill context as an addition to, not a replacement for, the base.
+func BuildChatSystemPrompt(role, wikiContext string, skill *skills.Skill) string {
+	base := BuildSystemPrompt(role, wikiContext)
+	if skill == nil {
+		return base
+	}
+	return base + "\n\n## 当前 Skill: " + skill.Name + "\n\n" + skill.Body
 }
 
 // DeepSeek API types
