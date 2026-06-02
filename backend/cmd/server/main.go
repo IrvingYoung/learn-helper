@@ -231,6 +231,9 @@ func main() {
 	// to persist full tool_result messages (which violated protocol on reload).
 	db.Exec(`ALTER TABLE messages ADD COLUMN tool_summary TEXT NOT NULL DEFAULT ''`)
 
+	// Migrate 014: add skill column to messages (persists which /skill was active)
+	db.Exec(`ALTER TABLE messages ADD COLUMN skill TEXT NOT NULL DEFAULT ''`)
+
 	// Migrate existing databases: add summary columns from migration 008
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'empty'`)

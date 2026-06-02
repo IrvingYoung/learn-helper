@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS messages (
     tool_name TEXT,
     tool_calls TEXT,
     tool_summary TEXT NOT NULL DEFAULT '',
+    skill TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

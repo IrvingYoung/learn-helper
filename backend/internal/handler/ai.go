@@ -154,7 +154,7 @@ func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id, role, content, model_provider, tool_calls, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at`, id)
+	rows, err := h.db.QueryContext(r.Context(), `SELECT id, role, content, model_provider, tool_calls, skill, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at`, id)
 	if err != nil {
 		http.Error(w, "Failed to fetch messages", http.StatusInternalServerError)
 		return
@@ -167,6 +167,7 @@ func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Reque
 		Content       string  `json:"content"`
 		ModelProvider string  `json:"model_provider"`
 		ToolCalls     *string `json:"tool_calls"`
+		Skill         string  `json:"skill"`
 		CreatedAt     string  `json:"created_at"`
 	}
 
@@ -174,7 +175,7 @@ func (h *AIHandler) GetConversationMessages(w http.ResponseWriter, r *http.Reque
 	for rows.Next() {
 		var m msg
 		var mp, tc sql.NullString
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &mp, &tc, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &mp, &tc, &m.Skill, &m.CreatedAt); err != nil {
 			continue
 		}
 		m.ModelProvider = mp.String
@@ -363,12 +364,12 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 
 	// Save original user message (before context modifications) to DB
 	if originalMessage != "" {
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
-			req.ConversationID, originalMessage, config.Provider)
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count, skill) VALUES (?, 'user', ?, ?, 0, ?)`,
+			req.ConversationID, originalMessage, config.Provider, req.Skill)
 	} else if req.SelectedText != "" && req.Message != "" {
 		// When only selected text was provided (no manual input), save the contextual message
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count) VALUES (?, 'user', ?, ?, 0)`,
-			req.ConversationID, req.Message, config.Provider)
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count, skill) VALUES (?, 'user', ?, ?, 0, ?)`,
+			req.ConversationID, req.Message, config.Provider, req.Skill)
 	}
 
 	// Auto-title: only on first user message with actual content
