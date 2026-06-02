@@ -12,6 +12,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/wiki" replace />} />
         <Route path="/wiki" element={<WikiPage />} />
+        <Route path="/wiki/:slug" element={<WikiPage />} />
+        <Route path="/share/:slug" element={<WikiPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/cron" element={<CronListPage />} />
         <Route path="/cron/new" element={<NewCronTaskPage />} />

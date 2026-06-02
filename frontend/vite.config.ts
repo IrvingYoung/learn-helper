@@ -10,6 +10,10 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // NOTE: /share/* is NOT proxied in dev. In dev, the SPA's React Router
+      // handles /share/:slug directly (renders the public read-only view).
+      // The production reverse-proxy rule (or a built + served-by-Go setup)
+      // is what enables SSR og: meta injection — see README.
     },
   },
 })

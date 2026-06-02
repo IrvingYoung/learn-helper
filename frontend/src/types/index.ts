@@ -10,6 +10,13 @@ export interface WikiPage {
   sort_order: number;
   links: number[];
   backlinks: number[];
+  /**
+   * Public share token (32 chars from ambiguity-free alphabet). Empty for
+   * pre-migration pages that haven't had a token generated yet — those are
+   * not publicly shareable. Present on every page created after the
+   * share-page-as-link change.
+   */
+  share_token?: string;
   created_at: string;
   updated_at: string;
 }

@@ -53,6 +53,21 @@ export async function fetchOverviewPage(): Promise<WikiPage> {
   return res.json();
 }
 
+/**
+ * Fetch a wiki page via the public share API.
+ *
+ * Used by the SPA when the user is on /share/{slug}?t={token} (anonymous
+ * visitor view). The response omits `share_token` for security.
+ *
+ * Throws on 404 (token miss / page missing) — the caller can show an
+ * appropriate error UI in that case.
+ */
+export async function fetchPublicSharePage(slug: string, token: string): Promise<WikiPage> {
+  const res = await fetch(`${BASE}/share/${slug}?t=${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error(`Public share fetch failed: ${res.status}`);
+  return res.json();
+}
+
 // Conversation API
 
 export async function listConversations(): Promise<Conversation[]> {

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
-import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, createEmptyWikiPage, renameWikiPage, moveWikiPage, deleteWikiPage } from '../lib/api';
+import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, createEmptyWikiPage, renameWikiPage, moveWikiPage, deleteWikiPage, fetchPublicSharePage } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
 import type { WikiPage, WikiTreeNode, ToolCallInfo } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
@@ -27,29 +27,84 @@ function saveLayout(layout: Record<string, number>) {
   } catch { /* ignore */ }
 }
 
-export function WikiPageLayout() {
+interface WikiPageLayoutProps {
+  /**
+   * Slug from the URL route param (`/wiki/:slug` or `/share/:slug`).
+   * When non-null, takes precedence over the localStorage-restored slug.
+   * Drives the initial selected page and the back/forward sync.
+   */
+  urlSlug: string | null;
+  /**
+   * Share token from the URL query string on `/share/:slug?t=...`.
+   * Ignored on `/wiki` routes.
+   */
+  shareTokenFromUrl: string | null;
+}
+
+export function WikiPageLayout({ urlSlug, shareTokenFromUrl }: WikiPageLayoutProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isPublicPath = location.pathname.startsWith('/share/');
+
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
   const rightPanelRef = useRef<PanelImperativeHandle>(null);
   const chatPanelRef = useRef<{ setSelectedText: (text: string, pageTitle: string) => void; sendMessage: (text: string) => void; continueAfterConfirm: () => void }>(null);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(() => localStorage.getItem('wiki-selected-slug'));
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(() => urlSlug ?? localStorage.getItem('wiki-selected-slug'));
   const [newPageNodeId, setNewPageNodeId] = useState<number | null>(null);
   const [reviewSlugs, setReviewSlugs] = useState<string[]>([]);
   const { theme, toggleTheme } = useTheme();
   const [treeVersion, setTreeVersion] = useState(0);
 
-  // Persist selected page across refreshes
+  // Persist selected page across refreshes (owner only — public visitors don't
+  // have a stable localStorage contract).
   useEffect(() => {
+    if (isPublicPath) return;
     if (selectedSlug) localStorage.setItem('wiki-selected-slug', selectedSlug);
     else localStorage.removeItem('wiki-selected-slug');
-  }, [selectedSlug]);
+  }, [selectedSlug, isPublicPath]);
 
-  const { data: tree } = useSWR(['wiki-tree', treeVersion], fetchWikiTree);
+  // Sync URL on state change so the address bar always reflects the current
+  // page. On /share/... paths we never push (the URL is the entry point
+  // and contains the token).
+  useEffect(() => {
+    if (isPublicPath) return;
+    const target = selectedSlug ? `/wiki/${selectedSlug}` : '/wiki';
+    if (location.pathname !== target) {
+      navigate(target, { replace: false });
+    }
+  }, [selectedSlug, isPublicPath, location.pathname, navigate]);
+
+  // Sync state when the URL slug changes (back/forward, deep link).
+  useEffect(() => {
+    if (urlSlug && urlSlug !== selectedSlug) {
+      setSelectedSlug(urlSlug);
+    }
+  }, [urlSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tree is owner-only. In public mode we skip fetching it (avoids leaking
+  // page metadata to anonymous visitors and saves a network round-trip).
+  const { data: tree } = useSWR(
+    isPublicPath ? null : ['wiki-tree', treeVersion],
+    fetchWikiTree
+  );
+
+  // Page fetching — branch on public vs owner path.
+  // Public: use the public API with the share token from the URL.
+  // Owner: use the standard /api/wiki/{slug} endpoint.
+  const pageFetcher = useCallback(() => {
+    if (!selectedSlug) return null;
+    if (isPublicPath) {
+      if (!shareTokenFromUrl) return null;
+      return fetchPublicSharePage(selectedSlug, shareTokenFromUrl);
+    }
+    return fetchWikiPage(selectedSlug);
+  }, [selectedSlug, isPublicPath, shareTokenFromUrl]);
+
   const { data: page, mutate: mutatePage } = useSWR(
-    selectedSlug ? `wiki-page-${selectedSlug}` : null,
-    () => selectedSlug ? fetchWikiPage(selectedSlug) : null
+    selectedSlug ? `wiki-page-${selectedSlug}-${isPublicPath ? 'public' : 'owner'}` : null,
+    pageFetcher
   );
 
   const mutateCurrentPage = useCallback(() => {
@@ -57,7 +112,7 @@ export function WikiPageLayout() {
   }, [mutatePage]);
 
   const { data: overviewPage, mutate: mutateOverview } = useSWR(
-    !selectedSlug ? 'wiki-overview' : null,
+    !isPublicPath && !selectedSlug ? 'wiki-overview' : null,
     fetchOverviewPage
   );
 
@@ -111,6 +166,9 @@ export function WikiPageLayout() {
     return { titleToSlug, slugSet };
   }, [tree]);
 
+  // Internal link navigation is owner-only. Public visitors see wiki
+  // [[links]] rendered as plain text (the MarkdownContent component already
+  // handles this when onInternalLink is undefined).
   const handleInternalLink = useCallback((href: string) => {
     let target = href;
     let lookupByTitle = false;
@@ -137,6 +195,7 @@ export function WikiPageLayout() {
   }, [slugIndex]);
 
   const handlePageChanged = useCallback((tc?: ToolCallInfo) => {
+    if (isPublicPath) return;
     setTreeVersion(v => v + 1);
     mutateOverview();
     if (tc?.name === "create_page" && tc.output) {
@@ -149,12 +208,13 @@ export function WikiPageLayout() {
       } catch { /* fall through to mutate current page */ }
     }
     mutateCurrentPage();
-  }, [mutateCurrentPage, mutateOverview]);
+  }, [mutateCurrentPage, mutateOverview, isPublicPath]);
 
   const handleContentConfirmed = useCallback((_pageId: number) => {
+    if (isPublicPath) return;
     mutateCurrentPage();
     handlePageChanged();
-  }, [mutateCurrentPage, handlePageChanged]);
+  }, [mutateCurrentPage, handlePageChanged, isPublicPath]);
 
   const handleReviewDone = useCallback(() => {
     setReviewSlugs([]);
@@ -162,10 +222,12 @@ export function WikiPageLayout() {
 
 
   const handleAskAI = useCallback((text: string, pageTitle: string) => {
+    if (isPublicPath) return;
     chatPanelRef.current?.setSelectedText(text, pageTitle);
-  }, []);
+  }, [isPublicPath]);
 
   const handleAddChild = async (parentId: number | null) => {
+    if (isPublicPath) return;
     try {
       const page = await createEmptyWikiPage("新页面", parentId);
       setSelectedSlug(page.slug);
@@ -177,6 +239,7 @@ export function WikiPageLayout() {
   };
 
   const handleRename = async (nodeId: number, newTitle: string) => {
+    if (isPublicPath) return;
     try {
       await renameWikiPage(nodeId, newTitle);
       handlePageChanged();
@@ -187,6 +250,7 @@ export function WikiPageLayout() {
   };
 
   const handleMove = async (nodeId: number, newParentId: number | null) => {
+    if (isPublicPath) return;
     try {
       await moveWikiPage(nodeId, newParentId);
       handlePageChanged();
@@ -196,17 +260,55 @@ export function WikiPageLayout() {
   };
 
   const handleAskAIMove = (nodeId: number) => {
+    if (isPublicPath) return;
     chatPanelRef.current?.setSelectedText(`请将页面 ID ${nodeId} 移动到合适的位置`, "");
   };
 
   const handleDelete = async (nodeId: number, _hasChildren: boolean) => {
+    if (isPublicPath) return;
     try {
       await deleteWikiPage(nodeId);
       handlePageChanged();
     } catch (err) {
-      console.error("Failed to delete page:", err);
+      console.error("Failed to delete wiki page:", err);
     }
   };
+
+  // Public visitors see a stripped layout: header with brand + "open in app"
+  // link, then the page viewer takes the full width below. No tree, no chat,
+  // no settings/cron/theme buttons (no need to render a full app shell for
+  // read-only anonymous viewers).
+  if (isPublicPath) {
+    return (
+      <div className="h-screen flex flex-col bg-th-bg-primary">
+        <header className="bg-th-bg-secondary/70 backdrop-blur-md border-b border-th-separator h-12 flex items-center pl-4 pr-4 shrink-0">
+          <BrandMark />
+          <div className="flex-1" />
+          {selectedSlug && (
+            <a
+              href={`/wiki/${selectedSlug}`}
+              className="text-xs text-th-text-secondary hover:text-th-text-primary transition-colors inline-flex items-center gap-1"
+              title="Open in the LLM Wiki app"
+            >
+              在 LLM Wiki 中打开
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
+          )}
+        </header>
+        <div className="flex-1 min-h-0 overflow-hidden @container">
+          <PageViewer
+            page={displayPage}
+            collapsed={false}
+            breadcrumb={[]}
+            onSelectPage={() => {}}
+            publicMode={true}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-th-bg-primary">

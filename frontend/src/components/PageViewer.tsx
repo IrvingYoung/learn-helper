@@ -14,6 +14,12 @@ interface PageViewerProps {
   onInternalLink?: (href: string) => void;
   onAskAI?: (text: string, pageTitle: string) => void;
   onContentConfirmed?: (pageId: number) => void;
+  /**
+   * When true, the viewer renders in read-only public mode: no share menu,
+   * no draft banner, no "ask AI" selection tooltip. Used on /share/{slug}
+   * routes by anonymous visitors.
+   */
+  publicMode?: boolean;
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; border: string; dot: string; label: string }> = {
@@ -46,7 +52,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   entity: '实体',
 };
 
-export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onInternalLink, onAskAI, onContentConfirmed }: PageViewerProps) {
+export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onInternalLink, onAskAI, onContentConfirmed, publicMode = false }: PageViewerProps) {
   const [confirming, setConfirming] = useState(false);
   const [selectionTooltip, setSelectionTooltip] = useState<{
     text: string;
@@ -58,6 +64,7 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
   const [shareError, setShareError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement | null>(null);
   const articleRef = useRef<HTMLDivElement | null>(null);
 
@@ -75,6 +82,9 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
   }, [page, onContentConfirmed]);
 
   const handleContentMouseUp = useCallback(() => {
+    // Public visitors don't get the "ask AI" tooltip — there's no AI chat
+    // session for anonymous viewers.
+    if (publicMode) return;
     setTimeout(() => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
@@ -90,7 +100,7 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
         y: rect.top + window.scrollY - 8,
       });
     }, 10);
-  }, []);
+  }, [publicMode]);
 
   const handleAskAIClick = useCallback(() => {
     if (!selectionTooltip || !page) return;
@@ -131,6 +141,25 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
     handleShare();
   }, [handleShare]);
 
+  const handleCopyLink = useCallback(async () => {
+    if (!page?.share_token) return;
+    const url = `${window.location.origin}/share/${page.slug}?t=${page.share_token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1500);
+    } catch (err) {
+      console.error("Failed to copy share link:", err);
+    } finally {
+      setShareMenuOpen(false);
+    }
+  }, [page]);
+
+  // Public visitors should not see the share menu, the draft confirmation
+  // banner, or the "ask AI" selection tooltip. The share menu is hidden at
+  // the JSX level, the draft banner is gated on `publicMode`, and the
+  // selection tooltip short-circuits in `handleContentMouseUp` above.
+
   useEffect(() => {
     if (!shareMenuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -165,10 +194,11 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
 
   const status = page ? (STATUS_STYLES[page.content_status] || STATUS_STYLES.empty) : STATUS_STYLES.empty;
   const isDraft = page?.content_status === 'draft' && page.content?.trim().length > 0;
+  const showDraftBanner = !publicMode && isDraft;
 
   return (
     <div className="h-full flex flex-col bg-th-bg-secondary">
-      {isDraft && (
+      {showDraftBanner && (
         <div className="flex items-center gap-3 px-5 py-2 bg-th-accent-bg border-b border-th-accent-bg-strong shrink-0 text-sm">
           <span className="w-1.5 h-1.5 rounded-full bg-th-accent animate-pulse-dot" />
           <span className="text-th-text-primary font-medium">有 AI 生成的待确认内容</span>
@@ -239,6 +269,7 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
                     </div>
                   )}
                 </div>
+                {!publicMode && (
                 <div ref={shareMenuRef} className="relative shrink-0" data-share-ui>
                   <button
                     onClick={() => setShareMenuOpen((v) => !v)}
@@ -258,23 +289,46 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
                     >
                       <button
                         role="menuitem"
+                        onClick={handleCopyLink}
+                        disabled={!page?.share_token || !navigator.clipboard?.writeText}
+                        title={
+                          !page?.share_token
+                            ? "该页面尚未生成分享链接"
+                            : !navigator.clipboard?.writeText
+                            ? "当前浏览器不支持剪贴板写入"
+                            : undefined
+                        }
+                        className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                        </svg>
+                        {linkCopied ? "✓ 已复制" : "复制链接"}
+                      </button>
+                      <button
+                        role="menuitem"
                         onClick={handleShareAsImage}
                         disabled={generating}
                         className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.5 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
                         </svg>
                         用图片分享
                       </button>
                     </div>
                   )}
                 </div>
+                )}
               </div>
 
               {/* Body */}
               <div onMouseUp={handleContentMouseUp} className="prose-custom">
-                <MarkdownContent content={page.content} onInternalLink={onInternalLink ?? ((href) => onSelectPage(href.replace(/^\/+/, '')))} />
+                {publicMode ? (
+                  <MarkdownContent content={page.content} />
+                ) : (
+                  <MarkdownContent content={page.content} onInternalLink={onInternalLink ?? ((href) => onSelectPage(href.replace(/^\/+/, '')))} />
+                )}
               </div>
 
               {/* Backlinks */}

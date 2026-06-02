@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -60,6 +61,7 @@ type WikiPageResponse struct {
 	SortOrder     int64   `json:"sort_order"`
 	Links         []int64 `json:"links"`
 	Backlinks     []int64 `json:"backlinks"`
+	ShareToken    string  `json:"share_token"`
 	CreatedAt     string  `json:"created_at"`
 	UpdatedAt     string  `json:"updated_at"`
 }
@@ -308,12 +310,19 @@ func (h *WikiHandler) GetWikiPageBySlug(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Fetch links and backlinks
+	// Fetch links, backlinks, and share_token. Lazily generate a share_token
+	// if the row was created before the share-page-as-link migration
+	// (share_token = '' defaults to empty on existing rows).
 	var linksJSON, backlinksJSON string
 	h.db.QueryRow("SELECT COALESCE(links, '[]'), COALESCE(backlinks, '[]') FROM wiki_pages WHERE id = ?", page.ID).Scan(&linksJSON, &backlinksJSON)
 	var linkIDs, blIDs []int64
 	json.Unmarshal([]byte(linksJSON), &linkIDs)
 	json.Unmarshal([]byte(backlinksJSON), &blIDs)
+	shareToken, err := h.ensureShareToken(page.ID)
+	if err != nil {
+		log.Printf("WARN: ensureShareToken failed for page %d: %v", page.ID, err)
+		shareToken = ""
+	}
 
 	resp := WikiPageResponse{
 		ID:            page.ID,
@@ -327,6 +336,7 @@ func (h *WikiHandler) GetWikiPageBySlug(w http.ResponseWriter, r *http.Request) 
 		SortOrder:     page.SortOrder,
 		Links:         linkIDs,
 		Backlinks:     blIDs,
+		ShareToken:    shareToken,
 		CreatedAt:     page.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:     page.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -460,7 +470,11 @@ func (h *WikiHandler) CreateWikiPage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "slug": req.Slug})
+	shareToken := newShareToken()
+	if _, err := h.db.Exec("UPDATE wiki_pages SET share_token = ? WHERE id = ?", shareToken, id); err != nil {
+		log.Printf("WARN: failed to set share_token for new page %d: %v", id, err)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "slug": req.Slug, "share_token": shareToken})
 }
 
 type UpdateWikiPageRequest struct {
@@ -494,9 +508,22 @@ func (h *WikiHandler) UpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 		parentID = sql.NullInt64{Int64: *req.ParentID, Valid: true}
 	}
 
+	// Slug is one-time: set at page creation, never recomputed on rename.
+	// Read the current slug and pass it through to the UPDATE so the value is
+	// preserved. Any client-supplied slug in the request body is ignored.
+	var currentSlug string
+	if err := h.db.QueryRow("SELECT slug FROM wiki_pages WHERE id = ?", id).Scan(&currentSlug); err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Page not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to load page", http.StatusInternalServerError)
+		return
+	}
+
 	err = h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
 		Title:         req.Title,
-		Slug:          req.Slug,
+		Slug:          currentSlug,
 		PageType:      req.PageType,
 		Content:       req.Content,
 		Tags:          sql.NullString{String: req.Tags, Valid: req.Tags != ""},
@@ -609,12 +636,19 @@ func (h *WikiHandler) GetOverviewPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch links and backlinks
+	// Fetch links, backlinks, and share_token. Lazily generate a share_token
+	// if the row was created before the share-page-as-link migration
+	// (share_token = '' defaults to empty on existing rows).
 	var linksJSON, backlinksJSON string
 	h.db.QueryRow("SELECT COALESCE(links, '[]'), COALESCE(backlinks, '[]') FROM wiki_pages WHERE id = ?", page.ID).Scan(&linksJSON, &backlinksJSON)
 	var linkIDs, blIDs []int64
 	json.Unmarshal([]byte(linksJSON), &linkIDs)
 	json.Unmarshal([]byte(backlinksJSON), &blIDs)
+	shareToken, err := h.ensureShareToken(page.ID)
+	if err != nil {
+		log.Printf("WARN: ensureShareToken failed for page %d: %v", page.ID, err)
+		shareToken = ""
+	}
 
 	resp := WikiPageResponse{
 		ID:            page.ID,
@@ -628,6 +662,7 @@ func (h *WikiHandler) GetOverviewPage(w http.ResponseWriter, r *http.Request) {
 		SortOrder:     page.SortOrder,
 		Links:         linkIDs,
 		Backlinks:     blIDs,
+		ShareToken:    shareToken,
 		CreatedAt:     page.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:     page.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -668,11 +703,10 @@ func (h *WikiHandler) RenameWikiPage(w http.ResponseWriter, r *http.Request) {
 	// Save old title before rename
 	oldTitle := page.Title
 
-	// Generate new slug from title
-	newSlug := slugify(req.Title)
-	if newSlug == "" {
-		newSlug = page.Slug
-	}
+	// Slug is one-time: preserve the existing slug so any public share URLs
+	// already in circulation continue to resolve to this page. We deliberately
+	// do NOT regenerate the slug from the new title here.
+	newSlug := page.Slug
 
 	err = h.queries.UpdateWikiPage(ctx, model.UpdateWikiPageParams{
 		Title:         req.Title,
@@ -889,6 +923,29 @@ func (h *WikiHandler) CreateEmptyWikiPage(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]any{"id": id, "slug": slug, "title": req.Title})
 }
 
+// ensureShareToken returns the row's share_token, generating and persisting
+// one on the fly if it's currently empty. Used to lazily backfill tokens
+// for pages created before the share-page-as-link migration, so the
+// owner's UI doesn't have to special-case "old page with no token".
+//
+// Safe to call on every read — if the token is already set this is a
+// no-op except for one SELECT.
+func (h *WikiHandler) ensureShareToken(pageID int64) (string, error) {
+	var token string
+	err := h.db.QueryRow("SELECT share_token FROM wiki_pages WHERE id = ?", pageID).Scan(&token)
+	if err != nil {
+		return "", err
+	}
+	if token != "" {
+		return token, nil
+	}
+	token = newShareToken()
+	if _, err := h.db.Exec("UPDATE wiki_pages SET share_token = ? WHERE id = ?", token, pageID); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
 // slugify converts a title to a URL-friendly slug.
 func slugify(title string) string {
 	s := strings.ToLower(title)
@@ -909,6 +966,35 @@ func slugify(title string) string {
 		result = strings.ReplaceAll(result, "--", "-")
 	}
 	return strings.Trim(result, "-")
+}
+
+// shareTokenAlphabet is the alphabet for share_token strings.
+// 32 ambiguity-free chars: lowercase a-z minus i/l/o, digits 2-9.
+// (Removes 0/1/i/l/o which are visually similar and easy to confuse.)
+const shareTokenAlphabet = "23456789abcdefghjkmnpqrstuvwxyz"
+
+// newShareToken returns a 32-character random string from shareTokenAlphabet.
+// Uses crypto/rand for cryptographic randomness (~157 bits of entropy), so
+// tokens are non-enumerable and safe to put in public URLs.
+func newShareToken() string {
+	const n = 32
+	const alphaLen = byte(len(shareTokenAlphabet))
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand failure is exceptional; fall back to time-based seed.
+		// (Production deployments on modern Linux/macOS never see this path.)
+		log.Printf("WARN: crypto/rand failed in newShareToken: %v; using time-based fallback", err)
+		fallback := uint64(time.Now().UnixNano())
+		for i := range b {
+			fallback = fallback*1103515245 + 12345
+			b[i] = shareTokenAlphabet[fallback%uint64(alphaLen)]
+		}
+		return string(b)
+	}
+	for i := range b {
+		b[i] = shareTokenAlphabet[b[i]%alphaLen]
+	}
+	return string(b)
 }
 
 // ConfirmPageContent marks a page's content as confirmed (published).

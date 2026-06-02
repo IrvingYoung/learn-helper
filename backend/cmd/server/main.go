@@ -245,6 +245,12 @@ func main() {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_pages_summary_status ON wiki_pages(summary_status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_pages_tags_normalized ON wiki_pages(tags_normalized)`)
 
+	// Migration: add share_token column for public link sharing (share-page-as-link).
+	// Idempotent: SQLite errors on duplicate-column ADD, but we ignore the error
+	// (matches the project's migration convention — see ADD COLUMN calls above).
+	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN share_token TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_wiki_pages_share_token ON wiki_pages(share_token)`)
+
 	// Migrate existing databases: add wiki_log table from migration 009
 	db.Exec(`CREATE TABLE IF NOT EXISTS wiki_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -438,6 +444,11 @@ func main() {
 	// Skills catalog (outside /api route group for clarity)
 	r.Get("/api/skills", (&handler.SkillsHandler{Registry: skillReg}).HandleList)
 
+	// Public share SSR route. Reads the SPA's dist/index.html and injects
+	// og:* meta tags so IM crawlers (WeChat, Twitter, etc.) can render a
+	// link preview card. Reverse proxy must forward /share/* → :8080.
+	r.Get("/share/{slug}", wikiHandler.GetShareSSRPage)
+
 	r.Route("/api", func(r chi.Router) {
 		// Wiki routes
 		r.Get("/wiki", wikiHandler.GetWikiTree)
@@ -448,6 +459,10 @@ func main() {
 		r.Put("/wiki/{id}", wikiHandler.UpdateWikiPage)
 		r.Delete("/wiki/{id}", wikiHandler.DeleteWikiPage)
 		r.Put("/wiki/{id}/confirm", wikiHandler.ConfirmPageContent)
+
+		// Public share API (token-gated). Registered under /api so the same
+		// reverse-proxy rule (/api/* → :8080) covers it.
+		r.Get("/share/{slug}", wikiHandler.GetPublicSharePage)
 
 		// Wiki structure operations (no confirmation needed)
 			r.Patch("/wiki/{id}/rename", wikiHandler.RenameWikiPage)

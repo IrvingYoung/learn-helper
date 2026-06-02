@@ -132,6 +132,13 @@ export const MarkdownContent = memo(function MarkdownContent({
           },
           a({ href, children, ...props }) {
             if (href && !EXTERNAL_LINK_PATTERN.test(href)) {
+              // Internal link (e.g. wiki:Title). When the parent doesn't pass
+              // an onInternalLink handler — public viewer mode — render as
+              // plain text instead of a clickable <a>, since the link target
+              // would be inaccessible to anonymous viewers.
+              if (!onInternalLink) {
+                return <span className="text-th-text-primary">{children}</span>
+              }
               return (
                 <a
                   href={href}
