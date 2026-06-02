@@ -128,6 +128,33 @@ func TestRenderKnowledgeMap_PendingSummaryFallback(t *testing.T) {
 	}
 }
 
+// renderSummaryLine — fallback should pick a meaningful first line, not the
+// H1 / blockquote / horizontal-rule that every page tends to start with.
+// Regression test for audit item #8 (前 80 字降级常常全是 markdown 装饰).
+func TestRenderSummaryLine_FallbackSkipsTitleAndQuote(t *testing.T) {
+	node := model.GetWikiPageTreeRow{ID: 1, Title: "Go", SummaryStatus: "failed"}
+	content := "# Go\n\n> 简洁、可靠、高效的编程语言。\n\n---\n\n本页讲 Go 的核心特性和工程实践。"
+	got := renderSummaryLine(node, map[int64]string{1: content})
+
+	if strings.Contains(got, "# Go") || strings.Contains(got, ">") || strings.Contains(got, "---") {
+		t.Errorf("fallback leaked H1/quote/HR into the summary line: %q", got)
+	}
+	if !strings.Contains(got, "本页讲 Go") {
+		t.Errorf("expected first real content line, got: %q", got)
+	}
+	if !strings.Contains(got, "(摘要生成失败)") {
+		t.Errorf("expected failure tag, got: %q", got)
+	}
+}
+
+func TestRenderSummaryLine_NoContentNoTag(t *testing.T) {
+	node := model.GetWikiPageTreeRow{ID: 1, SummaryStatus: "empty"}
+	got := renderSummaryLine(node, map[int64]string{}) // no fallback content
+	if got != "" {
+		t.Errorf("empty status with no content should yield empty string, got: %q", got)
+	}
+}
+
 type fakeLogDB struct {
 	entries []model.WikiLog
 }
