@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -503,10 +505,27 @@ func main() {
 		})
 	})
 
-	// Catch-all SPA fallback: any GET that didn't match a more specific route
-	// returns the embedded index.html so the React Router takes over on the
-	// client. Required when there's no reverse proxy serving the dist files.
+	// Catch-all SPA fallback: any GET that didn't match a more specific route.
+	// Try the path as a static asset in the embedded dist first; if that
+	// misses, serve index.html so the React Router takes over on the client.
 	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+		path := strings.TrimPrefix(req.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+
+		// 1) Try as a static asset from the embedded dist
+		if body, err := fs.ReadFile(spaRoot, path); err == nil {
+			if ctype := mime.TypeByExtension(filepath.Ext(path)); ctype != "" {
+				w.Header().Set("Content-Type", ctype)
+			} else {
+				w.Header().Set("Content-Type", "application/octet-stream")
+			}
+			_, _ = w.Write(body)
+			return
+		}
+
+		// 2) Fallback: serve index.html (client-side routing)
 		body, err := handler.IndexHTML()
 		if err != nil {
 			http.Error(w, "SPA not loaded", http.StatusInternalServerError)
