@@ -174,6 +174,9 @@ func collectDescendants(root model.GetWikiPageTreeRow, children map[int64][]mode
 // renderSummaryLine returns the summary for a page, with fallback handling.
 // fallbackContents is a pre-fetched map of pageID → content for pages with
 // non-ready summary status (used to avoid N+1 queries during tree rendering).
+// When falling back to raw content, we use snippetFromContent so the preview
+// skips the H1 / blockquote / horizontal-rule lines that almost every page
+// starts with — those filled up the first 80 characters with no information.
 func renderSummaryLine(node model.GetWikiPageTreeRow, fallbackContents map[int64]string) string {
 	status := node.SummaryStatus
 
@@ -185,30 +188,22 @@ func renderSummaryLine(node model.GetWikiPageTreeRow, fallbackContents map[int64
 		fallthrough
 	case "pending":
 		if content, ok := fallbackContents[node.ID]; ok && content != "" {
-			return truncateForDisplay(content, 80) + " (摘要待更新)"
+			return snippetFromContent(content, 80) + " (摘要待更新)"
 		}
 		return "(摘要待更新)"
 	case "failed":
 		if content, ok := fallbackContents[node.ID]; ok && content != "" {
-			return truncateForDisplay(content, 80) + " (摘要生成失败)"
+			return snippetFromContent(content, 80) + " (摘要生成失败)"
 		}
 		return "(摘要生成失败)"
 	case "empty":
 		if content, ok := fallbackContents[node.ID]; ok && content != "" {
-			return truncateForDisplay(content, 80) + " (暂无摘要)"
+			return snippetFromContent(content, 80) + " (暂无摘要)"
 		}
 		return ""
 	default:
 		return ""
 	}
-}
-
-func truncateForDisplay(s string, max int) string {
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
-	}
-	return string(runes[:max]) + "..."
 }
 
 // renderTagIndex builds the global tag summary.
