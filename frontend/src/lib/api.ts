@@ -119,6 +119,7 @@ export interface ChatRequest {
   focus_page_id?: number | null;
   current_slug?: string;
   selected_text?: string;
+  skill?: string; // optional: SKILL.md name for /command
 }
 
 export async function streamChat(
@@ -347,4 +348,15 @@ export async function postAskUserResponse(
     body: JSON.stringify({ request_id: requestId, answer }),
   });
   if (!res.ok) throw new Error("Failed to send ask_user response");
+}
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+}
+
+export async function fetchSkills(): Promise<SkillInfo[]> {
+  const res = await fetch(`${BASE}/skills`);
+  if (!res.ok) throw new Error(`fetchSkills failed: ${res.status}`);
+  return res.json();
 }
