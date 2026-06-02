@@ -325,6 +325,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		FocusPageID    *int64 `json:"focus_page_id"`
 		CurrentSlug    string `json:"current_slug"`
 		SelectedText   string `json:"selected_text"`
+		Skill          string `json:"skill,omitempty"` // optional: SKILL.md name
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -477,7 +478,27 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[AIChat] wikiContext length=%d", len(wikiContext))
 	log.Printf("[AIChat] wikiContext excerpt: %s", wikiContext[:min(len(wikiContext), 500)])
-	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
+	// Look up skill if specified
+	var skillObj *skills.Skill
+	if req.Skill != "" {
+		s, ok := h.SkillRegistry.Get(req.Skill)
+		if !ok {
+			available := h.SkillRegistry.List()
+			names := make([]string, 0, len(available))
+			for _, x := range available {
+				names = append(names, x.Name)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":     "unknown skill: " + req.Skill,
+				"available": names,
+			})
+			return
+		}
+		skillObj = s
+	}
+	systemPrompt := ai.BuildChatSystemPrompt(convRole, wikiContext, skillObj)
 
 	// Build the chat request
 	chatReq := ai.ChatRequest{
