@@ -173,3 +173,46 @@ func TestSnippetFromContent_SkipsTitleAndQuote(t *testing.T) {
 		t.Errorf("expected first non-meta line, got: %q", got)
 	}
 }
+
+// lookup_page used to silently append a full subtree knowledge-map dump
+// (~200 to ~2000 tokens depending on the page). That meant any [[X]] link
+// validation call carried unpredictable cost. Now it returns only page
+// metadata; AI must call list_children for subtree exploration.
+func TestExecuteLookupPage_ReturnsMetadataNoSubtree(t *testing.T) {
+	h := setupNavTestDB(t)
+	out := h.executeLookupPage(context.Background(), toolCall(map[string]any{"title": "Child A"}))
+
+	// Must contain the page ID and basic metadata.
+	if !strings.Contains(out, `"id":2`) {
+		t.Errorf("expected id=2 in output, got: %s", out)
+	}
+	if !strings.Contains(out, `"page_type":"entity"`) {
+		t.Errorf("expected page_type metadata, got: %s", out)
+	}
+	if !strings.Contains(out, `"parent_id":1`) {
+		t.Errorf("expected parent_id metadata, got: %s", out)
+	}
+
+	// Must NOT contain a KnowledgeMap subtree dump. The renderer emits
+	// these section headings; their presence would mean the implicit
+	// subtree leaked back in.
+	for _, marker := range []string{"【知识库概览】", "【知识地图】", "【最近活动】"} {
+		if strings.Contains(out, marker) {
+			t.Errorf("lookup_page output should not contain subtree marker %q, got:\n%s", marker, out)
+		}
+	}
+
+	// Bound the output size — anything more than ~500 chars suggests a
+	// subtree leaked in.
+	if len([]rune(out)) > 500 {
+		t.Errorf("lookup_page output unexpectedly long (%d runes) — possible subtree leak:\n%s", len([]rune(out)), out)
+	}
+}
+
+func TestExecuteLookupPage_NotFound(t *testing.T) {
+	h := setupNavTestDB(t)
+	out := h.executeLookupPage(context.Background(), toolCall(map[string]any{"title": "Nonexistent"}))
+	if !strings.Contains(out, "未找到页面") {
+		t.Errorf("expected '未找到页面' in output, got: %s", out)
+	}
+}

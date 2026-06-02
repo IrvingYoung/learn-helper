@@ -187,7 +187,7 @@ func WikiTools() []Tool {
 		// ── Read tools (unchanged) ──
 		{
 			Name:        "lookup_page",
-			Description: "根据页面标题查询页面信息,返回页面 ID、标题等元数据。可自动执行,无需用户确认。",
+			Description: "根据页面标题精确匹配查询页面元数据（id / slug / page_type / content_status / parent_id）。开销低（~200 tokens），适合做 [[X]] 链接前的存在性验证。**只返元数据，不返 subtree**——想看子树用 list_children。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
