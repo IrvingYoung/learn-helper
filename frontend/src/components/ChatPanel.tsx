@@ -16,6 +16,8 @@ import {
   streamChat,
   postPermissionResponse,
   postAskUserResponse,
+  fetchSkills,
+  type SkillInfo,
   WRITE_TOOLS,
 } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
@@ -53,6 +55,9 @@ export const ChatPanel = forwardRef<{
   const [streamingToolCalls, setStreamingToolCalls] = useState<Map<string, ToolCallInfo>>(new Map());
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequestEvent | null>(null);
   const [askUserRequest, setAskUserRequest] = useState<AskUserRequestEvent | null>(null);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [skillPanelOpen, setSkillPanelOpen] = useState(false);
+  const [skillPanelIndex, setSkillPanelIndex] = useState(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const prevLoadingRef = useRef(false);
@@ -174,6 +179,13 @@ export const ChatPanel = forwardRef<{
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  const filteredSkills = useMemo(() => {
+    if (!skillPanelOpen) return [];
+    const q = input.slice(1).toLowerCase(); // strip leading `/`
+    if (q === "") return skills;
+    return skills.filter((s) => s.name.toLowerCase().startsWith(q));
+  }, [skillPanelOpen, input, skills]);
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
@@ -187,6 +199,9 @@ export const ChatPanel = forwardRef<{
 
   useEffect(() => {
     loadConversations();
+    fetchSkills()
+      .then(setSkills)
+      .catch(() => setSkills([]));
   }, []);
 
   useEffect(() => {
@@ -720,43 +735,103 @@ export const ChatPanel = forwardRef<{
             </button>
           </div>
         )}
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/40 focus:border-th-accent transition-all duration-200"
-            placeholder={activeConv ? "输入消息..." : "输入消息，自动新建会话..."}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            disabled={loading}
-          />
-          {loading ? (
-            <button
-              onClick={handleStop}
-              className="px-3 rounded-xl text-white bg-th-danger hover:opacity-90 active:scale-[0.97] transition-all duration-150 flex items-center justify-center"
-              title="停止"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              onClick={() => handleSend()}
-              disabled={!input.trim()}
-              className="px-3 rounded-xl text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150 flex items-center justify-center"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
+        <div className="relative">
+          {skillPanelOpen && filteredSkills.length > 0 && (
+            <div className="absolute bottom-full mb-2 left-0 right-12 max-h-64 overflow-y-auto rounded-xl border border-th-input-border bg-th-bg-secondary shadow-lg z-10">
+              {filteredSkills.map((s, i) => (
+                <button
+                  key={s.name}
+                  type="button"
+                  onClick={() => {
+                    setInput(`/${s.name} `);
+                    setSkillPanelOpen(false);
+                    inputRef.current?.focus();
+                  }}
+                  onMouseEnter={() => setSkillPanelIndex(i)}
+                  className={`w-full text-left px-3 py-2 text-sm ${
+                    i === skillPanelIndex ? "bg-th-accent/20" : ""
+                  }`}
+                >
+                  <div className="font-mono text-th-text-primary">/{s.name}</div>
+                  <div className="text-xs text-th-text-secondary mt-0.5">{s.description}</div>
+                </button>
+              ))}
+            </div>
           )}
+          <div className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/40 focus:border-th-accent transition-all duration-200"
+              placeholder={activeConv ? "输入消息..." : "输入消息，自动新建会话..."}
+              value={input}
+              onChange={(e) => {
+                const v = e.target.value;
+                setInput(v);
+                if (v === "/" || v.startsWith("/")) {
+                  setSkillPanelOpen(true);
+                  setSkillPanelIndex(0);
+                } else {
+                  setSkillPanelOpen(false);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (skillPanelOpen && filteredSkills.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSkillPanelIndex((i) => (i + 1) % filteredSkills.length);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSkillPanelIndex((i) => (i - 1 + filteredSkills.length) % filteredSkills.length);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setInput("");
+                    setSkillPanelOpen(false);
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    const match = input.match(SKILL_CMD_RE);
+                    if (match) {
+                      e.preventDefault();
+                      setSkillPanelOpen(false);
+                      handleSend();
+                      return;
+                    }
+                  }
+                }
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              disabled={loading}
+            />
+            {loading ? (
+              <button
+                onClick={handleStop}
+                className="px-3 rounded-xl text-white bg-th-danger hover:opacity-90 active:scale-[0.97] transition-all duration-150 flex items-center justify-center"
+                title="停止"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim()}
+                className="px-3 rounded-xl text-white bg-th-accent hover:opacity-90 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-150 flex items-center justify-center"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
