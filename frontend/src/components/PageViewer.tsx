@@ -204,7 +204,7 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
           </div>
         ) : (
           <div className="h-full overflow-y-auto custom-scroll">
-            <div ref={articleRef} className="relative max-w-2xl mx-auto px-6 py-10">
+            <div ref={articleRef} className="relative max-w-2xl @md:max-w-3xl @xl:max-w-4xl mx-auto px-6 py-10">
 
               {/* Breadcrumb */}
               {breadcrumb.length > 1 && (

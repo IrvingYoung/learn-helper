@@ -345,7 +345,7 @@ export function WikiPageLayout() {
             else if (size.asPercentage > 0 && rightCollapsed) setRightCollapsed(false);
           }}
         >
-          <div className="h-full overflow-hidden">
+          <div className="h-full overflow-hidden @container">
             {reviewSlugs.length > 0 ? (
               <TabbedPageReview
                 slugs={reviewSlugs}
