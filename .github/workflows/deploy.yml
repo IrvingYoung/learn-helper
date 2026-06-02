@@ -1,0 +1,93 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter learn-helper-frontend build
+      - run: |
+          mkdir -p backend/cmd/server/dist
+          rsync -a --delete frontend/dist/ backend/cmd/server/dist/
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - run: |
+          cd backend
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o learn-helper ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: learn-helper
+          path: backend/learn-helper
+          retention-days: 7
+
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: learn-helper
+
+      - name: SCP binary to /tmp
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "learn-helper"
+          target: "/tmp/learn-helper.new"
+
+      - name: Atomic swap + restart + health check
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+
+            # 1. Backup current binary
+            sudo install -m 0755 /opt/learn-helper/learn-helper /opt/learn-helper/learn-helper.bak
+
+            # 2. Atomic replace (mv on same fs = rename, no half-file reads)
+            sudo install -m 0755 -o learnhelper -g learnhelper /tmp/learn-helper.new /opt/learn-helper/learn-helper
+
+            # 3. Restart service
+            sudo systemctl restart learn-helper
+
+            # 4. Wait + health check
+            sleep 3
+            if ! curl -fsS http://127.0.0.1:8080/api/healthz; then
+              echo "Health check failed. Rolling back."
+              sudo install -m 0755 -o learnhelper -g learnhelper /opt/learn-helper/learn-helper.bak /opt/learn-helper/learn-helper
+              sudo systemctl restart learn-helper
+              sleep 2
+              exit 1
+            fi
+
+            # 5. Cleanup
+            rm -f /tmp/learn-helper.new
+            echo "Deploy OK at $(date -u +%FT%TZ)"
