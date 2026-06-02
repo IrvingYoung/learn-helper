@@ -748,8 +748,8 @@ export const ChatPanel = forwardRef<{
                     inputRef.current?.focus();
                   }}
                   onMouseEnter={() => setSkillPanelIndex(i)}
-                  className={`w-full text-left px-3 py-2 text-sm ${
-                    i === skillPanelIndex ? "bg-th-accent/20" : ""
+                  className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                    i === skillPanelIndex ? "bg-th-accent/30 ring-1 ring-th-accent/50" : "hover:bg-th-input-bg"
                   }`}
                 >
                   <div className="font-mono text-th-text-primary">/{s.name}</div>
