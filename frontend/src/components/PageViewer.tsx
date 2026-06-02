@@ -144,15 +144,47 @@ export function PageViewer({ page, collapsed, breadcrumb = [], onSelectPage, onI
   const handleCopyLink = useCallback(async () => {
     if (!page?.share_token) return;
     const url = `${window.location.origin}/share/${page.slug}?t=${page.share_token}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setLinkCopied(true);
-      setTimeout(() => setLinkCopied(false), 1500);
-    } catch (err) {
-      console.error("Failed to copy share link:", err);
-    } finally {
-      setShareMenuOpen(false);
+
+    const fallbackCopy = (text: string) => {
+      // navigator.clipboard is only available in secure contexts (HTTPS or
+      // localhost). On plain-http deployments (like a bare VPS without a
+      // reverse proxy + TLS) we fall back to a hidden textarea + execCommand.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      ta.style.pointerEvents = 'none';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch (err) {
+        console.error('execCommand copy failed:', err);
+      }
+      document.body.removeChild(ta);
+      if (ok) {
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 1500);
+      } else {
+        console.error('Both navigator.clipboard and execCommand failed');
+      }
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(url);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 1500);
+      } catch (err) {
+        // Permission denied, no user gesture, etc. — fall through to fallback.
+        console.error('navigator.clipboard failed, falling back:', err);
+        fallbackCopy(url);
+      }
+    } else {
+      fallbackCopy(url);
     }
+    setShareMenuOpen(false);
   }, [page]);
 
   // Public visitors should not see the share menu, the draft confirmation
