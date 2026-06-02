@@ -12,7 +12,6 @@ interface MobileShellProps {
   displayPage: WikiPage | null;
   breadcrumb: { title: string; slug: string }[];
   onInternalLink: (href: string) => void;
-  onAskAI: (text: string, pageTitle: string) => void;
   onContentConfirmed: (pageId: number) => void;
   onWriteToolComplete: (tc?: ToolCallInfo) => void;
   focusPageId: number | null;
@@ -29,7 +28,6 @@ export function MobileShell({
   displayPage,
   breadcrumb,
   onInternalLink,
-  onAskAI: _onAskAI,
   onContentConfirmed,
   onWriteToolComplete,
   focusPageId,

@@ -10,6 +10,8 @@ import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
 import { TabbedPageReview } from './TabbedPageReview';
 import { BrandMark } from './BrandMark';
+import { useIsMobile } from '../lib/useIsMobile';
+import { MobileShell } from './MobileShell';
 
 const LAYOUT_KEY = 'wiki-layout';
 const DEFAULT_LAYOUT: Record<string, number> = { left: 20, center: 50, right: 30 };
@@ -56,6 +58,7 @@ export function WikiPageLayout({ urlSlug, shareTokenFromUrl }: WikiPageLayoutPro
   const [reviewSlugs, setReviewSlugs] = useState<string[]>([]);
   const { theme, toggleTheme } = useTheme();
   const [treeVersion, setTreeVersion] = useState(0);
+  const isMobile = useIsMobile();
 
   // Persist selected page across refreshes (owner only — public visitors don't
   // have a stable localStorage contract).
@@ -307,6 +310,24 @@ export function WikiPageLayout({ urlSlug, shareTokenFromUrl }: WikiPageLayoutPro
           />
         </div>
       </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <MobileShell
+        tree={tree || []}
+        selectedSlug={selectedSlug}
+        onSelectSlug={setSelectedSlug}
+        displayPage={displayPage}
+        breadcrumb={breadcrumb}
+        onInternalLink={handleInternalLink}
+        onContentConfirmed={handleContentConfirmed}
+        onWriteToolComplete={handlePageChanged}
+        focusPageId={displayPage?.id ?? null}
+        currentSlug={selectedSlug ?? displayPage?.slug ?? undefined}
+        currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined}
+      />
     );
   }
 
