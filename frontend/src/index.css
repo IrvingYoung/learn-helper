@@ -234,3 +234,23 @@ body::after {
   }
   body::after { opacity: 0.1; }
 }
+
+/* === Mobile adjustments === */
+@media (max-width: 767px) {
+  /* Larger touch targets for tree nodes */
+  .knowledge-tree-node {
+    min-height: 44px;
+  }
+
+  /* PageViewer: reduce padding on mobile */
+  .page-viewer-article {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  /* ChatPanel input: full width, taller */
+  .chat-input-mobile {
+    min-height: 48px;
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+}
