@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -431,7 +432,16 @@ func renderKnowledgeGaps(ctx context.Context, db GapsDB) string {
 
 	var b strings.Builder
 	b.WriteString("【知识缺口】\n")
-	for id, empties := range groupEmpty {
+	// Iterate top-level IDs in ascending order so output is deterministic
+	// (test-stable). Iterating groupEmpty directly would use map iteration
+	// order, which is randomized across runs.
+	ids := make([]int64, 0, len(groupEmpty))
+	for id := range groupEmpty {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		empties := groupEmpty[id]
 		b.WriteString(fmt.Sprintf("  📁 %s: %d 个空页（%s）\n",
 			topLevel[id], len(empties), strings.Join(empties, " / ")))
 	}
