@@ -15,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"learn-helper/internal/ai"
+	"learn-helper/internal/ai/skills"
 	"learn-helper/internal/cron"
 	"learn-helper/internal/engine"
 	"learn-helper/internal/handler"
@@ -321,8 +322,24 @@ func main() {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_cron_runs_task_id ON cron_runs(task_id, started_at DESC)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status)`)
 
+	// --- Skill registry ---
+	var skillReg *skills.Registry
+	if dir := os.Getenv("LH_SKILLS_DIR"); dir != "" {
+		fsys := os.DirFS(dir)
+		skillReg, err = skills.LoadFromFS(fsys)
+		if err != nil {
+			log.Fatalf("load skills from %s: %v", dir, err)
+		}
+	} else {
+		skillReg, err = skills.LoadFromFS(skills.EmbedFS())
+		if err != nil {
+			log.Fatalf("load embedded skills: %v", err)
+		}
+	}
+	log.Printf("[boot] loaded %d skills", len(skillReg.List()))
+
 	wikiHandler := handler.NewWikiHandler(db)
-	aiHandler := handler.NewAIHandler(db)
+	aiHandler := handler.NewAIHandler(db, skillReg)
 	queries := model.New(db)
 	eng := engine.NewExecutionEngine(db, queries)
 
@@ -414,6 +431,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
+
+	// Skills catalog (outside /api route group for clarity)
+	r.Get("/api/skills", (&handler.SkillsHandler{Registry: skillReg}).HandleList)
 
 	r.Route("/api", func(r chi.Router) {
 		// Wiki routes

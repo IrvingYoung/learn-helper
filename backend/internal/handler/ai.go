@@ -18,26 +18,29 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/net/html"
 	"learn-helper/internal/ai"
+	"learn-helper/internal/ai/skills"
 	"learn-helper/internal/engine"
 	"learn-helper/internal/model"
 )
 
 type AIHandler struct {
-	db          *sql.DB
-	queries     *model.Queries
-	engine      *engine.ExecutionEngine
-	permissions *PermissionRegistry
-	askUsers    *AskUserRegistry
+	db            *sql.DB
+	queries       *model.Queries
+	engine        *engine.ExecutionEngine
+	permissions   *PermissionRegistry
+	askUsers      *AskUserRegistry
+	SkillRegistry *skills.Registry
 }
 
-func NewAIHandler(db *sql.DB) *AIHandler {
+func NewAIHandler(db *sql.DB, reg *skills.Registry) *AIHandler {
 	q := model.New(db)
 	return &AIHandler{
-		db:          db,
-		queries:     q,
-		engine:      engine.NewExecutionEngine(db, q),
-		permissions: NewPermissionRegistry(),
-		askUsers:    NewAskUserRegistry(),
+		db:            db,
+		queries:       q,
+		engine:        engine.NewExecutionEngine(db, q),
+		permissions:   NewPermissionRegistry(),
+		askUsers:      NewAskUserRegistry(),
+		SkillRegistry: reg,
 	}
 }
 
