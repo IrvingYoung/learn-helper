@@ -80,7 +80,7 @@ jobs:
 
             # 4. Wait + health check
             sleep 3
-            if ! curl -fsS http://127.0.0.1:8080/api/healthz; then
+            if ! curl -fsS http://127.0.0.1:8080/health; then
               echo "Health check failed. Rolling back."
               sudo install -m 0755 -o learnhelper -g learnhelper /opt/learn-helper/learn-helper.bak /opt/learn-helper/learn-helper
               sudo systemctl restart learn-helper
