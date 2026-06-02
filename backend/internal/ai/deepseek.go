@@ -28,10 +28,7 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 		model = p.model
 	}
 
-	messages := make([]deepseekMessage, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		messages = append(messages, messageToDeepSeekMessage(m))
-	}
+	messages := buildDeepSeekMessages(req)
 
 	dsReq := deepseekRequest{
 		Model:       model,
@@ -128,10 +125,7 @@ func (p *DeepSeekProvider) StreamChat(ctx context.Context, req ChatRequest) (<-c
 		model = p.model
 	}
 
-	messages := make([]deepseekMessage, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		messages = append(messages, messageToDeepSeekMessage(m))
-	}
+	messages := buildDeepSeekMessages(req)
 
 	dsReq := deepseekRequest{
 		Model:       model,
@@ -187,6 +181,21 @@ func (p *DeepSeekProvider) StreamChat(ctx context.Context, req ChatRequest) (<-c
 	}()
 
 	return ch, nil
+}
+
+// buildDeepSeekMessages converts a ChatRequest into the OpenAI-compatible
+// messages slice. The SystemPrompt is prepended as a role="system" message
+// when non-empty — without this, the OpenAI/DeepSeek API never receives the
+// system instructions (it has no separate "system" parameter on the request).
+func buildDeepSeekMessages(req ChatRequest) []deepseekMessage {
+	out := make([]deepseekMessage, 0, len(req.Messages)+1)
+	if req.SystemPrompt != "" {
+		out = append(out, deepseekMessage{Role: "system", Content: req.SystemPrompt})
+	}
+	for _, m := range req.Messages {
+		out = append(out, messageToDeepSeekMessage(m))
+	}
+	return out
 }
 
 // messageToDeepSeekMessage converts a Message to DeepSeek (OpenAI-compatible) message format.
