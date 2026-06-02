@@ -246,6 +246,23 @@ func WikiTools() []Tool {
 	}
 }
 
+// WikiToolsForCron returns the same tool set as WikiTools but excludes
+// ask_user. Cron tasks run autonomously with no human in the loop, so the AI
+// must not be able to call ask_user (which would block forever waiting for a
+// response). All other read and write tools are retained so the AI can still
+// fetch, search, read, and modify the wiki on its own.
+func WikiToolsForCron() []Tool {
+	all := WikiTools()
+	out := make([]Tool, 0, len(all))
+	for _, t := range all {
+		if t.Name == "ask_user" {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 // Role constants
 const (
 	RoleWikiMaintainer = "wiki_maintainer"
@@ -350,7 +367,7 @@ func buildWikiMaintainerPrompt(wikiContext string) string {
 1. 写前先读:用 lookup_page / search_pages / read_page 了解上下文
 2. 方向不确定 → 调 ask_user(context 传具体物料,kind: outline / page / markdown / diff),不调 ask_user 来确认写操作
 3. 写操作一次可以调多个(同一批权限闸门),但**不要在同批里引用尚未执行的 op 结果**——需要等结果的话拆到下一轮
-4. 页面内用 [页面标题] 语法做链接
+4. 页面内用 [[页面标题]] 语法做链接（双中括号，不要写成 [标题](路径) 这种普通 markdown 链接，否则跳转会失效）
 5. 用户没让你做 → 不主动写
 6. delete_page 慎用:能 move_page / update_page 解决的优先用那两个
 7. 改大段用 update_page,改小段用 patch_page(避免重写整页)

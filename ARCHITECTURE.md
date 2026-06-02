@@ -140,6 +140,14 @@ AI 入站 prompt 的主入口。由 `OverviewDB` / `KnowledgeMapTreeDB` / `Recen
 | 用户直接创建计划 | POST | `/api/plans` | PlanHandler.CreatePlan |
 | 计划确认 | POST | `/api/plans/confirm` | PlanHandler.ConfirmPlan |
 | 计划拒绝 | POST | `/api/plans/reject` | PlanHandler.RejectPlan |
+| 定时任务列表 | GET | `/api/cron/tasks` | cron.Handler.ListTasks |
+| 创建定时任务 | POST | `/api/cron/tasks` | cron.Handler.CreateTask |
+| 单个定时任务 | GET | `/api/cron/tasks/{id}` | cron.Handler.GetTask |
+| 修改定时任务 | PATCH | `/api/cron/tasks/{id}` | cron.Handler.PatchTask |
+| 删除定时任务 | DELETE | `/api/cron/tasks/{id}` | cron.Handler.DeleteTask |
+| 立即运行 | POST | `/api/cron/tasks/{id}/run-now` | cron.Handler.RunNow |
+| 运行历史 | GET | `/api/cron/tasks/{id}/runs` | cron.Handler.ListRuns |
+| 单次运行 | GET | `/api/cron/runs/{id}` | cron.Handler.GetRun |
 | 健康检查 | GET | `/health` | inline |
 
 **Plan 状态机**
@@ -495,6 +503,26 @@ sqlite3 learn-helper.db "SELECT id, path FROM wiki_pages WHERE parent_id IS NOT 
 sqlite3 learn-helper.db "SELECT p1.id FROM wiki_pages p1 JOIN wiki_pages p2 ON p1.parent_id = p2.id WHERE p2.parent_id = p1.id"
 ```
 
+## Cron Tasks (定时任务)
+
+用户可配置的 cron 定时任务：到点触发 AI 自主执行用户描述的任务，复用现有 AI 工具链写入 wiki。首个用例：每天抓 GitHub trending 并生成中文摘要页面。
+
+**核心组件**（全部在 `internal/cron/`）：
+
+- **`Scheduler`**：单 goroutine + 60s tick。每 tick 在单事务里查 `enabled=1 AND next_run_at <= now AND last_status != 'running' AND (last_run_at IS NULL OR last_run_at < now-2h)`，对每条 update `last_status='running'` + 新 `next_run_at`，事务提交后 `go runner.Run()` 派发。In-process guard（`executing map[int64]bool`）防同任务并发。启动时立即跑一次 tick（startup backfill），抓 server 停机期间错过的任务。
+- **`Runner`**：构造 `ChatRequest`（cron 模式 system prompt + `WikiToolsForCron` + user message），调 `aiHandler.RunReAct(ctx, provider, req, opts)`。opts 设 `AutoApproveWrites=true`（permission 闸门短路，直接 `executeWriteTool`）+ `MaxSteps` + `Timeout`。每次 run 建独立 conversation（`context_type='cron_task'`），完整对话持久化。
+- **Cron 模式 prompt**（`internal/ai/cron_prompt.go`）：在原 wiki_maintainer prompt 顶部插 prefix — 声明 autonomous 模式（用户不在场、ask_user 禁用、auto_approve 开启）+ 当前时间 + 任务 prompt + 可选的上次运行摘要。
+- **`WikiToolsForCron()`**：复用 `WikiTools()` 但过滤 `ask_user` — AI 根本看不到这个工具，无法调用。
+- **DB 层**（`cron.DB` 接口 + `sqlDBAdapter`）：任务 CRUD、调度 claim/run/list、conversation 创建和消息追加。`OnDeleteCASCADE` 让删任务时 `cron_runs` 自动清。
+
+**ReAct 循环复用**：`internal/handler/ai_react.go` 抽出 `ReActEventSink` 接口 + `RunReAct` 公共方法。HTTP 路径用 `sseSink`（写 SSE），cron 路径用 `cronSink`（只 log）。两条路径共享同一套 ReAct 循环、tool dispatch、message build。`AIHandler.AIChat` 是薄包装：解析请求 → 构造 sink → 调 `RunReAct` → 保存 assistant 消息 → 发 done 事件。
+
+**关键决策**：
+- `auto_approve` 默认 `true`（用户决策）— 写操作直接生效
+- 记忆模型 A：每次全新对话 + 注入上次 `cron_runs.output_summary`
+- `ask_user` 通过工具过滤禁用（最干净的方式）
+- 双层超时：`timeout_sec`（per-task）+ `max_steps`（per-run），防 AI 失控
+
 ## 领域词汇
 
 | 术语 | 项目内含义 | 备注 |
@@ -503,6 +531,7 @@ sqlite3 learn-helper.db "SELECT p1.id FROM wiki_pages p1 JOIN wiki_pages p2 ON p
 | content_status | `empty` / `draft` / `published` | empty = 刚创建或内容被清空 |
 | summary_status | `empty` / `pending` / `ready` / `failed` | 由 SummaryWorker 维护 |
 | plan | 一次 AI 提出的多动作写入包 | 落库到 `plans` 表，有状态机 |
+| cron task | 用户配置的定时任务 | 落 `cron_tasks` 表，由 Scheduler 触发 |
 | plan_action | plan 内单个动作 | `type ∈ {create_page, update_page, delete_page, link_pages, move_page}` |
 | propose_plan | AI 唯一触发确认的写入工具 | 入参含 reasoning / outline / phases / actions[] |
 | outline | propose_plan 的可选项，确认后批量创建空骨架页 | 走 engine.ExecOutline |

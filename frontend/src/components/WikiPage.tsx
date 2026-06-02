@@ -4,7 +4,7 @@ import useSWR from 'swr';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { fetchWikiTree, fetchWikiPage, fetchOverviewPage, createEmptyWikiPage, renameWikiPage, moveWikiPage, deleteWikiPage } from '../lib/api';
 import { useTheme } from '../contexts/ThemeContext';
-import type { WikiPage, WikiTreeNode } from '../types';
+import type { WikiPage, WikiTreeNode, ToolCallInfo } from '../types';
 import { KnowledgeTree } from './KnowledgeTree';
 import { ChatPanel } from './ChatPanel';
 import { PageViewer } from './PageViewer';
@@ -97,10 +97,59 @@ export function WikiPageLayout() {
     return path;
   }, [selectedSlug, tree]);
 
-  const handlePageChanged = useCallback(() => {
+  const slugIndex = useMemo(() => {
+    const titleToSlug = new Map<string, string>();
+    const slugSet = new Set<string>();
+    const walk = (nodes: WikiTreeNode[]) => {
+      for (const n of nodes) {
+        titleToSlug.set(n.title, n.slug);
+        slugSet.add(n.slug);
+        if (n.children) walk(n.children);
+      }
+    };
+    if (tree) walk(tree);
+    return { titleToSlug, slugSet };
+  }, [tree]);
+
+  const handleInternalLink = useCallback((href: string) => {
+    let target = href;
+    let lookupByTitle = false;
+    if (target.startsWith('wiki:')) {
+      target = target.slice(5);
+      lookupByTitle = true;
+    }
+    try {
+      target = decodeURIComponent(target);
+    } catch { /* keep as-is */ }
+    target = target.replace(/^\/+/, '').split(/[?#]/)[0];
+    if (!target) return;
+
+    if (lookupByTitle) {
+      const slug = slugIndex.titleToSlug.get(target);
+      if (slug) { setSelectedSlug(slug); return; }
+    }
+    if (slugIndex.slugSet.has(target)) {
+      setSelectedSlug(target);
+      return;
+    }
+    const slugByTitle = slugIndex.titleToSlug.get(target);
+    if (slugByTitle) setSelectedSlug(slugByTitle);
+  }, [slugIndex]);
+
+  const handlePageChanged = useCallback((tc?: ToolCallInfo) => {
     setTreeVersion(v => v + 1);
     mutateOverview();
-  }, [mutateOverview]);
+    if (tc?.name === "create_page" && tc.output) {
+      try {
+        const result = JSON.parse(tc.output);
+        if (typeof result.slug === "string" && result.slug) {
+          setSelectedSlug(result.slug);
+          return;
+        }
+      } catch { /* fall through to mutate current page */ }
+    }
+    mutateCurrentPage();
+  }, [mutateCurrentPage, mutateOverview]);
 
   const handleContentConfirmed = useCallback((_pageId: number) => {
     mutateCurrentPage();
@@ -219,6 +268,15 @@ export function WikiPageLayout() {
             )}
           </button>
           <button
+            onClick={() => navigate('/cron')}
+            className="p-2 rounded-md text-th-text-muted hover:text-th-text-primary hover:bg-th-hover transition-all duration-150 active:scale-90"
+            title="定时任务"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+          <button
             onClick={() => navigate('/settings')}
             className="p-2 rounded-md text-th-text-muted hover:text-th-text-primary hover:bg-th-hover transition-all duration-150 active:scale-90"
             title="设置"
@@ -270,7 +328,7 @@ export function WikiPageLayout() {
 
         {/* Center: Chat */}
         <Panel id="center" minSize={300}>
-          <ChatPanel ref={chatPanelRef} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? displayPage?.slug ?? undefined} currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined} />
+          <ChatPanel ref={chatPanelRef} focusPageId={displayPage?.id ?? null} currentSlug={selectedSlug ?? displayPage?.slug ?? undefined} currentPageTitle={selectedPageInfo.title ?? displayPage?.title ?? undefined} onWriteToolComplete={handlePageChanged} />
         </Panel>
 
         <Separator />
@@ -294,6 +352,7 @@ export function WikiPageLayout() {
                 onDone={handleReviewDone}
                 onSelectPage={(slug) => setSelectedSlug(slug)}
                 onContentConfirmed={handleContentConfirmed}
+                onInternalLink={handleInternalLink}
               />
             ) : (
               <PageViewer
@@ -302,6 +361,7 @@ export function WikiPageLayout() {
                 breadcrumb={breadcrumb}
                 onViewPage={(slug) => setSelectedSlug(slug)}
                 onSelectPage={(slug) => setSelectedSlug(slug)}
+                onInternalLink={handleInternalLink}
                 onAskAI={handleAskAI}
                 onContentConfirmed={handleContentConfirmed}
               />

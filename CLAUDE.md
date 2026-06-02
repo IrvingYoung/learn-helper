@@ -28,10 +28,11 @@ cd frontend && npm run dev  # starts on :3000
 
 ## 关键约定
 
-- All AI writes require user confirmation
+- All AI writes require user confirmation (cron tasks opt out via `auto_approve=true`)
 - Wiki pages stored in `wiki_pages` table
 - AI role: `wiki_maintainer`
 - SSE streaming for AI chat
+- Cron tasks: user-configurable, AI runs autonomously (see `/cron` page)
 
 ## AI Role
 

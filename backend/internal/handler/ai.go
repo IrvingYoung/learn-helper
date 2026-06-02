@@ -293,6 +293,15 @@ func (h *AIHandler) UpsertAIConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- AI Chat (SSE streaming) ---
+//
+// This is now a thin wrapper around RunReAct (see ai_react.go). The HTTP
+// path:
+//   - parses the request, saves the user message, loads history
+//   - builds the system prompt with the wiki context
+//   - constructs a ChatRequest (messages + tools + system prompt)
+//   - calls h.RunReAct with an SSE sink and AutoApproveWrites=false
+//   - saves the assistant message, sends the SSE "done" event
+//   - updates the overview page asynchronously
 
 func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	// Cancel any pending permission/ask_user gates when this SSE stream ends
@@ -375,7 +384,7 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load history
-	rows, err := h.db.QueryContext(ctx, `SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at`, req.ConversationID)
+	rows, err := h.db.QueryContext(ctx, `SELECT role, content, tool_call_id, tool_summary FROM messages WHERE conversation_id = ? ORDER BY created_at`, req.ConversationID)
 	if err != nil {
 		http.Error(w, "Failed to load history", http.StatusInternalServerError)
 		return
@@ -385,9 +394,23 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	var aiMessages []ai.Message
 	for rows.Next() {
 		var role, content string
-		if rows.Scan(&role, &content) == nil {
-			aiMessages = append(aiMessages, ai.Message{Role: role, Content: content})
+		var toolCallID, toolSummary sql.NullString
+		if err := rows.Scan(&role, &content, &toolCallID, &toolSummary); err != nil {
+			continue
 		}
+		// Inject the tool summary as a one-line prefix in the assistant
+		// content so the model can see what tools it used in prior turns.
+		// This is the long-term memory substitute for the full tool_result
+		// messages (which we don't persist — see comment in
+		// summarizeToolCall).
+		if role == "assistant" && toolSummary.Valid && toolSummary.String != "" {
+			content = content + "\n\n[本轮工具调用: " + toolSummary.String + "]"
+		}
+		msg := ai.Message{Role: role, Content: content}
+		if toolCallID.Valid {
+			msg.ToolCallID = toolCallID.String
+		}
+		aiMessages = append(aiMessages, msg)
 	}
 
 	// Sliding window: keep only recent messages to avoid context drift and tool-calling degradation
@@ -441,9 +464,9 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 		page, err := h.queries.GetWikiPageBySlug(ctx, req.CurrentSlug)
 		if err == nil {
 			wikiContext += fmt.Sprintf(
-					"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n当用户询问关于\"这个页面\"或\"当前页面\"的问题时，请使用 read_page 读取当前页面内容后再回答。不要发起空搜索。\n",
-					page.Title, page.Slug, page.ID,
-				)
+				"\n用户当前正在查看的页面：%s (slug: %s, ID: %d)\n当用户询问关于\"这个页面\"或\"当前页面\"的问题时，请使用 read_page 读取当前页面内容后再回答。不要发起空搜索。\n",
+				page.Title, page.Slug, page.ID,
+			)
 			log.Printf("[AIChat] injected current page context: %s (slug=%s)", page.Title, page.Slug)
 		} else {
 			log.Printf("[AIChat] current page slug not found: slug=%s err=%v", req.CurrentSlug, err)
@@ -453,222 +476,39 @@ func (h *AIHandler) AIChat(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[AIChat] wikiContext excerpt: %s", wikiContext[:min(len(wikiContext), 500)])
 	systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
 
-	// ====== ReAct Loop ======
-	// Uses token-by-token streaming Chat(), auto-executes read-only tools,
-	// injects results, then lets the AI see them and reason further,
-	// until it stops calling tools, requests user confirmation, or hits max iterations.
-
-	fullContent := &strings.Builder{}
-	var toolCallResults []ToolCallResult
-	const maxIterations = 20
-
-reactLoop:
-	for iteration := 0; iteration < maxIterations; iteration++ {
-		log.Printf("[ReAct] iteration=%d messages=%d", iteration, len(aiMessages))
-
-		chatReq := ai.ChatRequest{
-			Messages:     aiMessages,
-			SystemPrompt: systemPrompt,
-			MaxTokens:    8192,
-		}
-		if convRole == ai.RoleWikiMaintainer {
-			chatReq.Tools = ai.WikiTools()
-		}
-
-		streamCh, err := provider.StreamChat(ctx, chatReq)
-		if err != nil {
-			log.Printf("[ReAct] StreamChat error: %v", err)
-			sseWrite(w, "error", fmt.Sprintf("AI stream error: %v", err), canFlush, flusher)
-			return
-		}
-
-		var textBuilder strings.Builder
-		var respToolCalls []ai.ToolCall
-
-	streamLoop:
-		for chunk := range streamCh {
-			if chunk.Content != "" {
-				sseWrite(w, "content", chunk.Content, canFlush, flusher)
-				textBuilder.WriteString(chunk.Content)
-			}
-			if chunk.ToolCall != nil {
-				respToolCalls = append(respToolCalls, *chunk.ToolCall)
-			}
-			if chunk.Done {
-				break streamLoop
-			}
-		}
-
-		respContent := textBuilder.String()
-		log.Printf("[ReAct] iteration=%d content_len=%d tool_calls=%d", iteration, len(respContent), len(respToolCalls))
-		for i, tc := range respToolCalls {
-			log.Printf("[ReAct]   tool_call[%d]: name=%s input_len=%d", i, tc.Name, len(tc.Input))
-		}
-
-		// No tool calls → AI is done reasoning
-		toolCalls := respToolCalls
-		if len(toolCalls) == 0 {
-			// Accumulate streamed content before breaking
-			if respContent != "" {
-				fullContent.WriteString(respContent)
-				fullContent.WriteString("\n\n")
-			}
-			log.Printf("[ReAct] iteration=%d no tool calls, done", iteration)
-			break reactLoop
-		}
-
-		// Classify tool calls
-		var calls []aiToolCall
-		for _, tc := range toolCalls {
-			calls = append(calls, aiToolCall{Name: tc.Name, ID: tc.ID, Input: tc.Input})
-		}
-		readBatch, writeBatch, askBatch := classifyToolCalls(calls)
-
-		log.Printf("[ReAct] iteration=%d reads=%d writes=%d asks=%d",
-			iteration, len(readBatch), len(writeBatch), len(askBatch))
-
-		// Build assistant turn blocks (text + tool_use for every tool call)
-		var blocks []ai.ContentBlock
-		if respContent != "" {
-			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeText, Text: respContent})
-		}
-		for _, tc := range toolCalls {
-			var input json.RawMessage
-			if tc.Input != "" {
-				input = json.RawMessage(tc.Input)
-			}
-			blocks = append(blocks, ai.ContentBlock{Type: ai.ContentTypeToolUse, ID: tc.ID, Name: tc.Name, Input: input})
-		}
-		if assistantContent, err := ai.ContentBlocksToJSON(blocks); err == nil {
-			aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: assistantContent})
-		}
-
-		// Execute read tools (auto)
-		for _, c := range readBatch {
-			log.Printf("[ReAct] read tool: %s", c.Name)
-			sseWriteToolCallStart(w, c.ID, c.Name, c.Input, canFlush, flusher)
-			result := h.executeReadTool(ctx, c)
-			sseWriteToolResult(w, c.ID, c.Name, result, "", canFlush, flusher)
-			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: c.ID})
-		}
-
-		// Execute write tools (permission gate, batched)
-		if len(writeBatch) > 0 {
-			requestID := fmt.Sprintf("perm-%d", time.Now().UnixNano())
-			ch := h.permissions.Register(requestID, 1)
-
-			items := make([]PermissionRequestItem, 0, len(writeBatch))
-			for _, c := range writeBatch {
-				sseWriteToolCallStart(w, c.ID, c.Name, c.Input, canFlush, flusher)
-				parsed, _ := parseWriteInput(c.Name, json.RawMessage(c.Input))
-				items = append(items, PermissionRequestItem{
-					ID:      c.ID,
-					Tool:    c.Name,
-					Input:   parsed,
-					Preview: previewWrite(c.Name, parsed),
-				})
-			}
-			sseWritePermissionRequired(w, PermissionRequest{
-				RequestID:      requestID,
-				ConversationID: req.ConversationID,
-				Items:          items,
-			}, canFlush, flusher)
-
-			log.Printf("[ReAct] waiting for permission decisions: %s (n=%d)", requestID, len(writeBatch))
-			decisions := <-ch // BLOCKS
-
-			// Index decisions by ID
-			decByID := map[string]PermissionDecision{}
-			for _, d := range decisions {
-				decByID[d.ID] = d
-			}
-
-			for _, c := range writeBatch {
-				dec, ok := decByID[c.ID]
-				if !ok {
-					dec = PermissionDecision{ID: c.ID, Action: "reject"}
-				}
-
-				switch dec.Action {
-				case "approve", "edit":
-					input := c.Input
-					if dec.Action == "edit" && dec.EditedInput != nil {
-						b, _ := json.Marshal(dec.EditedInput)
-						input = string(b)
-					}
-					result, execErr := h.executeWriteTool(ctx, c.Name, input, req.FocusPageID)
-					if execErr != nil {
-						sseWriteToolResult(w, c.ID, c.Name, "", execErr.Error(), canFlush, flusher)
-						aiMessages = append(aiMessages, ai.Message{
-							Role: "tool", Content: fmt.Sprintf("error: %s", execErr.Error()), ToolCallID: c.ID,
-						})
-					} else {
-						sseWriteToolResult(w, c.ID, c.Name, result, "", canFlush, flusher)
-						aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: result, ToolCallID: c.ID})
-					}
-				default: // reject or unknown
-					sseWriteToolResult(w, c.ID, c.Name, "", "rejected by user", canFlush, flusher)
-					aiMessages = append(aiMessages, ai.Message{
-						Role: "tool", Content: `{"error":"rejected by user"}`, ToolCallID: c.ID,
-					})
-				}
-			}
-		}
-
-		// Execute ask_user (one at a time, in order)
-		for _, c := range askBatch {
-			sseWriteToolCallStart(w, c.ID, c.Name, c.Input, canFlush, flusher)
-			requestID := fmt.Sprintf("ask-%d", time.Now().UnixNano())
-			ch := h.askUsers.Register(requestID)
-
-			var parsed struct {
-				Question      string          `json:"question"`
-				Options       []string        `json:"options"`
-				Context       *AskUserContext `json:"context,omitempty"`
-				MultiSelect   bool            `json:"multi_select"`
-				AllowFreeText bool            `json:"allow_free_text"`
-				Header        string          `json:"header,omitempty"`
-			}
-			_ = json.Unmarshal([]byte(c.Input), &parsed)
-
-			sseWriteAskUserRequest(w, AskUserRequest{
-				RequestID:      requestID,
-				ConversationID: req.ConversationID,
-				Question:       parsed.Question,
-				Options:        parsed.Options,
-				Context:        parsed.Context,
-				MultiSelect:    parsed.MultiSelect,
-				AllowFreeText:  parsed.AllowFreeText,
-				Header:         parsed.Header,
-			}, canFlush, flusher)
-
-			log.Printf("[ReAct] waiting for ask_user answer: %s", requestID)
-			resp := <-ch // BLOCKS
-			answerJSON, _ := json.Marshal(map[string]any{"answer": resp.Answer})
-			sseWriteToolResult(w, c.ID, c.Name, string(answerJSON), "", canFlush, flusher)
-			aiMessages = append(aiMessages, ai.Message{Role: "tool", Content: string(answerJSON), ToolCallID: c.ID})
-		}
-
-		// Accumulate text content (post-tool reasoning, if any)
-		if respContent != "" && len(writeBatch) == 0 && len(askBatch) == 0 {
-			fullContent.WriteString(respContent)
-			fullContent.WriteString("\n\n")
-		}
-
-		// Loop continues → AI sees tool results and can reason further
-		if iteration == maxIterations-1 {
-			msg := "抱歉，我还没有得出结论，请重新描述您的问题。"
-			sseWrite(w, "content", msg, canFlush, flusher)
-			fullContent.WriteString(msg)
-		}
+	// Build the chat request
+	chatReq := ai.ChatRequest{
+		Messages:     aiMessages,
+		SystemPrompt: systemPrompt,
+		MaxTokens:    8192,
+	}
+	if convRole == ai.RoleWikiMaintainer {
+		chatReq.Tools = ai.WikiTools()
 	}
 
+	// Delegate the ReAct loop to RunReAct
+	sink := &sseSink{w: w, flusher: flusher, canFlush: canFlush}
+	result, _ := h.RunReAct(ctx, provider, chatReq, ReActOptions{
+		MaxSteps:          20,
+		Sink:              sink,
+		RunID:             req.ConversationID,
+		ConversationID:    req.ConversationID,
+		FocusPageID:       req.FocusPageID,
+		AutoApproveWrites: false, // HTTP path always uses the permission gate
+	})
+
 	// ====== Save assistant message ======
-	assistantText := strings.TrimSpace(fullContent.String())
+	assistantText := ""
+	toolCallResults := []ToolCallResult{}
+	if result != nil {
+		assistantText = result.FinalContent
+		toolCallResults = result.ToolCallResults
+	}
 	if assistantText != "" {
 		toolCallsJSON, _ := json.Marshal(toolCallResults)
-		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count, tool_calls) VALUES (?, 'assistant', ?, ?, 0, ?)`,
-			req.ConversationID, assistantText, config.Provider, string(toolCallsJSON))
+		toolSummary := summarizeToolCalls(toolCallResults)
+		h.db.ExecContext(ctx, `INSERT INTO messages (conversation_id, role, content, model_provider, token_count, tool_calls, tool_summary) VALUES (?, 'assistant', ?, ?, 0, ?, ?)`,
+			req.ConversationID, assistantText, config.Provider, string(toolCallsJSON), toolSummary)
 	}
 
 	// Auto-title after first response: use first 48 chars of user's first message
@@ -680,8 +520,9 @@ reactLoop:
 		h.db.ExecContext(ctx, `UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, title, req.ConversationID)
 	}
 
-	// ====== Send done event ======
-	sseWrite(w, "done", `{"token_count":0}`, canFlush, flusher)
+	// Send done event. RunReAct does not call sink.WriteDone() itself — the
+	// caller decides when to signal completion.
+	sink.WriteDone()
 
 	if convRole == ai.RoleWikiMaintainer {
 		go h.updateOverviewPage()
@@ -711,13 +552,18 @@ func (h *AIHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var text string
 	if ext == ".pdf" {
-		text = "[PDF file uploaded - " + header.Filename + ", " + fmt.Sprintf("%d", len(content)) + " bytes. PDF text extraction not yet supported.]"
-	} else {
-		text = string(content)
+		text := "[PDF file uploaded - " + header.Filename + ", " + fmt.Sprintf("%d", len(content)) + " bytes. PDF text extraction not yet supported.]"
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"content":  text,
+			"filename": header.Filename,
+			"size":     len(content),
+		})
+		return
 	}
 
+	text := string(content)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"content":  text,

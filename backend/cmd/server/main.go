@@ -15,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"learn-helper/internal/ai"
+	"learn-helper/internal/cron"
 	"learn-helper/internal/engine"
 	"learn-helper/internal/handler"
 	"learn-helper/internal/model"
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS messages (
     tool_call_id TEXT,
     tool_name TEXT,
     tool_calls TEXT,
+    tool_summary TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -219,6 +221,15 @@ func main() {
 	// Migrate 007: add tool_calls column to messages
 	db.Exec(`ALTER TABLE messages ADD COLUMN tool_calls TEXT`)
 
+	// Migrate: add tool_call_id and tool_name to messages
+	db.Exec(`ALTER TABLE messages ADD COLUMN tool_call_id TEXT`)
+	db.Exec(`ALTER TABLE messages ADD COLUMN tool_name TEXT`)
+
+	// Migrate: add tool_summary column for cross-request tool context.
+	// Heuristic-generated one-liner per assistant turn; replaces the need
+	// to persist full tool_result messages (which violated protocol on reload).
+	db.Exec(`ALTER TABLE messages ADD COLUMN tool_summary TEXT NOT NULL DEFAULT ''`)
+
 	// Migrate existing databases: add summary columns from migration 008
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'empty'`)
@@ -274,6 +285,41 @@ func main() {
 	db.Exec(`UPDATE ai_configs SET provider = 'opencode', model_name = 'deepseek-v4-pro' WHERE provider = 'claude'`)
 
 	db.Exec(`INSERT OR IGNORE INTO wiki_pages (title, slug, page_type, content, content_status, sort_order) VALUES ('概览', 'overview', 'overview', '# 知识库概览\n\n欢迎使用 LLM Wiki！\n\n通过与 AI 对话来构建你的知识库。试试说：\n\n- "我要学 Go 后端"\n- "总结一下 Redis 的核心数据结构"\n- "帮我梳理数据库索引的知识"', 'published', 0)`)
+
+	// --- Migration 013: cron_tasks + cron_runs (idempotent) ---
+	db.Exec(`CREATE TABLE IF NOT EXISTS cron_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		cron_expr TEXT NOT NULL,
+		prompt TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		auto_approve INTEGER NOT NULL DEFAULT 1,
+		max_steps INTEGER NOT NULL DEFAULT 10,
+		timeout_sec INTEGER NOT NULL DEFAULT 300,
+		next_run_at DATETIME,
+		last_run_at DATETIME,
+		last_status TEXT,
+		last_error TEXT,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_cron_tasks_enabled_next_run ON cron_tasks(enabled, next_run_at)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS cron_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id INTEGER NOT NULL REFERENCES cron_tasks(id) ON DELETE CASCADE,
+		status TEXT NOT NULL,
+		started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		finished_at DATETIME,
+		duration_ms INTEGER,
+		output_summary TEXT,
+		error TEXT,
+		write_count INTEGER NOT NULL DEFAULT 0,
+		steps_used INTEGER NOT NULL DEFAULT 0,
+		conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL
+	)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_cron_runs_task_id ON cron_runs(task_id, started_at DESC)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status)`)
 
 	wikiHandler := handler.NewWikiHandler(db)
 	aiHandler := handler.NewAIHandler(db)
@@ -400,6 +446,38 @@ func main() {
 			r.Post("/configs", aiHandler.UpsertAIConfig)
 		})
 	})
+
+	// --- Cron tasks: scheduler + HTTP API ---
+	cronDB := cron.NewSQLDBAdapter(db)
+	// *handler.AIHandler satisfies cron.RunnerHooks (its RunReAct signature
+	// matches the interface). No adapter needed.
+	cronRunner := cron.NewRunner(cronDB, aiHandler)
+	cronHandler := cron.NewHandler(cronDB, cronRunner)
+	cronScheduler := cron.NewScheduler(cronDB, cronRunner)
+
+	// Mount cron HTTP routes
+	r.Route("/api/cron", func(r chi.Router) {
+		r.Get("/tasks", cronHandler.ListTasks)
+		r.Post("/tasks", cronHandler.CreateTask)
+		r.Get("/tasks/{id}", cronHandler.GetTask)
+		r.Patch("/tasks/{id}", cronHandler.PatchTask)
+		r.Delete("/tasks/{id}", cronHandler.DeleteTask)
+		r.Post("/tasks/{id}/run-now", cronHandler.RunNow)
+		r.Get("/tasks/{id}/runs", cronHandler.ListRuns)
+		r.Get("/runs", cronHandler.ListAllRuns)
+		r.Get("/runs/{id}", cronHandler.GetRun)
+	})
+
+	// Start the cron scheduler (background goroutine; tied to a context we
+	// cancel on server shutdown).
+	cronSchedulerCtx, cronSchedulerCancel := context.WithCancel(context.Background())
+	defer cronSchedulerCancel()
+	if os.Getenv("DISABLE_CRON_SCHEDULER") != "1" {
+		go cronScheduler.Run(cronSchedulerCtx)
+		log.Printf("[cron] scheduler started")
+	} else {
+		log.Printf("[cron] scheduler disabled via DISABLE_CRON_SCHEDULER=1")
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
