@@ -479,6 +479,24 @@ func TestLoadFromFS_OrderingIsAlphabetical(t *testing.T) {
 		t.Errorf("unexpected order: %+v", got)
 	}
 }
+
+func TestLoadFromFS_BodyMayContainFences(t *testing.T) {
+	// Body itself can contain `---` (e.g., a code block or table separator).
+	// The loader must only split on the FIRST closing fence.
+	fsys := fstest.MapFS{
+		"x.md": &fstest.MapFile{Data: []byte("---\nname: x\ndescription: X\n---\n" +
+			"body line 1\n---\nbody line 2\n")},
+	}
+	r, err := LoadFromFS(fsys)
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	s, _ := r.Get("x")
+	want := "body line 1\n---\nbody line 2\n"
+	if s.Body != want {
+		t.Errorf("body = %q, want %q", s.Body, want)
+	}
+}
 ```
 
 - [ ] **Step 2: Run tests to verify they pass (loader already supports them)**
@@ -792,117 +810,12 @@ git commit -m "feat(handler): GET /api/skills lists skill catalog"
 
 ---
 
-### Task 8: AI handler reads `skill` field and returns 400 for unknown
-
-**Files:**
-- Modify: `backend/internal/handler/ai.go`
-
-- [ ] **Step 1: Read the current request struct**
-
-Look at `backend/internal/handler/ai.go` and find the request type for `POST /api/ai/chat`. (It's likely named `AIChatRequest` or similar.) Note the field that holds the user message — we'll add `Skill` next to it.
-
-```bash
-grep -n "type AIChatRequest\|type.*Request.*struct\|message " backend/internal/handler/ai.go | head -20
-```
-
-- [ ] **Step 2: Add the `Skill` field to the request struct**
-
-In the request struct, add a new field:
-
-```go
-type AIChatRequest struct {
-	// ... existing fields ...
-	Message string `json:"message"`
-	Skill   string `json:"skill,omitempty"` // optional: SKILL.md name
-}
-```
-
-- [ ] **Step 3: Update the handler to look up the skill**
-
-In the handler function (around line 477 where `BuildSystemPrompt` is called), modify to use the registry-aware builder:
-
-```go
-// Replace this:
-//   systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
-// With:
-var skillObj *skills.Skill
-if req.Skill != "" {
-	s, ok := h.SkillRegistry.Get(req.Skill)
-	if !ok {
-		available := h.SkillRegistry.List()
-		names := make([]string, 0, len(available))
-		for _, x := range available {
-			names = append(names, x.Name)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error":     "unknown skill: " + req.Skill,
-			"available": names,
-		})
-		return
-	}
-	skillObj = s
-}
-systemPrompt := ai.BuildChatSystemPrompt(convRole, wikiContext, skillObj)
-```
-
-Add the import:
-
-```go
-import "learn-helper/internal/ai/skills"
-```
-
-- [ ] **Step 4: Add `SkillRegistry` to the AIHandler struct**
-
-In `backend/internal/handler/ai.go`, find the `AIHandler` (or `Handler`) struct definition and add:
-
-```go
-type AIHandler struct {
-	// ... existing fields ...
-	SkillRegistry *skills.Registry
-}
-```
-
-(If the existing struct uses a different name, match the existing pattern. The actual struct name is whatever the existing file uses — check `grep "type.*Handler.*struct" backend/internal/handler/ai.go`.)
-
-- [ ] **Step 5: Build and test**
-
-```bash
-cd backend && go build ./...
-```
-
-Expected: build error in main.go (`AIHandler` now requires `SkillRegistry`) — fix that in Task 9. For now, **temporarily** initialize an empty registry in main.go if the build fails, just to keep the build green:
-
-In `cmd/server/main.go`, find where `AIHandler` is constructed and add:
-
-```go
-import "learn-helper/internal/ai/skills"
-// ...
-reg, _ := skills.LoadFromFS(skills.EmbedFS()) // we'll add EmbedFS in Task 9
-// pass reg to AIHandler.SkillRegistry
-```
-
-If `EmbedFS` doesn't exist yet, comment out the registration and pass `nil` to satisfy the type, then proceed:
-
-```go
-// temporary: SkillRegistry wired in Task 9
-```
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add backend/internal/handler/ai.go backend/cmd/server/main.go
-git commit -m "feat(handler): AIChat reads skill field, returns 400 for unknown"
-```
-
----
-
-### Task 9: Wire up Registry in main.go
+### Task 8: Wire up Registry in main.go + register /api/skills
 
 **Files:**
 - Modify: `backend/internal/ai/skills/embed.go` (add `EmbedFS` accessor)
-- Modify: `backend/cmd/server/main.go`
+- Modify: `backend/internal/handler/ai.go` (add `SkillRegistry` field to handler struct)
+- Modify: `backend/cmd/server/main.go` (load registry, register route, pass to AIHandler)
 
 - [ ] **Step 1: Add an accessor for the embed.FS**
 
@@ -916,21 +829,46 @@ func EmbedFS() embed.FS {
 }
 ```
 
-- [ ] **Step 2: Find the AIHandler construction in main.go**
+- [ ] **Step 2: Add `SkillRegistry` field to the AIHandler struct**
+
+In `backend/internal/handler/ai.go`, find the `AIHandler` (or equivalent) struct definition. Check the actual name:
 
 ```bash
-grep -n "AIHandler{\|SkillRegistry\|ai.ReAct" backend/cmd/server/main.go
+grep -n "type.*Handler.*struct" backend/internal/handler/ai.go
 ```
 
-- [ ] **Step 3: Load the registry and pass it in**
+Add a new field:
 
-At the top of `main.go`, add the import:
+```go
+type AIHandler struct {
+	// ... existing fields ...
+	SkillRegistry *skills.Registry
+}
+```
+
+(Use whatever struct name the file actually uses.)
+
+Add the import at the top of the file if not already present:
 
 ```go
 import "learn-helper/internal/ai/skills"
 ```
 
-Right before constructing the AIHandler (or its dependencies), load the registry:
+- [ ] **Step 3: Find the AIHandler construction in main.go**
+
+```bash
+grep -n "AIHandler{\|Handler{" backend/cmd/server/main.go
+```
+
+- [ ] **Step 4: Load the registry in main.go**
+
+At the top of `main.go`, add the import (if not already present):
+
+```go
+import "learn-helper/internal/ai/skills"
+```
+
+Right before constructing the AIHandler, load the registry:
 
 ```go
 var reg *skills.Registry
@@ -951,7 +889,9 @@ log.Printf("[boot] loaded %d skills", len(reg.List()))
 
 (`os` and `log` should already be imported. If not, add them.)
 
-When constructing the AIHandler, pass:
+- [ ] **Step 5: Pass registry to AIHandler + register the route**
+
+Where the AIHandler is constructed, add the field:
 
 ```go
 aiHandler := &handler.AIHandler{
@@ -960,32 +900,144 @@ aiHandler := &handler.AIHandler{
 }
 ```
 
-(Adjust the field name / constructor pattern to match the existing main.go style.)
+(Adjust the construction pattern to match the existing main.go style — it may use individual field assignment rather than a struct literal.)
 
-Also register the new route. Find the existing `/api/ai` route block and add:
+Register the new route. Find the existing `/api/ai` route block in main.go and add:
 
 ```go
 r.Get("/api/skills", (&handler.SkillsHandler{Registry: reg}).HandleList)
 ```
 
-(Or use whatever route registration style the file uses — `r.Method("GET", "/api/skills", ...)` if it goes through chi.)
+(Or `r.Method("GET", "/api/skills", ...)` if it uses chi middleware-style registration. Match the existing pattern.)
 
-- [ ] **Step 4: Build and run**
+- [ ] **Step 6: Build and smoke-test the route**
 
 ```bash
-cd backend && go build ./... && go run ./cmd/server &
-sleep 2
-curl -s http://localhost:8080/api/skills | head -c 500
-kill %1 2>/dev/null
+cd backend && go build ./... && (go run ./cmd/server &) && sleep 2 && \
+  curl -s http://localhost:8080/api/skills && \
+  pkill -f "go-build.*server" 2>/dev/null; pkill -f "exe/server" 2>/dev/null
 ```
 
-Expected: JSON array containing at least `{"name":"explain-page","description":"..."}`.
+Expected: JSON array containing `{"name":"explain-page","description":"..."}`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add backend/internal/ai/skills/embed.go backend/cmd/server/main.go
-git commit -m "feat(boot): load skill registry and expose /api/skills"
+git add backend/internal/ai/skills/embed.go backend/internal/handler/ai.go backend/cmd/server/main.go
+git commit -m "feat(boot): load skill registry, expose /api/skills, wire to AIHandler"
+```
+
+---
+
+### Task 9: AI handler reads `skill` field and returns 400 for unknown
+
+**Files:**
+- Modify: `backend/internal/handler/ai.go`
+
+- [ ] **Step 1: Read the current request struct**
+
+```bash
+grep -n "type.*Request.*struct\|message \|message string" backend/internal/handler/ai.go | head -10
+```
+
+Note the field that holds the user message — we'll add `Skill` next to it.
+
+- [ ] **Step 2: Add the `Skill` field to the request struct**
+
+In the request struct, add a new field next to the existing `Message` field:
+
+```go
+type AIChatRequest struct {
+	// ... existing fields ...
+	Message string `json:"message"`
+	Skill   string `json:"skill,omitempty"` // optional: SKILL.md name
+}
+```
+
+(Use whatever struct name and existing field layout the file actually has.)
+
+- [ ] **Step 3: Update the chat handler to look up the skill**
+
+Find the call site near line 477 in `backend/internal/handler/ai.go`:
+
+```bash
+grep -n "BuildSystemPrompt\|BuildChatSystemPrompt" backend/internal/handler/ai.go
+```
+
+Replace:
+
+```go
+// Before:
+systemPrompt := ai.BuildSystemPrompt(convRole, wikiContext)
+
+// After:
+var skillObj *skills.Skill
+if req.Skill != "" {
+	if h.SkillRegistry == nil {
+		// Defensive: if registry is nil, treat as unknown skill.
+		http.Error(w, "skill registry not configured", http.StatusInternalServerError)
+		return
+	}
+	s, ok := h.SkillRegistry.Get(req.Skill)
+	if !ok {
+		available := h.SkillRegistry.List()
+		names := make([]string, 0, len(available))
+		for _, x := range available {
+			names = append(names, x.Name)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":     "unknown skill: " + req.Skill,
+			"available": names,
+		})
+		return
+	}
+	skillObj = s
+}
+systemPrompt := ai.BuildChatSystemPrompt(convRole, wikiContext, skillObj)
+```
+
+Make sure these imports are present in the file:
+
+```go
+import (
+	// ... existing ...
+	"encoding/json"
+	"net/http"
+	"learn-helper/internal/ai/skills"
+)
+```
+
+(`net/http` and `encoding/json` are likely already imported — only add if missing.)
+
+- [ ] **Step 4: Build**
+
+```bash
+cd backend && go build ./...
+```
+
+Expected: builds clean (registry is already wired in Task 8).
+
+- [ ] **Step 5: Smoke-test the unknown-skill path**
+
+```bash
+cd backend && (go run ./cmd/server &) && sleep 2 && \
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/api/ai/chat \
+    -H "Content-Type: application/json" \
+    -d '{"message":"hi","skill":"nope-skill","conversation_id":null,"focus_page_id":null,"current_slug":""}' && \
+  pkill -f "go-build.*server" 2>/dev/null; pkill -f "exe/server" 2>/dev/null
+```
+
+Expected: `400`.
+
+The exact request body shape may differ — match it to `AIChatRequest`'s real field names. The point is to send a `skill` value that doesn't exist and observe a 400.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/internal/handler/ai.go
+git commit -m "feat(handler): AIChat reads skill field, returns 400 for unknown"
 ```
 
 ---
