@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../contexts/ThemeContext'
+import {
+  listTwitterAccounts,
+  createTwitterAccount,
+  updateTwitterAccount,
+  deleteTwitterAccount,
+  getTwitterConfig,
+  setTwitterConfig,
+  type TrackedAccount,
+} from '../../lib/api'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
@@ -10,6 +19,11 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState('')
   const [tavilyApiKey, setTavilyApiKey] = useState('')
   const [saved, setSaved] = useState(false)
+
+  // Twitter / RSSHub state
+  const [accounts, setAccounts] = useState<TrackedAccount[]>([])
+  const [newHandle, setNewHandle] = useState('')
+  const [rsshubURL, setRsshubURL] = useState('https://rsshub.app')
 
   useEffect(() => {
     fetch('/api/ai/configs')
@@ -27,6 +41,63 @@ export default function SettingsPage() {
       })
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    listTwitterAccounts()
+      .then(setAccounts)
+      .catch(() => {})
+    getTwitterConfig()
+      .then(c => setRsshubURL(c.rsshub_base_url))
+      .catch(() => {})
+  }, [])
+
+  const reloadAccounts = async () => {
+    try {
+      setAccounts(await listTwitterAccounts())
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const handleAddAccount = async () => {
+    const handle = newHandle.trim()
+    if (!handle) return
+    try {
+      await createTwitterAccount(handle)
+      setNewHandle('')
+      await reloadAccounts()
+    } catch (e) {
+      alert(`添加失败: ${(e as Error).message}`)
+    }
+  }
+
+  const handleToggleAccount = async (a: TrackedAccount, enabled: boolean) => {
+    try {
+      await updateTwitterAccount(a.id, { enabled })
+      await reloadAccounts()
+    } catch (e) {
+      alert(`更新失败: ${(e as Error).message}`)
+    }
+  }
+
+  const handleDeleteAccount = async (a: TrackedAccount) => {
+    if (!confirm(`删除 @${a.handle}？`)) return
+    try {
+      await deleteTwitterAccount(a.id)
+      await reloadAccounts()
+    } catch (e) {
+      alert(`删除失败: ${(e as Error).message}`)
+    }
+  }
+
+  const handleSaveRsshub = async () => {
+    try {
+      await setTwitterConfig(rsshubURL.trim())
+      alert('已保存')
+    } catch (e) {
+      alert(`保存失败: ${(e as Error).message}`)
+    }
+  }
 
   const handleSave = async () => {
     const resp = await fetch('/api/ai/configs', {
@@ -186,6 +257,94 @@ export default function SettingsPage() {
                   已保存
                 </span>
               )}
+            </div>
+          </section>
+
+          <section className="bg-th-bg-secondary border border-th-border rounded-lg shadow-th p-6 space-y-5 mt-6">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-th-text-primary">
+                推文账号
+              </h2>
+              <p className="text-xs text-th-text-muted mt-1">
+                追踪你关心的 Twitter 账号，定时拉取并交给 AI 整理为知识。
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                value={newHandle}
+                onChange={(e) => setNewHandle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddAccount()
+                }}
+                placeholder="@handle (例如 karpathy)"
+                className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/30 focus:border-th-accent transition-colors"
+              />
+              <button
+                onClick={handleAddAccount}
+                disabled={!newHandle.trim()}
+                className="px-4 py-2 bg-th-accent text-white rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150 shadow-th"
+              >
+                + 添加
+              </button>
+            </div>
+
+            {accounts.length === 0 ? (
+              <p className="text-sm text-th-text-muted py-4 text-center border border-dashed border-th-border rounded-md">
+                尚未添加任何账号
+              </p>
+            ) : (
+              <ul className="divide-y divide-th-border border border-th-border rounded-md overflow-hidden">
+                {accounts.map((a) => (
+                  <li key={a.id} className="flex items-center gap-3 px-3 py-2 bg-th-bg-primary">
+                    <input
+                      type="checkbox"
+                      checked={a.enabled}
+                      onChange={(e) => handleToggleAccount(a, e.target.checked)}
+                      className="w-4 h-4 accent-th-accent"
+                    />
+                    <span className="flex-1 text-sm text-th-text-primary">
+                      <span className="font-mono">@{a.handle}</span>
+                      {a.display_name ? (
+                        <span className="text-th-text-muted ml-2">({a.display_name})</span>
+                      ) : null}
+                      {a.notes ? (
+                        <span className="text-th-text-muted ml-2">— {a.notes}</span>
+                      ) : null}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteAccount(a)}
+                      className="text-xs text-red-500 hover:text-red-600 transition-colors"
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="pt-2 border-t border-th-border">
+              <label className="block text-[11px] font-semibold text-th-text-muted tracking-[0.14em] uppercase mb-1.5">
+                RSSHub Base URL
+              </label>
+              <div className="flex gap-2">
+                <input
+                  value={rsshubURL}
+                  onChange={(e) => setRsshubURL(e.target.value)}
+                  placeholder="https://rsshub.app"
+                  className="flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-th-accent/30 focus:border-th-accent transition-colors"
+                />
+                <button
+                  onClick={handleSaveRsshub}
+                  disabled={!rsshubURL.trim()}
+                  className="px-4 py-2 bg-th-accent text-white rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150 shadow-th"
+                >
+                  保存
+                </button>
+              </div>
+              <p className="text-xs text-th-text-muted mt-2">
+                默认 https://rsshub.app（公网实例常被 X 屏蔽）。建议自部署 RSSHub。
+              </p>
             </div>
           </section>
 
