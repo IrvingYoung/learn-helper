@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -104,6 +105,7 @@ func TestFetchAndPersist_FetchesAllEnabledAccounts(t *testing.T) {
 }
 
 func TestFetchAndPersist_OneAccountFailureDoesNotStopOthers(t *testing.T) {
+	withShortRetryBackoffs(t)
 	db := newDigestTestDB(t)
 	store := twitter.NewStore(db)
 	_, _ = db.Exec(`INSERT INTO tracked_twitter_accounts (handle) VALUES ('a')`)
@@ -163,5 +165,82 @@ func TestDigestRunner_Run_NoTweetsMarksFailed(t *testing.T) {
 	}
 	if errStr != "no_new_tweets" {
 		t.Errorf("error: got %q want no_new_tweets", errStr)
+	}
+}
+
+// flakyClient embeds stubClient but fails the first failUntil calls
+// before delegating to the stub. Used to verify retry behavior.
+type flakyClient struct {
+	stubClient
+	failUntil int // number of attempts that should fail before succeeding
+	callCount int
+}
+
+func (f *flakyClient) FetchUserTweets(ctx context.Context, h string, s time.Time, l int) ([]twitter.Tweet, error) {
+	f.callCount++
+	if f.callCount <= f.failUntil {
+		return nil, fmt.Errorf("simulated transient failure (call %d)", f.callCount)
+	}
+	return f.stubClient.FetchUserTweets(ctx, h, s, l)
+}
+
+// withShortRetryBackoffs replaces retryBackoffs with millisecond-scale
+// values for the duration of the test, then restores them.
+func withShortRetryBackoffs(t *testing.T) {
+	t.Helper()
+	old := retryBackoffs
+	retryBackoffs = []time.Duration{1 * time.Millisecond, 1 * time.Millisecond}
+	t.Cleanup(func() { retryBackoffs = old })
+}
+
+func TestFetchWithRetry_SucceedsOnSecondAttempt(t *testing.T) {
+	withShortRetryBackoffs(t)
+	db := newDigestTestDB(t)
+	store := twitter.NewStore(db)
+	_, _ = db.Exec(`INSERT INTO tracked_twitter_accounts (handle) VALUES ('flaky')`)
+
+	client := &flakyClient{
+		stubClient: stubClient{out: []twitter.Tweet{
+			{TweetID: "ok", Handle: "flaky", Text: "hello", CreatedAt: time.Now(), URL: "u", Raw: []byte("{}")},
+		}},
+		failUntil: 1, // first call fails, second succeeds
+	}
+	runner := &DigestRunner{Store: store, Client: client}
+	cfg := DigestConfig{SinceHours: 24, MaxTweetsPerAccount: 50, MaxTotalTweets: 200}
+
+	n, err := runner.fetchAndPersist(context.Background(), "run-retry-1", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 tweet after retry, got %d", n)
+	}
+	if client.callCount != 2 {
+		t.Errorf("expected 2 client calls (1 fail + 1 success), got %d", client.callCount)
+	}
+}
+
+func TestFetchWithRetry_AllAttemptsFail(t *testing.T) {
+	withShortRetryBackoffs(t)
+	db := newDigestTestDB(t)
+	store := twitter.NewStore(db)
+	_, _ = db.Exec(`INSERT INTO tracked_twitter_accounts (handle) VALUES ('broken')`)
+
+	client := &flakyClient{
+		stubClient: stubClient{err: fmt.Errorf("persistent failure")},
+		failUntil:  999, // always fail
+	}
+	runner := &DigestRunner{Store: store, Client: client}
+	cfg := DigestConfig{SinceHours: 24, MaxTweetsPerAccount: 50, MaxTotalTweets: 200}
+
+	n, err := runner.fetchAndPersist(context.Background(), "run-retry-2", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 tweets when all attempts fail, got %d", n)
+	}
+	if client.callCount != 3 {
+		t.Errorf("expected 3 client calls (all attempts), got %d", client.callCount)
 	}
 }

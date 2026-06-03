@@ -32,6 +32,43 @@ type DigestRunner struct {
 	AI DigestAI
 }
 
+// retryBackoffs is the per-attempt wait between retries. Indexed by
+// attempt-1, so retryBackoffs[0] is the wait after the 1st failure
+// (before attempt 2), retryBackoffs[1] after the 2nd (before attempt
+// 3). Package-level so tests can shrink it to milliseconds.
+var retryBackoffs = []time.Duration{5 * time.Second, 10 * time.Second}
+
+// fetchWithRetry wraps Client.FetchUserTweets with retry logic. Retries
+// up to 3 times total, waiting between attempts per retryBackoffs.
+// Respects context cancellation. Returns the first successful result,
+// or the last error if all attempts fail.
+func (d *DigestRunner) fetchWithRetry(ctx context.Context, handle string, since time.Time, limit int) ([]twitter.Tweet, error) {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		tweets, err := d.Client.FetchUserTweets(ctx, handle, since, limit)
+		if err == nil {
+			if attempt > 1 {
+				log.Printf("[digest] fetch %s succeeded on attempt %d", handle, attempt)
+			}
+			return tweets, nil
+		}
+		lastErr = err
+		if attempt < maxAttempts {
+			backoff := retryBackoffs[attempt-1]
+			log.Printf("[digest] fetch %s attempt %d/3 failed: %v (retrying in %v)", handle, attempt, err, backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		} else {
+			log.Printf("[digest] fetch %s failed after 3 attempts: %v", handle, err)
+		}
+	}
+	return nil, lastErr
+}
+
 // fetchAndPersist fetches tweets for every enabled account, persists
 // them to the tweets table (idempotent on tweet_id), and returns the
 // number of rows newly inserted. Per-account failures are logged and
@@ -44,7 +81,7 @@ func (d *DigestRunner) fetchAndPersist(ctx context.Context, runID string, cfg Di
 	since := time.Now().Add(-time.Duration(cfg.SinceHours) * time.Hour)
 	total := 0
 	for _, a := range accounts {
-		tweets, err := d.Client.FetchUserTweets(ctx, a.Handle, since, cfg.MaxTweetsPerAccount)
+		tweets, err := d.fetchWithRetry(ctx, a.Handle, since, cfg.MaxTweetsPerAccount)
 		if err != nil {
 			log.Printf("[digest] fetch %s: %v (skipping)", a.Handle, err)
 			continue
