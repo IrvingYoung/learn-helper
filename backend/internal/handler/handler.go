@@ -25,8 +25,9 @@ func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// writeJSON sets the Content-Type header and encodes v to the response writer.
-func writeJSON(w http.ResponseWriter, v any) {
+// writeJSON sets the Content-Type header, writes the status, and encodes v to the response writer.
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }

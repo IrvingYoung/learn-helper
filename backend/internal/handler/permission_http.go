@@ -18,5 +18,5 @@ func (h *AIHandler) HandlePermissionResponse(w http.ResponseWriter, r *http.Requ
 	if h.permissions != nil {
 		h.permissions.Resolve(req.RequestID, req.Decisions)
 	}
-	writeJSON(w, map[string]any{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }

@@ -18,5 +18,5 @@ func (h *AIHandler) HandleAskUserResponse(w http.ResponseWriter, r *http.Request
 	if h.askUsers != nil {
 		h.askUsers.Resolve(req.RequestID, req)
 	}
-	writeJSON(w, map[string]any{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
