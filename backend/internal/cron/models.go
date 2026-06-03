@@ -7,21 +7,25 @@ import (
 
 // Task mirrors a row of the cron_tasks table.
 type Task struct {
-	ID          int64
-	Name        string
-	Description string
-	CronExpr    string
-	Prompt      string
-	Enabled     bool
-	AutoApprove bool
-	MaxSteps    int
-	TimeoutSec  int
-	NextRunAt   sql.NullTime
-	LastRunAt   sql.NullTime
-	LastStatus  sql.NullString
-	LastError   sql.NullString
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID               int64
+	Name             string
+	Description      string
+	CronExpr         string
+	Prompt           string
+	Enabled          bool
+	AutoApprove      bool
+	MaxSteps         int
+	TimeoutSec       int
+	TaskType         string // 'generic' (default) or 'twitter_digest'
+	SinceHours       int
+	MaxTweetsPerAccount int
+	MaxTotalTweets   int
+	NextRunAt        sql.NullTime
+	LastRunAt        sql.NullTime
+	LastStatus       sql.NullString
+	LastError        sql.NullString
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // Run mirrors a row of the cron_runs table. TaskName is populated by a JOIN

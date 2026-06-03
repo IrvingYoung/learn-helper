@@ -98,11 +98,14 @@ func NewSQLDBAdapterWithQ(db *sql.DB, q Querier) *sqlDBAdapter {
 func (a *sqlDBAdapter) CreateTask(ctx context.Context, t *Task) (int64, error) {
 	res, err := a.db.ExecContext(ctx, `
 		INSERT INTO cron_tasks
-		  (name, description, cron_expr, prompt, enabled, auto_approve, max_steps, timeout_sec, next_run_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  (name, description, cron_expr, prompt, enabled, auto_approve, max_steps, timeout_sec,
+		   task_type, since_hours, max_tweets_per_account, max_total_tweets, next_run_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.Name, t.Description, t.CronExpr, t.Prompt,
 		boolToInt(t.Enabled), boolToInt(t.AutoApprove),
-		t.MaxSteps, t.TimeoutSec, nullTime(t.NextRunAt),
+		t.MaxSteps, t.TimeoutSec,
+		t.TaskType, t.SinceHours, t.MaxTweetsPerAccount, t.MaxTotalTweets,
+		nullTime(t.NextRunAt),
 	)
 	if err != nil {
 		return 0, err
@@ -417,7 +420,8 @@ func (a *sqlDBAdapter) GetActiveAIConfig(ctx context.Context) (provider, model, 
 // --- helpers ---
 
 const taskSelectColumns = `SELECT id, name, description, cron_expr, prompt, enabled, auto_approve,
-	max_steps, timeout_sec, next_run_at, last_run_at, last_status, last_error, created_at, updated_at`
+	max_steps, timeout_sec, task_type, since_hours, max_tweets_per_account, max_total_tweets,
+	next_run_at, last_run_at, last_status, last_error, created_at, updated_at`
 
 // runSelectColumns selects from cron_runs joined with cron_tasks to also
 // return the task's name. The JOIN is LEFT because ON DELETE CASCADE means a
@@ -438,6 +442,7 @@ func scanTask(s rowScanner) (*Task, error) {
 		&t.ID, &t.Name, &t.Description, &t.CronExpr, &t.Prompt,
 		&enabled, &autoApprove,
 		&t.MaxSteps, &t.TimeoutSec,
+		&t.TaskType, &t.SinceHours, &t.MaxTweetsPerAccount, &t.MaxTotalTweets,
 		&t.NextRunAt, &t.LastRunAt, &t.LastStatus, &t.LastError,
 		&t.CreatedAt, &t.UpdatedAt,
 	); err != nil {
