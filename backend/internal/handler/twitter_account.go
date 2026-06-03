@@ -181,6 +181,14 @@ func (h *TwitterAccountHandler) PutConfig(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"rsshub_base_url": in.BaseURL})
 }
 
+// LoadRSSHubURL returns the current RSSHub base URL (read from
+// ai_configs.config) or "https://rsshub.app" if unset. Safe to call
+// from any context, including the twitter.RSSHubClient URL provider
+// closure that runs outside an HTTP request.
+func (h *TwitterAccountHandler) LoadRSSHubURL(ctx context.Context) (string, error) {
+	return h.loadRSSHubURL(ctx)
+}
+
 // loadRSSHubURL reads rsshub_base_url from ai_configs.config JSON.
 // Defaults to "https://rsshub.app" if unset.
 func (h *TwitterAccountHandler) loadRSSHubURL(ctx context.Context) (string, error) {

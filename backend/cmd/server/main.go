@@ -428,9 +428,18 @@ func main() {
 	twitterStore := twitter.NewStore(db)
 	twitterHandler := handler.NewTwitterAccountHandler(db)
 
-	// RSSHub client — base URL is read from ai_configs at call time, but
-	// we still need a default for the constructor.
-	twitterClient := twitter.NewRSSHubClient("https://rsshub.app", 15*time.Second)
+	// RSSHub client — base URL is resolved on every fetch from the
+	// active ai_configs row (set via /api/twitter/config). Falls back
+	// to the public rsshub.app on any read error or unset config.
+	twitterClient := twitter.NewRSSHubClient(func() string {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		url, err := twitterHandler.LoadRSSHubURL(ctx)
+		if err != nil || url == "" {
+			return "https://rsshub.app"
+		}
+		return url
+	}, 15*time.Second)
 
 	// --- Summary worker: generates AI summaries for wiki pages asynchronously ---
 	// We try to load the active AI config and start the worker. If no config is

@@ -41,7 +41,7 @@ func TestRSSHubClient_FetchUserTweets_FiltersBySince(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewRSSHubClient(srv.URL, 5*time.Second)
+	c := NewRSSHubClient(func() string { return srv.URL }, 5*time.Second)
 	since := parseDate(t, "2026-06-03T00:00:00Z")
 	tweets, err := c.FetchUserTweets(context.Background(), "karpathy", since, 50)
 	if err != nil {
@@ -68,7 +68,7 @@ func TestRSSHubClient_FetchUserTweets_RespectsLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewRSSHubClient(srv.URL, 5*time.Second)
+	c := NewRSSHubClient(func() string { return srv.URL }, 5*time.Second)
 	tweets, err := c.FetchUserTweets(context.Background(), "karpathy", time.Time{}, 1)
 	if err != nil {
 		t.Fatalf("FetchUserTweets: %v", err)
@@ -84,7 +84,7 @@ func TestRSSHubClient_FetchUserTweets_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewRSSHubClient(srv.URL, 5*time.Second)
+	c := NewRSSHubClient(func() string { return srv.URL }, 5*time.Second)
 	_, err := c.FetchUserTweets(context.Background(), "karpathy", time.Time{}, 10)
 	if err == nil {
 		t.Fatal("expected error on HTTP 502, got nil")

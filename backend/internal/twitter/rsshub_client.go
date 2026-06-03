@@ -12,16 +12,29 @@ import (
 
 // RSSHubClient fetches tweets by calling RSSHub's twitter/user/:handle
 // route and parsing the returned RSS 2.0 feed.
+//
+// BaseURL is a function rather than a plain string so the URL can be
+// resolved at call time. This lets the server honor a user-configured
+// self-hosted RSSHub instance set in /settings: each fetch re-reads
+// the latest config instead of being pinned to whatever value was
+// passed at construction.
 type RSSHubClient struct {
-	BaseURL    string
+	// BaseURL returns the RSSHub base URL to use for the next fetch.
+	// If it returns "" the public default is used.
+	BaseURL    func() string
 	HTTPClient *http.Client
 }
 
-// NewRSSHubClient returns a client with the given base URL and timeout.
-// If timeout is 0, a 15s default is used.
-func NewRSSHubClient(baseURL string, timeout time.Duration) *RSSHubClient {
+// NewRSSHubClient returns a client. baseURL is resolved on every fetch
+// so a self-hosted URL saved via /api/twitter/config is always honored.
+// If baseURL is nil, the public rsshub.app is used. If timeout is <= 0,
+// a 15s default is used.
+func NewRSSHubClient(baseURL func() string, timeout time.Duration) *RSSHubClient {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
+	}
+	if baseURL == nil {
+		baseURL = func() string { return "https://rsshub.app" }
 	}
 	return &RSSHubClient{
 		BaseURL:    baseURL,
@@ -46,7 +59,14 @@ type rssItem struct {
 // tweets newer than `since`, capped at `limit`. If `since` is zero, no
 // time filter is applied.
 func (c *RSSHubClient) FetchUserTweets(ctx context.Context, handle string, since time.Time, limit int) ([]Tweet, error) {
-	url := fmt.Sprintf("%s/twitter/user/%s", c.BaseURL, handle)
+	base := ""
+	if c.BaseURL != nil {
+		base = c.BaseURL()
+	}
+	if base == "" {
+		base = "https://rsshub.app"
+	}
+	url := fmt.Sprintf("%s/twitter/user/%s", base, handle)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
