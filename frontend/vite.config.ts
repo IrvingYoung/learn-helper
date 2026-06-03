@@ -22,6 +22,22 @@ export default defineConfig({
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
           { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
+        screenshots: [
+          {
+            src: '/screenshots/desktop.png',
+            sizes: '1280x720',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: '桌面端知识库',
+          },
+          {
+            src: '/screenshots/mobile.png',
+            sizes: '750x1334',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: '移动端阅读与对话',
+          },
+        ],
       },
       workbox: {
         runtimeCaching: [
