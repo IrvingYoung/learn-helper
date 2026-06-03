@@ -20,6 +20,7 @@ func classifyToolCalls(calls []aiToolCall) (reads, writes, asks, loadSkills []ai
 		"list_backlinks": true, "list_links": true, "list_children": true,
 		"find_broken_links": true,
 		"websearch":         true, "webfetch": true,
+		"list_recent_tweets": true,
 	}
 	askSet := map[string]bool{"ask_user": true}
 	loadSkillSet := map[string]bool{"load_skill": true}

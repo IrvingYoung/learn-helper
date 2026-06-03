@@ -707,6 +707,8 @@ func (h *AIHandler) executeAutoTool(ctx context.Context, tc ai.ToolCall) string 
 		return h.executeWebSearch(ctx, tc)
 	case "webfetch":
 		return h.executeWebFetch(ctx, tc)
+	case "list_recent_tweets":
+		return h.executeListRecentTweets(ctx, tc)
 	default:
 		return fmt.Sprintf("[系统] 未知工具: %s", tc.Name)
 	}
