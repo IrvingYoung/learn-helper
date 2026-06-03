@@ -375,3 +375,69 @@ export async function fetchSkills(): Promise<SkillInfo[]> {
   if (!res.ok) throw new Error(`fetchSkills failed: ${res.status}`);
   return res.json();
 }
+
+// Twitter accounts
+
+export type TrackedAccount = {
+  id: number;
+  handle: string;
+  display_name?: string;
+  enabled: boolean;
+  notes?: string;
+};
+
+export async function listTwitterAccounts(): Promise<TrackedAccount[]> {
+  const res = await fetch(`${BASE}/twitter/accounts`);
+  if (!res.ok) throw new Error("listTwitterAccounts failed");
+  return res.json();
+}
+
+export async function createTwitterAccount(handle: string, notes?: string): Promise<TrackedAccount> {
+  const res = await fetch(`${BASE}/twitter/accounts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ handle, notes }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateTwitterAccount(
+  id: number,
+  patch: Partial<Pick<TrackedAccount, "handle" | "enabled" | "notes">>,
+): Promise<void> {
+  const res = await fetch(`${BASE}/twitter/accounts/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function deleteTwitterAccount(id: number): Promise<void> {
+  const res = await fetch(`${BASE}/twitter/accounts/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function getTwitterConfig(): Promise<{ rsshub_base_url: string }> {
+  const res = await fetch(`${BASE}/twitter/config`);
+  if (!res.ok) throw new Error("getTwitterConfig failed");
+  return res.json();
+}
+
+export async function setTwitterConfig(rsshub_base_url: string): Promise<void> {
+  const res = await fetch(`${BASE}/twitter/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rsshub_base_url }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+// Cron "run now"
+
+export async function runCronTaskNow(taskId: number): Promise<{ run_id: number }> {
+  const res = await fetch(`${BASE}/cron/tasks/${taskId}/run-now`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
