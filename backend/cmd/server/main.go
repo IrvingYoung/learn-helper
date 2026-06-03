@@ -403,6 +403,12 @@ func main() {
 	db.Exec(`ALTER TABLE cron_tasks ADD COLUMN max_tweets_per_account INTEGER NOT NULL DEFAULT 50`)
 	db.Exec(`ALTER TABLE cron_tasks ADD COLUMN max_total_tweets INTEGER NOT NULL DEFAULT 200`)
 
+	// Seed: default twitter_digest cron task (disabled). User enables
+	// it from the /cron page.
+	db.Exec(`INSERT INTO cron_tasks (name, description, cron_expr, prompt, enabled, auto_approve, max_steps, timeout_sec, task_type, since_hours, max_tweets_per_account, max_total_tweets)
+		SELECT 'AI 每日推文日报', '定时抓取被追踪账号的推文，AI 分析后生成日报 wiki 页面（路径: AI 日报/YYYY-MM-DD）', '0 9 * * *', '', 0, 1, 6, 300, 'twitter_digest', 24, 50, 200
+		WHERE NOT EXISTS (SELECT 1 FROM cron_tasks WHERE task_type = 'twitter_digest')`)
+
 	// --- Skill registry ---
 	var skillReg *skills.Registry
 	if dir := os.Getenv("LH_SKILLS_DIR"); dir != "" {
