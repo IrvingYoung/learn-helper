@@ -91,3 +91,8 @@ func (s *Store) UpdateAccountDisplayName(ctx context.Context, handle, name strin
 	)
 	return err
 }
+
+// DB returns the underlying *sql.DB. Used by the digest runner to
+// write to twitter_digest_runs without coupling the runner to the
+// store's individual helpers.
+func (s *Store) DB() *sql.DB { return s.db }

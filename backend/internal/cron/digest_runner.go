@@ -5,6 +5,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
+
 	"learn-helper/internal/twitter"
 )
 
@@ -67,3 +69,59 @@ func (d *DigestRunner) fetchAndPersist(ctx context.Context, runID string, cfg Di
 	}
 	return total, nil
 }
+
+// Run executes the full digest: fetch → persist → AI. The cron
+// scheduler calls this from a goroutine. Returns the run record so
+// the caller can persist it.
+func (d *DigestRunner) Run(ctx context.Context, cronRunID *int64, cfg DigestConfig) (runID string, fetched int, err error) {
+	runID = newUUID()
+	insertDigestRunSQL := `INSERT INTO twitter_digest_runs (id, cron_run_id, status) VALUES (?, ?, 'running')`
+	if _, err := d.Store.DB().ExecContext(ctx, insertDigestRunSQL, runID, cronRunID); err != nil {
+		return runID, 0, err
+	}
+
+	fetched, ferr := d.fetchAndPersist(ctx, runID, cfg)
+	if ferr != nil {
+		_ = d.markFailed(ctx, runID, ferr.Error())
+		return runID, 0, ferr
+	}
+	if fetched == 0 {
+		_ = d.markFailed(ctx, runID, "no_new_tweets")
+		return runID, 0, nil
+	}
+	if d.AI == nil {
+		// No AI wired up (test path) — stop here, mark fetched.
+		_ = d.markFetched(ctx, runID, fetched)
+		return runID, fetched, nil
+	}
+
+	if err := d.AI.GenerateDigestPage(ctx, runID, cfg); err != nil {
+		_ = d.markFailed(ctx, runID, "ai: "+err.Error())
+		return runID, fetched, err
+	}
+	_ = d.markAnalyzed(ctx, runID, fetched)
+	return runID, fetched, nil
+}
+
+func (d *DigestRunner) markFetched(ctx context.Context, runID string, n int) error {
+	_, err := d.Store.DB().ExecContext(ctx,
+		`UPDATE twitter_digest_runs SET status='fetched', tweets_fetched=? WHERE id=?`,
+		n, runID)
+	return err
+}
+
+func (d *DigestRunner) markAnalyzed(ctx context.Context, runID string, n int) error {
+	_, err := d.Store.DB().ExecContext(ctx,
+		`UPDATE twitter_digest_runs SET status='analyzed', tweets_fetched=?, finished_at=CURRENT_TIMESTAMP WHERE id=?`,
+		n, runID)
+	return err
+}
+
+func (d *DigestRunner) markFailed(ctx context.Context, runID, reason string) error {
+	_, err := d.Store.DB().ExecContext(ctx,
+		`UPDATE twitter_digest_runs SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?`,
+		reason, runID)
+	return err
+}
+
+func newUUID() string { return uuid.NewString() }

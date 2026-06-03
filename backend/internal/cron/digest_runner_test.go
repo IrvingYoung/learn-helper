@@ -134,3 +134,34 @@ func (m *multiClient) FetchUserTweets(ctx context.Context, h string, s time.Time
 	}
 	return m.impls[0].FetchUserTweets(ctx, h, s, l)
 }
+
+func TestDigestRunner_Run_NoTweetsMarksFailed(t *testing.T) {
+	db := newDigestTestDB(t)
+	store := twitter.NewStore(db)
+	_, _ = db.Exec(`INSERT INTO tracked_twitter_accounts (handle) VALUES ('a')`)
+
+	runner := &DigestRunner{
+		Store:  store,
+		Client: &stubClient{out: nil}, // no tweets
+		AI:     nil,
+	}
+	_, fetched, err := runner.Run(context.Background(), nil, DigestConfig{
+		SinceHours: 24, MaxTweetsPerAccount: 50, MaxTotalTweets: 200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fetched != 0 {
+		t.Errorf("expected 0 fetched, got %d", fetched)
+	}
+	var status, errStr string
+	if err := db.QueryRow(`SELECT status, COALESCE(error,'') FROM twitter_digest_runs`).Scan(&status, &errStr); err != nil {
+		t.Fatal(err)
+	}
+	if status != "failed" {
+		t.Errorf("status: got %q want failed", status)
+	}
+	if errStr != "no_new_tweets" {
+		t.Errorf("error: got %q want no_new_tweets", errStr)
+	}
+}

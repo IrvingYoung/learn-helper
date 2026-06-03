@@ -17,8 +17,9 @@ import (
 // invoking AIHandler.RunReAct. It persists a cron_runs row and a
 // conversation record.
 type Runner struct {
-	db   DB
-	hook RunnerHooks
+	db           DB
+	hook         RunnerHooks
+	DigestRunner *DigestRunner // optional; only used for twitter_digest tasks
 }
 
 // RunnerHooks is the minimum surface Runner needs from the AI handler.
@@ -116,6 +117,15 @@ func (r *Runner) Run(ctx context.Context, task *Task, opts RunOpts) error {
 		return fmt.Errorf("insert run: %w", err)
 	}
 	run.ID = runID
+
+	// 2b. Branch for twitter_digest: the fetch+AI flow lives in DigestRunner
+	//     and uses a different conversation, tool set, and prompt. The
+	//     cron_runs row above is still needed for the UI to show the run
+	//     (and for runTwitterDigest to persist errors back to it), but we
+	//     skip the conversation/prompt/ReAct setup below.
+	if task.TaskType == "twitter_digest" {
+		return r.runTwitterDigest(runCtx, task, runID)
+	}
 
 	// 3. Create a conversation for this run
 	title := fmt.Sprintf("[cron] %s @ %s", task.Name, start.Format("2006-01-02 15:04:05"))
@@ -247,6 +257,47 @@ func (r *Runner) finalizeRunFailure(ctx context.Context, run *Run, cause error) 
 	if err := r.db.SetTaskRunningError(ctx, run.TaskID, cause.Error()); err != nil {
 		log.Printf("[cron-run:%d] failed to mark task failed: %v", run.ID, err)
 	}
+}
+
+// runTwitterDigest executes the twitter_digest task variant. It
+// bridges the existing Runner (which manages cron_runs + cron_tasks
+// lifecycle) with the DigestRunner (which manages the digest-specific
+// fetch/AI flow).
+func (r *Runner) runTwitterDigest(ctx context.Context, task *Task, cronRunID int64) error {
+	if r.DigestRunner == nil {
+		return fmt.Errorf("DigestRunner not wired in")
+	}
+	cfg := DigestConfig{
+		SinceHours:          task.SinceHours,
+		MaxTweetsPerAccount: task.MaxTweetsPerAccount,
+		MaxTotalTweets:      task.MaxTotalTweets,
+	}
+	if cfg.SinceHours <= 0 {
+		cfg.SinceHours = 24
+	}
+	if cfg.MaxTweetsPerAccount <= 0 {
+		cfg.MaxTweetsPerAccount = 50
+	}
+	if cfg.MaxTotalTweets <= 0 {
+		cfg.MaxTotalTweets = 200
+	}
+	_, _, err := r.DigestRunner.Run(ctx, &cronRunID, cfg)
+	if err != nil {
+		// persist the error to cron_runs so the UI shows it
+		_ = r.db.UpdateRun(ctx, &Run{
+			ID:         cronRunID,
+			Status:     RunStatusFailed,
+			FinishedAt: sql.NullTime{Time: time.Now(), Valid: true},
+			Error:      sql.NullString{String: err.Error(), Valid: true},
+		})
+	} else {
+		_ = r.db.UpdateRun(ctx, &Run{
+			ID:         cronRunID,
+			Status:     RunStatusSuccess,
+			FinishedAt: sql.NullTime{Time: time.Now(), Valid: true},
+		})
+	}
+	return err
 }
 
 // buildUserMessage constructs the user-role message sent to the AI for a
