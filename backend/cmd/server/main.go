@@ -579,6 +579,7 @@ func main() {
 			r.Post("/accounts", twitterHandler.Create)
 			r.Put("/accounts/{id}", twitterHandler.Update)
 			r.Delete("/accounts/{id}", twitterHandler.Delete)
+			r.Post("/accounts/bulk-import", twitterHandler.BulkImport)
 			r.Get("/config", twitterHandler.GetConfig)
 			r.Put("/config", twitterHandler.PutConfig)
 		})

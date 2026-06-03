@@ -4,8 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"regexp"
+	"strings"
 	"time"
 )
+
+// handleRE is duplicated in handler/twitter_account.go (a known minor
+// DRY violation). Future cleanup: move to a shared twitter/validate.go
+// or expose ValidHandle from the twitter package.
+var handleRE = regexp.MustCompile(`^[A-Za-z0-9_]{1,15}$`)
+
+func validHandle(h string) bool {
+	return handleRE.MatchString(h)
+}
 
 // Account is one row of tracked_twitter_accounts.
 type Account struct {
@@ -90,6 +101,34 @@ func (s *Store) UpdateAccountDisplayName(ctx context.Context, handle, name strin
 		name, handle,
 	)
 	return err
+}
+
+// BulkInsertAccounts inserts each handle idempotently (UNIQUE on handle).
+// Returns the number of rows actually inserted (not counting existing).
+// Empty/duplicate handles are silently skipped. Invalid handles (not
+// matching ^[A-Za-z0-9_]{1,15}$) are skipped (no error, just not inserted).
+// A leading "@" is trimmed before validation.
+func (s *Store) BulkInsertAccounts(ctx context.Context, handles []string) (int, error) {
+	added := 0
+	for _, raw := range handles {
+		h := strings.TrimSpace(raw)
+		h = strings.TrimPrefix(h, "@")
+		if !validHandle(h) {
+			continue
+		}
+		res, err := s.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO tracked_twitter_accounts (handle, enabled) VALUES (?, 1)`,
+			h,
+		)
+		if err != nil {
+			return added, err
+		}
+		n, _ := res.RowsAffected()
+		if n > 0 {
+			added++
+		}
+	}
+	return added, nil
 }
 
 // DB returns the underlying *sql.DB. Used by the digest runner to

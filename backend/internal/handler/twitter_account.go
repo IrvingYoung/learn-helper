@@ -22,6 +22,12 @@ func NewTwitterAccountHandler(db *sql.DB) *TwitterAccountHandler {
 	return &TwitterAccountHandler{db: db}
 }
 
+// twitterAccountHandlerDB is a test-only escape hatch to inject a DB
+// after construction. Production code should always set h.db via
+// NewTwitterAccountHandler. Used by handlers that need a *sql.DB even
+// when constructed with nil (e.g. BulkImport in unit tests).
+var twitterAccountHandlerDB *sql.DB
+
 var handleRE = regexp.MustCompile(`^[A-Za-z0-9_]{1,15}$`)
 
 type accountJSON struct {
