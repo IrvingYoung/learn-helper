@@ -29,8 +29,13 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
 fi
 
 echo "==> Stopping existing process (if any)"
-pkill -f "$SERVICE_BIN" || true
-sleep 1
+# Avoid pkill -f with the binary path; it can match pkill's own argv and
+# kill the surrounding shell. pgrep -x matches on process name only.
+pid=$(pgrep -x learn-helper || true)
+if [ -n "$pid" ]; then
+  kill "$pid"
+  sleep 1
+fi
 
 echo "==> Installing binary to $SERVICE_BIN"
 # Use install(1) for atomic-ish replace (writes to a temp name, then renames).

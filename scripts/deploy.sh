@@ -58,7 +58,12 @@ cd "$PROJECT_ROOT"
 SSH_OPTS=(-i "$SSH_KEY" -p "$VPS_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new)
 
 echo "==> Pushing binary to ${VPS_USER}@${VPS_HOST}"
-ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" "pkill -f '$VPS_BIN_DIR/learn-helper' || true; sleep 1"
+# Stop the existing service before swapping the binary. Use pgrep + kill
+# (with a process-name exact match) instead of pkill -f, because pkill -f
+# against 'learn-helper' can match the pkill command's own argv and kill
+# the surrounding ssh/script context, which silently aborts the script.
+ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
+  "pid=\$(pgrep -x learn-helper || true); if [ -n \"\$pid\" ]; then kill \$pid; sleep 1; fi"
 scp -P "$VPS_PORT" -i "$SSH_KEY" backend/learn-helper "${VPS_USER}@${VPS_HOST}:/tmp/learn-helper.new"
 scp -P "$VPS_PORT" -i "$SSH_KEY" "$REMOTE_SCRIPT" "${VPS_USER}@${VPS_HOST}:/tmp/deploy-remote.sh"
 
