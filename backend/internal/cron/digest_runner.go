@@ -7,15 +7,19 @@ import (
 
 	"github.com/google/uuid"
 
+	"learn-helper/internal/handler"
 	"learn-helper/internal/twitter"
 )
 
-// DigestConfig is the per-task subset used by the digest runner.
-type DigestConfig struct {
-	SinceHours          int
-	MaxTweetsPerAccount int
-	MaxTotalTweets      int
-}
+// DigestConfig and DigestAI live in the handler package (see
+// handler/digest_ai.go) — the AI step is a method on *handler.AIHandler,
+// so defining the types in handler avoids an import cycle
+// (cron/runner.go already imports handler). The aliases below let
+// callers in this package keep using the unqualified names.
+type (
+	DigestConfig = handler.DigestConfig
+	DigestAI     = handler.DigestAI
+)
 
 // DigestRunner orchestrates a single twitter-digest run: fetch tweets
 // for each enabled account, persist them, then call the AI to generate
@@ -26,12 +30,6 @@ type DigestRunner struct {
 	// AI is set by the main package after construction; the AI step
 	// is a separate function (see runDigestAI) so tests can skip it.
 	AI DigestAI
-}
-
-// DigestAI is the abstract surface the digest runner needs from the
-// AI handler. The main package provides a concrete implementation.
-type DigestAI interface {
-	GenerateDigestPage(ctx context.Context, runID string, cfg DigestConfig) error
 }
 
 // fetchAndPersist fetches tweets for every enabled account, persists

@@ -30,18 +30,34 @@ type AIHandler struct {
 	permissions   *PermissionRegistry
 	askUsers      *AskUserRegistry
 	SkillRegistry *skills.Registry
+
+	// aiProviderFactory constructs the AIProvider for a (provider, key, model)
+	// triple. Defaults to ai.NewProvider. Cron paths (e.g. the digest runner)
+	// use this to spin up a provider without going through the HTTP chat
+	// handler. Set in NewAIHandler; override with SetProviderFactory in tests
+	// or to inject a stub.
+	aiProviderFactory func(ai.ProviderType, string, string) (ai.AIProvider, error)
 }
 
 func NewAIHandler(db *sql.DB, reg *skills.Registry) *AIHandler {
 	q := model.New(db)
 	return &AIHandler{
-		db:            db,
-		queries:       q,
-		engine:        engine.NewExecutionEngine(db, q),
-		permissions:   NewPermissionRegistry(),
-		askUsers:      NewAskUserRegistry(),
-		SkillRegistry: reg,
+		db:                db,
+		queries:           q,
+		engine:            engine.NewExecutionEngine(db, q),
+		permissions:       NewPermissionRegistry(),
+		askUsers:          NewAskUserRegistry(),
+		SkillRegistry:     reg,
+		aiProviderFactory: ai.NewProvider,
 	}
+}
+
+// SetProviderFactory replaces the AIProvider factory. Used by tests to inject
+// a stub, or by main to override the default ai.NewProvider (e.g. to inject
+// per-key credentials). Pass nil to disable the factory; subsequent calls to
+// GenerateDigestPage (or any code path that uses it) will error.
+func (h *AIHandler) SetProviderFactory(f func(ai.ProviderType, string, string) (ai.AIProvider, error)) {
+	h.aiProviderFactory = f
 }
 
 // --- Conversation handlers (direct SQL, schema has role column) ---
