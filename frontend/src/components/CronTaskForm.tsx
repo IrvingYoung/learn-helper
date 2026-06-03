@@ -8,6 +8,10 @@ export interface CronTaskFormValues {
   prompt: string;
   max_steps: number;
   timeout_sec: number;
+  task_type: string;
+  since_hours: number;
+  max_tweets_per_account: number;
+  max_total_tweets: number;
 }
 
 interface Props {
@@ -24,6 +28,10 @@ const DEFAULTS: CronTaskFormValues = {
   prompt: "",
   max_steps: 10,
   timeout_sec: 300,
+  task_type: "generic",
+  since_hours: 24,
+  max_tweets_per_account: 50,
+  max_total_tweets: 200,
 };
 
 export function CronTaskForm({ initialValues, onSubmit, submitLabel, onCancel }: Props) {
@@ -99,6 +107,66 @@ export function CronTaskForm({ initialValues, onSubmit, submitLabel, onCancel }:
           ))}
         </div>
       </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">任务类型</label>
+        <select
+          value={values.task_type}
+          onChange={(e) => handleChange("task_type", e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="generic">通用 (prompt 由你提供)</option>
+          <option value="twitter_digest">AI 日报 (twitter_digest)</option>
+        </select>
+        <p className="mt-1 text-xs text-gray-500">
+          twitter_digest 类型会从关注的账号抓取最近推文并生成 AI 日报 wiki 页面
+        </p>
+      </div>
+
+      {values.task_type === "twitter_digest" && (
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-3">
+          <h3 className="text-sm font-medium text-gray-700">AI 日报配置</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">since_hours</label>
+              <input
+                type="number"
+                min={1}
+                value={values.since_hours}
+                onChange={(e) => handleChange("since_hours", parseInt(e.target.value) || 24)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">抓取最近 N 小时的推文,默认 24</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                max_tweets_per_account
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={values.max_tweets_per_account}
+                onChange={(e) =>
+                  handleChange("max_tweets_per_account", parseInt(e.target.value) || 50)
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">每账号最多抓取,默认 50</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">max_total_tweets</label>
+              <input
+                type="number"
+                min={1}
+                value={values.max_total_tweets}
+                onChange={(e) => handleChange("max_total_tweets", parseInt(e.target.value) || 200)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">全局推文上限,默认 200</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">任务 Prompt *</label>

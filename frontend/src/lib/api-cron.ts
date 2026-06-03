@@ -13,6 +13,10 @@ export interface CronTask {
   auto_approve: boolean;
   max_steps: number;
   timeout_sec: number;
+  task_type?: string;
+  since_hours?: number;
+  max_tweets_per_account?: number;
+  max_total_tweets?: number;
   next_run_at?: string | null;
   last_run_at?: string | null;
   last_status?: string | null;
@@ -57,6 +61,10 @@ export interface CreateCronTaskInput {
   enabled?: boolean;
   max_steps?: number;
   timeout_sec?: number;
+  task_type?: string;
+  since_hours?: number;
+  max_tweets_per_account?: number;
+  max_total_tweets?: number;
 }
 
 export async function createCronTask(input: CreateCronTaskInput): Promise<CronTask> {
@@ -80,6 +88,10 @@ export interface PatchCronTaskInput {
   enabled?: boolean;
   max_steps?: number;
   timeout_sec?: number;
+  task_type?: string;
+  since_hours?: number;
+  max_tweets_per_account?: number;
+  max_total_tweets?: number;
 }
 
 export async function updateCronTask(id: number, patch: PatchCronTaskInput): Promise<CronTask> {

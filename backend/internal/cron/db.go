@@ -46,14 +46,18 @@ type DB interface {
 // Nil pointers mean "do not change". Empty strings are valid (e.g. clearing
 // description); use sql.NullString fields where ambiguity matters.
 type TaskPatch struct {
-	Name        *string
-	Description *string
-	CronExpr    *string
-	Prompt      *string
-	Enabled     *bool
-	AutoApprove *bool
-	MaxSteps    *int
-	TimeoutSec  *int
+	Name                *string
+	Description         *string
+	CronExpr            *string
+	Prompt              *string
+	Enabled             *bool
+	AutoApprove         *bool
+	MaxSteps            *int
+	TimeoutSec          *int
+	TaskType            *string
+	SinceHours          *int
+	MaxTweetsPerAccount *int
+	MaxTotalTweets      *int
 }
 
 // sqlDBAdapter implements DB using *model.Queries + *sql.DB.
@@ -174,6 +178,22 @@ func (a *sqlDBAdapter) UpdateTask(ctx context.Context, id int64, p TaskPatch) er
 	if p.TimeoutSec != nil {
 		sets = append(sets, "timeout_sec = ?")
 		args = append(args, *p.TimeoutSec)
+	}
+	if p.TaskType != nil {
+		sets = append(sets, "task_type = ?")
+		args = append(args, *p.TaskType)
+	}
+	if p.SinceHours != nil {
+		sets = append(sets, "since_hours = ?")
+		args = append(args, *p.SinceHours)
+	}
+	if p.MaxTweetsPerAccount != nil {
+		sets = append(sets, "max_tweets_per_account = ?")
+		args = append(args, *p.MaxTweetsPerAccount)
+	}
+	if p.MaxTotalTweets != nil {
+		sets = append(sets, "max_total_tweets = ?")
+		args = append(args, *p.MaxTotalTweets)
 	}
 	if len(sets) == 0 {
 		return nil

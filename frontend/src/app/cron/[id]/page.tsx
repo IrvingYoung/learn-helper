@@ -73,6 +73,10 @@ export default function EditCronTaskPage() {
             prompt: task.prompt,
             max_steps: task.max_steps,
             timeout_sec: task.timeout_sec,
+            task_type: task.task_type ?? "generic",
+            since_hours: task.since_hours ?? 24,
+            max_tweets_per_account: task.max_tweets_per_account ?? 50,
+            max_total_tweets: task.max_total_tweets ?? 200,
           }}
           submitLabel="保存修改"
           onCancel={() => navigate("/cron")}

@@ -27,41 +27,53 @@ func NewHandler(db DB, runner *Runner) *Handler {
 // --- Request/response DTOs ---
 
 type createTaskRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	CronExpr    string `json:"cron_expr"`
-	Prompt      string `json:"prompt"`
-	Enabled     *bool  `json:"enabled"`
-	MaxSteps    *int   `json:"max_steps"`
-	TimeoutSec  *int   `json:"timeout_sec"`
+	Name                string `json:"name"`
+	Description         string `json:"description"`
+	CronExpr            string `json:"cron_expr"`
+	Prompt              string `json:"prompt"`
+	Enabled             *bool  `json:"enabled"`
+	MaxSteps            *int   `json:"max_steps"`
+	TimeoutSec          *int   `json:"timeout_sec"`
+	TaskType            string `json:"task_type"`
+	SinceHours          *int   `json:"since_hours"`
+	MaxTweetsPerAccount *int   `json:"max_tweets_per_account"`
+	MaxTotalTweets      *int   `json:"max_total_tweets"`
 }
 
 type patchTaskRequest struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-	CronExpr    *string `json:"cron_expr,omitempty"`
-	Prompt      *string `json:"prompt,omitempty"`
-	Enabled     *bool   `json:"enabled,omitempty"`
-	MaxSteps    *int    `json:"max_steps,omitempty"`
-	TimeoutSec  *int    `json:"timeout_sec,omitempty"`
+	Name                *string `json:"name,omitempty"`
+	Description         *string `json:"description,omitempty"`
+	CronExpr            *string `json:"cron_expr,omitempty"`
+	Prompt              *string `json:"prompt,omitempty"`
+	Enabled             *bool   `json:"enabled,omitempty"`
+	MaxSteps            *int    `json:"max_steps,omitempty"`
+	TimeoutSec          *int    `json:"timeout_sec,omitempty"`
+	TaskType            *string `json:"task_type,omitempty"`
+	SinceHours          *int    `json:"since_hours,omitempty"`
+	MaxTweetsPerAccount *int    `json:"max_tweets_per_account,omitempty"`
+	MaxTotalTweets      *int    `json:"max_total_tweets,omitempty"`
 }
 
 type taskResponse struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	CronExpr    string     `json:"cron_expr"`
-	Prompt      string     `json:"prompt"`
-	Enabled     bool       `json:"enabled"`
-	AutoApprove bool       `json:"auto_approve"`
-	MaxSteps    int        `json:"max_steps"`
-	TimeoutSec  int        `json:"timeout_sec"`
-	NextRunAt   *time.Time `json:"next_run_at,omitempty"`
-	LastRunAt   *time.Time `json:"last_run_at,omitempty"`
-	LastStatus  string     `json:"last_status,omitempty"`
-	LastError   string     `json:"last_error,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID                  int64      `json:"id"`
+	Name                string     `json:"name"`
+	Description         string     `json:"description"`
+	CronExpr            string     `json:"cron_expr"`
+	Prompt              string     `json:"prompt"`
+	Enabled             bool       `json:"enabled"`
+	AutoApprove         bool       `json:"auto_approve"`
+	MaxSteps            int        `json:"max_steps"`
+	TimeoutSec          int        `json:"timeout_sec"`
+	TaskType            string     `json:"task_type"`
+	SinceHours          int        `json:"since_hours"`
+	MaxTweetsPerAccount int        `json:"max_tweets_per_account"`
+	MaxTotalTweets      int        `json:"max_total_tweets"`
+	NextRunAt           *time.Time `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
+	LastStatus          string     `json:"last_status,omitempty"`
+	LastError           string     `json:"last_error,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type runResponse struct {
@@ -81,17 +93,21 @@ type runResponse struct {
 
 func toTaskResponse(t *Task) taskResponse {
 	r := taskResponse{
-		ID:          t.ID,
-		Name:        t.Name,
-		Description: t.Description,
-		CronExpr:    t.CronExpr,
-		Prompt:      t.Prompt,
-		Enabled:     t.Enabled,
-		AutoApprove: t.AutoApprove,
-		MaxSteps:    t.MaxSteps,
-		TimeoutSec:  t.TimeoutSec,
-		CreatedAt:   t.CreatedAt,
-		UpdatedAt:   t.UpdatedAt,
+		ID:                  t.ID,
+		Name:                t.Name,
+		Description:         t.Description,
+		CronExpr:            t.CronExpr,
+		Prompt:              t.Prompt,
+		Enabled:             t.Enabled,
+		AutoApprove:         t.AutoApprove,
+		MaxSteps:            t.MaxSteps,
+		TimeoutSec:          t.TimeoutSec,
+		TaskType:            t.TaskType,
+		SinceHours:          t.SinceHours,
+		MaxTweetsPerAccount: t.MaxTweetsPerAccount,
+		MaxTotalTweets:      t.MaxTotalTweets,
+		CreatedAt:           t.CreatedAt,
+		UpdatedAt:           t.UpdatedAt,
 	}
 	if t.NextRunAt.Valid {
 		t := t.NextRunAt.Time
@@ -207,6 +223,22 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	if req.TimeoutSec != nil {
 		timeout = *req.TimeoutSec
 	}
+	taskType := req.TaskType
+	if taskType == "" {
+		taskType = "generic"
+	}
+	sinceHours := 24
+	if req.SinceHours != nil {
+		sinceHours = *req.SinceHours
+	}
+	maxPerAccount := 50
+	if req.MaxTweetsPerAccount != nil {
+		maxPerAccount = *req.MaxTweetsPerAccount
+	}
+	maxTotal := 200
+	if req.MaxTotalTweets != nil {
+		maxTotal = *req.MaxTotalTweets
+	}
 
 	now := h.now()
 	nextAt, err := NextRunAt(req.CronExpr, now)
@@ -216,14 +248,18 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t := &Task{
-		Name:        req.Name,
-		Description: req.Description,
-		CronExpr:    req.CronExpr,
-		Prompt:      req.Prompt,
-		Enabled:     enabled,
-		AutoApprove: true, // v1 default; spec reserves the column for future
-		MaxSteps:    maxSteps,
-		TimeoutSec:  timeout,
+		Name:                req.Name,
+		Description:         req.Description,
+		CronExpr:            req.CronExpr,
+		Prompt:              req.Prompt,
+		Enabled:             enabled,
+		AutoApprove:         true, // v1 default; spec reserves the column for future
+		MaxSteps:            maxSteps,
+		TimeoutSec:          timeout,
+		TaskType:            taskType,
+		SinceHours:          sinceHours,
+		MaxTweetsPerAccount: maxPerAccount,
+		MaxTotalTweets:      maxTotal,
 	}
 
 	id, err := h.db.CreateTask(r.Context(), t)
@@ -281,13 +317,17 @@ func (h *Handler) PatchTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patch := TaskPatch{
-		Name:        req.Name,
-		Description: req.Description,
-		CronExpr:    req.CronExpr,
-		Prompt:      req.Prompt,
-		Enabled:     req.Enabled,
-		MaxSteps:    req.MaxSteps,
-		TimeoutSec:  req.TimeoutSec,
+		Name:                req.Name,
+		Description:         req.Description,
+		CronExpr:            req.CronExpr,
+		Prompt:              req.Prompt,
+		Enabled:             req.Enabled,
+		MaxSteps:            req.MaxSteps,
+		TimeoutSec:          req.TimeoutSec,
+		TaskType:            req.TaskType,
+		SinceHours:          req.SinceHours,
+		MaxTweetsPerAccount: req.MaxTweetsPerAccount,
+		MaxTotalTweets:      req.MaxTotalTweets,
 	}
 	if err := h.db.UpdateTask(r.Context(), id, patch); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update: "+err.Error())
