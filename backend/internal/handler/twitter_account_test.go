@@ -67,6 +67,22 @@ func TestTwitterAccountHandler_List(t *testing.T) {
 	}
 }
 
+// Regression: empty table must serialize as `[]`, not `null`. Frontend
+// code calls .length on the result without null-guarding.
+func TestTwitterAccountHandler_List_EmptyIsArray(t *testing.T) {
+	_, r := newAccountTestDB(t)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/twitter/accounts", nil))
+	if w.Code != 200 {
+		t.Fatalf("status: got %d want 200, body=%s", w.Code, w.Body.String())
+	}
+	body := strings.TrimSpace(w.Body.String())
+	if body != "[]" {
+		t.Errorf("empty list must be `[]`, got %q", body)
+	}
+}
+
 func TestTwitterAccountHandler_Create(t *testing.T) {
 	_, r := newAccountTestDB(t)
 	body := `{"handle":"sama","notes":"ceo"}`

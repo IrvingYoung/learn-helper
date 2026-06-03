@@ -43,7 +43,7 @@ func (h *TwitterAccountHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	var out []accountJSON
+	out := []accountJSON{}
 	for rows.Next() {
 		var a accountJSON
 		var enabled int

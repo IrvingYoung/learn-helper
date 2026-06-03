@@ -44,7 +44,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     listTwitterAccounts()
-      .then(setAccounts)
+      .then(data => setAccounts(data ?? []))
       .catch(() => {})
     getTwitterConfig()
       .then(c => setRsshubURL(c.rsshub_base_url))
@@ -53,7 +53,8 @@ export default function SettingsPage() {
 
   const reloadAccounts = async () => {
     try {
-      setAccounts(await listTwitterAccounts())
+      const data = await listTwitterAccounts()
+      setAccounts(data ?? [])
     } catch {
       /* ignore */
     }
