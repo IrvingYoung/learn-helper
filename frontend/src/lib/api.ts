@@ -434,6 +434,30 @@ export async function setTwitterConfig(rsshub_base_url: string): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
+// ── Twitter bulk import ──
+
+export type BulkImportResult = {
+  source: string;
+  total_found: number;
+  added: number;
+  skipped_existing: number;
+  added_handles?: string[];
+  error?: string;
+};
+
+export async function bulkImportTwitterAccounts(url?: string): Promise<BulkImportResult> {
+  const res = await fetch(`${BASE}/twitter/accounts/bulk-import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(url ? { url } : {}),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `bulkImport failed (${res.status})`);
+  }
+  return res.json();
+}
+
 // Cron "run now"
 
 export async function runCronTaskNow(taskId: number): Promise<{ run_id: number }> {

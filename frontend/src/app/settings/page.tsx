@@ -8,6 +8,7 @@ import {
   deleteTwitterAccount,
   getTwitterConfig,
   setTwitterConfig,
+  bulkImportTwitterAccounts,
   type TrackedAccount,
 } from '../../lib/api'
 
@@ -24,6 +25,8 @@ export default function SettingsPage() {
   const [accounts, setAccounts] = useState<TrackedAccount[]>([])
   const [newHandle, setNewHandle] = useState('')
   const [rsshubURL, setRsshubURL] = useState('https://rsshub.app')
+  const [bulkImportUrl, setBulkImportUrl] = useState('')
+  const [bulkImportStatus, setBulkImportStatus] = useState<{ kind: 'idle' | 'loading' | 'ok' | 'error'; message: string }>({ kind: 'idle', message: '' })
 
   useEffect(() => {
     fetch('/api/ai/configs')
@@ -97,6 +100,37 @@ export default function SettingsPage() {
       alert('已保存')
     } catch (e) {
       alert(`保存失败: ${(e as Error).message}`)
+    }
+  }
+
+  const handleBulkImportBuiltin = async () => {
+    setBulkImportStatus({ kind: 'loading', message: '正在拉取 follow-builders 列表...' })
+    try {
+      const r = await bulkImportTwitterAccounts()
+      setBulkImportStatus({
+        kind: 'ok',
+        message: `✅ 找到 ${r.total_found} 个，新增 ${r.added} 个，跳过 ${r.skipped_existing} 个已存在`,
+      })
+      await reloadAccounts()
+    } catch (e) {
+      setBulkImportStatus({ kind: 'error', message: `❌ 导入失败: ${(e as Error).message}` })
+    }
+  }
+
+  const handleBulkImportCustom = async () => {
+    const url = bulkImportUrl.trim()
+    if (!url) return
+    setBulkImportStatus({ kind: 'loading', message: `正在拉取 ${url} ...` })
+    try {
+      const r = await bulkImportTwitterAccounts(url)
+      setBulkImportStatus({
+        kind: 'ok',
+        message: `✅ 找到 ${r.total_found} 个，新增 ${r.added} 个，跳过 ${r.skipped_existing} 个已存在`,
+      })
+      setBulkImportUrl('')
+      await reloadAccounts()
+    } catch (e) {
+      setBulkImportStatus({ kind: 'error', message: `❌ 导入失败: ${(e as Error).message}` })
     }
   }
 
@@ -269,6 +303,38 @@ export default function SettingsPage() {
               <p className="text-xs text-th-text-muted mt-1">
                 追踪你关心的 Twitter 账号，定时拉取并交给 AI 整理为知识。
               </p>
+            </div>
+
+            <div className='space-y-2 pb-4 border-b border-th-border'>
+              <div className='text-xs font-semibold text-th-text-muted tracking-[0.14em] uppercase font-display'>批量导入</div>
+              <button
+                onClick={handleBulkImportBuiltin}
+                disabled={bulkImportStatus.kind === 'loading'}
+                className='px-3 py-2 bg-th-accent text-white rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150 shadow-th'
+              >
+                📥 一键导入 follow-builders (26 人)
+              </button>
+              <div className='flex gap-2'>
+                <input
+                  type='url'
+                  value={bulkImportUrl}
+                  onChange={e => setBulkImportUrl(e.target.value)}
+                  placeholder='或粘贴 GitHub raw URL (每行一个 handle)'
+                  className='flex-1 border border-th-input-border bg-th-input-bg text-th-text-primary rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-th-accent/30 focus:border-th-accent transition-colors'
+                />
+                <button
+                  onClick={handleBulkImportCustom}
+                  disabled={!bulkImportUrl.trim() || bulkImportStatus.kind === 'loading'}
+                  className='px-3 py-2 bg-th-bg-primary border border-th-border text-th-text-primary rounded-md text-sm font-medium hover:bg-th-bg-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all'
+                >
+                  从 URL 导入
+                </button>
+              </div>
+              {bulkImportStatus.kind !== 'idle' && (
+                <p className={`text-xs ${bulkImportStatus.kind === 'error' ? 'text-red-500' : 'text-th-text-muted'}`}>
+                  {bulkImportStatus.message}
+                </p>
+              )}
             </div>
 
             <div className="flex gap-2">
