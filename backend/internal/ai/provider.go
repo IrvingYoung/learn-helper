@@ -241,6 +241,18 @@ func WikiTools() []Tool {
 				"required": []string{"url"},
 			},
 		},
+		{
+			Name:        "list_recent_tweets",
+			Description: "读取已经被抓取并落库的 X 推文。since: 可选 ISO8601 时间,只返回该时间之后的;handle: 可选账号过滤;limit: 默认 50,上限 200。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"since":  map[string]any{"type": "string", "description": "ISO8601 时间,只返回该时间之后抓到的推文"},
+					"handle": map[string]any{"type": "string", "description": "账号 handle (不带 @),只返回该账号的推文"},
+					"limit":  map[string]any{"type": "integer", "description": "返回条数上限,默认 50,上限 200"},
+				},
+			},
+		},
 
 		// ── Navigation tools (auto-execute) ──
 		// These reify structural relationships that the knowledge map only
