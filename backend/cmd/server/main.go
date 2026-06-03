@@ -24,6 +24,7 @@ import (
 	"learn-helper/internal/engine"
 	"learn-helper/internal/handler"
 	"learn-helper/internal/model"
+	"learn-helper/internal/twitter"
 	"learn-helper/internal/worker"
 )
 
@@ -254,6 +255,49 @@ func main() {
 	// Migrate 014: add skill column to messages (persists which /skill was active)
 	db.Exec(`ALTER TABLE messages ADD COLUMN skill TEXT NOT NULL DEFAULT ''`)
 
+	// ── Migration 015: Twitter digest (new tables) ──
+	// NOTE: The ALTER TABLE statements that add columns to cron_tasks
+	// live further down, right after the cron_tasks CREATE TABLE block
+	// (migration 013), because ALTER TABLE fails if the target table
+	// doesn't exist yet.
+	db.Exec(`CREATE TABLE IF NOT EXISTS tracked_twitter_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  handle TEXT NOT NULL UNIQUE,
+  display_name TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  added_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  notes TEXT
+)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_tracked_twitter_enabled ON tracked_twitter_accounts(enabled)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS tweets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tweet_id TEXT NOT NULL UNIQUE,
+  handle TEXT NOT NULL,
+  author_name TEXT,
+  text TEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  url TEXT NOT NULL,
+  metrics_json TEXT,
+  raw_json TEXT NOT NULL,
+  fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  digest_run_id TEXT
+)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_tweets_handle_created ON tweets(handle, created_at DESC)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_tweets_digest_run ON tweets(digest_run_id)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS twitter_digest_runs (
+  id TEXT PRIMARY KEY,
+  cron_run_id INTEGER REFERENCES cron_runs(id) ON DELETE SET NULL,
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at DATETIME,
+  status TEXT NOT NULL,
+  tweets_fetched INTEGER NOT NULL DEFAULT 0,
+  wiki_page_id INTEGER,
+  error TEXT
+)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_twitter_digest_runs_started ON twitter_digest_runs(started_at DESC)`)
+
 	// Migrate existing databases: add summary columns from migration 008
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE wiki_pages ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'empty'`)
@@ -351,6 +395,14 @@ func main() {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_cron_runs_task_id ON cron_runs(task_id, started_at DESC)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status)`)
 
+	// ── Migration 015: Twitter digest (cron_tasks columns) ──
+	// Must run after migration 013 (which creates cron_tasks) because
+	// ALTER TABLE fails on a non-existent table.
+	db.Exec(`ALTER TABLE cron_tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'generic'`)
+	db.Exec(`ALTER TABLE cron_tasks ADD COLUMN since_hours INTEGER NOT NULL DEFAULT 24`)
+	db.Exec(`ALTER TABLE cron_tasks ADD COLUMN max_tweets_per_account INTEGER NOT NULL DEFAULT 50`)
+	db.Exec(`ALTER TABLE cron_tasks ADD COLUMN max_total_tweets INTEGER NOT NULL DEFAULT 200`)
+
 	// --- Skill registry ---
 	var skillReg *skills.Registry
 	if dir := os.Getenv("LH_SKILLS_DIR"); dir != "" {
@@ -371,6 +423,14 @@ func main() {
 	aiHandler := handler.NewAIHandler(db, skillReg)
 	queries := model.New(db)
 	eng := engine.NewExecutionEngine(db, queries)
+
+	// ── Twitter digest stack ──
+	twitterStore := twitter.NewStore(db)
+	twitterHandler := handler.NewTwitterAccountHandler(db)
+
+	// RSSHub client — base URL is read from ai_configs at call time, but
+	// we still need a default for the constructor.
+	twitterClient := twitter.NewRSSHubClient("https://rsshub.app", 15*time.Second)
 
 	// --- Summary worker: generates AI summaries for wiki pages asynchronously ---
 	// We try to load the active AI config and start the worker. If no config is
@@ -503,6 +563,16 @@ func main() {
 			r.Get("/configs", aiHandler.GetAIConfigs)
 			r.Post("/configs", aiHandler.UpsertAIConfig)
 		})
+
+		// Twitter account CRUD + RSSHub config
+		r.Route("/twitter", func(r chi.Router) {
+			r.Get("/accounts", twitterHandler.List)
+			r.Post("/accounts", twitterHandler.Create)
+			r.Put("/accounts/{id}", twitterHandler.Update)
+			r.Delete("/accounts/{id}", twitterHandler.Delete)
+			r.Get("/config", twitterHandler.GetConfig)
+			r.Put("/config", twitterHandler.PutConfig)
+		})
 	})
 
 	// Catch-all SPA fallback: any GET that didn't match a more specific route.
@@ -540,6 +610,15 @@ func main() {
 	// *handler.AIHandler satisfies cron.RunnerHooks (its RunReAct signature
 	// matches the interface). No adapter needed.
 	cronRunner := cron.NewRunner(cronDB, aiHandler)
+
+	// Build the digest runner
+	digestRunner := &cron.DigestRunner{
+		Store:  twitterStore,
+		Client: twitterClient,
+		AI:     aiHandler, // implements cron.DigestAI via GenerateDigestPage
+	}
+	cronRunner.DigestRunner = digestRunner
+
 	cronHandler := cron.NewHandler(cronDB, cronRunner)
 	cronScheduler := cron.NewScheduler(cronDB, cronRunner)
 
